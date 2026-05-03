@@ -50,14 +50,24 @@ jobs:
       - run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - run: flutter test || echo "no tests yet"
 
-      - name: Build APKs (split per ABI + universal)
+      # We split the build into TWO gradle invocations with `flutter clean`
+      # between them. AGP can't share its shrinkResources output between
+      # split-per-abi APKs and a universal APK in one run — conflict
+      # produces "Multiple shrunk-resources files found" failures
+      # (https://issuetracker.google.com/402800800).
+      #
+      # AAB (Play Store bundle) hits the same issue against any APK build,
+      # so we defer it until the app graduates to Play Store; for now,
+      # GitHub Releases delivers APKs and the in-app UpdateService picks
+      # the universal asset.
+      - name: Build split-per-ABI APKs (arm64, armv7, x86_64)
         run: flutter build apk --release --split-per-abi --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+
+      - name: Clean intermediates so universal build won't collide
+        run: flutter clean && flutter pub get
 
       - name: Build universal APK
         run: flutter build apk --release --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
-
-      - name: Build AAB (Play Store)
-        run: flutter build appbundle --release --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
 
       - name: Compute version label
         id: ver
@@ -74,7 +84,6 @@ jobs:
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk   "dist/juntra-$V-armeabi-v7a.apk"   || true
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk        "dist/juntra-$V-x86_64.apk"        || true
           cp build/app/outputs/flutter-apk/app-release.apk               "dist/juntra-$V-universal.apk"     || true
-          cp build/app/outputs/bundle/release/app-release.aab            "dist/juntra-$V.aab"               || true
           ls -la dist/
 
       - name: Publish GitHub Release
