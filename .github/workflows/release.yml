@@ -38,11 +38,16 @@ jobs:
         run: |
           mkdir -p android
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
+          # Gradle resolves storeFile relative to android/app/ (where the
+          # module build.gradle.kts lives), so we must point to ../ to
+          # find the keystore at android/upload-keystore.jks. Local devs
+          # who keep the .jks at android/ + run from the project root see
+          # the same resolution path.
           cat > android/key.properties <<EOF
           storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          storeFile=upload-keystore.jks
+          storeFile=../upload-keystore.jks
           EOF
 
       # We tolerate info + warnings in CI — they're style hints, not bugs,
