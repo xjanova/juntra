@@ -71,6 +71,9 @@ class _ShuffleScreenState extends State<ShuffleScreen>
   }
 
   Future<void> _startShuffle() async {
+    // Idempotent: rapid double-tap on "เริ่มสับไพ่" must NOT spawn a second
+    // shuffle controller or queue a second phase transition.
+    if (_phase != _Phase.question) return;
     setState(() => _phase = _Phase.shuffle);
     HapticFeedback.mediumImpact();
     _shuffleCtrl.forward(from: 0);
@@ -102,6 +105,9 @@ class _ShuffleScreenState extends State<ShuffleScreen>
   }
 
   Future<void> _nextReveal() async {
+    // Guard rapid double-taps + late callbacks from a previous flip
+    // animation that is still running.
+    if (_revealCtrl.isAnimating) return;
     if (_revealIdx + 1 >= _picked.length) {
       setState(() => _phase = _Phase.grid);
       await Future<void>.delayed(const Duration(milliseconds: 1400));
@@ -111,6 +117,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
     }
     setState(() => _revealIdx += 1);
     await _revealCtrl.forward(from: 0);
+    if (!mounted) return; // controller may complete after pop
   }
 
   @override

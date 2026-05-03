@@ -43,7 +43,9 @@ class ApiClient {
       validateStatus: (s) => s != null && s < 500,
     ));
 
-    // Attach Bearer token (Sanctum) when present.
+    // Attach Bearer token (Sanctum) when present + clear on 401 so a
+    // server-side token revocation doesn't leave the client wedged with
+    // a stale credential forever.
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await storage.read(key: _kTokenKey);
@@ -51,6 +53,12 @@ class ApiClient {
           options.headers['Authorization'] = 'Bearer $token';
         }
         handler.next(options);
+      },
+      onResponse: (response, handler) async {
+        if (response.statusCode == 401) {
+          await storage.delete(key: _kTokenKey);
+        }
+        handler.next(response);
       },
     ));
 

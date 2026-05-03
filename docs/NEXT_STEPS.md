@@ -95,18 +95,73 @@ Once you've installed `0.1.0+2`:
 If the dialog doesn't appear, tap **โปรไฟล์ → ตรวจสอบอัปเดต** to bypass the
 6-hour throttle.
 
-## 🪲 5. Known limitations (good first issues)
+## 🪲 5. Known limitations + must-fix-before-real-money
 
-- [ ] `Profile → ตรวจสอบอัปเดต` button currently does nothing — wire to
-      `UpdateService.checkForUpdate(isManual: true)` + show toast
-- [ ] `History` tab uses placeholder data — wire to `fortuneHistoryProvider`
-- [ ] `Reading` shows the same SAMPLE_READING for every user — call
-      `FortuneRepository.read(readingId)` after `/draw`
-- [ ] `Natal` chart uses local Meeus only — call `/v1/natal/compute` for
-      Swiss Eph accuracy
-- [ ] `Payment` screen does not actually initiate transactions — wire to
-      `/v1/payment/initiate` (controller already returns mock payload)
-- [ ] 56 minor arcana cards still missing — only 22 majors render today
+> A code-reviewer agent flagged these in the 2026-05-03 session. The
+> CRITICAL items here are **revenue or accuracy bugs**, not security
+> auth bypass — the routes ARE behind `auth:sanctum`. Still, fix before
+> charging real users.
+
+### CRITICAL (block real money)
+
+- [ ] **`/v1/fortune/draw` does not deduct credits.** Comment promises it,
+      code never decrements `FortuneUserCredit`. Free unlimited draws right
+      now. Add `decrement('free_credits')` (or `paid_credits`) wrapped in
+      a DB transaction with a Cache::lock per user_id to stop concurrency.
+- [ ] **`/v1/fortune/read` payment bypass.** `is_paid` boolean is set by
+      `/draw` itself based on `priceForSpread === 0`. Tie it to a verified
+      `payment_id` from `PaymentController::status` before accepting.
+- [ ] **Once credit deduction is wired**, exclude `/draw` from
+      `RetryInterceptor` (or add an idempotency_key header) so a
+      transient 5xx doesn't double-charge.
+- [ ] **`PaymentController::initiate` PromptPay QR is fake** — string
+      missing CRC16, merchant ID, and uses the wrong EMV field for amount.
+      Banks will reject. Wire to existing `PromptPayService` (used by
+      Facebook bot already).
+- [ ] **`PaymentController::initiate` wallet balance hardcoded to 480**.
+      Read real balance from `FortuneUserCredit::paid_credits` (or
+      whichever column tracks wallet) before subtracting.
+- [ ] **APK download has no SHA verification.** Anyone who MITM-replaces
+      the APK between GitHub CDN and the device will install a malicious
+      build. Add `digest` field to release notes (parse out `sha256: ...`)
+      and verify the downloaded file before `OpenFilex.open`.
+
+### Accuracy
+
+- [ ] **`/v1/natal/compute` ascendant formula is wrong** — current
+      `lst*15 + lat*0.5` is not the Meeus formula. Use proper
+      `arctan(cos(LST) / -(sin(LST)*cos(ε) + tan(lat)*sin(ε)))`.
+- [ ] **Planet positions are placeholders** — Mercury/Venus/Mars/etc.
+      are computed as `sunLon ± constant`. License Swiss Ephemeris and
+      replace with real positions before this screen ships.
+- [ ] **`AffiliateController::link` referral code is predictable** —
+      `substr(md5('juntra-' . userId), 0, 8)`. An attacker can compute
+      anyone's referral URL. Generate a random 8-char code, persist to a
+      dedicated column with unique index.
+
+### Performance
+
+- [ ] **`AffiliateController::downline` N+1** — recurses 5 levels with
+      one query per node. Convert to a single recursive CTE or eager-load.
+- [ ] **`AffiliateController::dashboard` caching** — 4 aggregates computed
+      every page load. Cache for 5 min keyed by `juntra:aff:dash:{user_id}`.
+
+### Polish
+
+- [ ] **`Profile → ตรวจสอบอัปเดต`** button is decorative — wire to
+      `UpdateService.checkForUpdate(isManual: true)` + show result toast
+- [ ] **`History` tab** uses placeholder data — wire to
+      `fortuneHistoryProvider`
+- [ ] **`Reading` screen** shows the same SAMPLE_READING for every user
+      — call `FortuneRepository.read(readingId)` after `/draw`
+- [ ] **`Natal` chart** uses local Meeus only — call `/v1/natal/compute`
+      once the formula is fixed
+- [ ] **`Payment` screen** does not actually initiate transactions — wire
+      to `/v1/payment/initiate` once the QR/wallet bugs above are fixed
+- [ ] **`ChatController::send`** wraps user text in a quoted system
+      instruction — vulnerable to prompt injection. Switch to structured
+      role/content array at the AI service layer.
+- [ ] **56 minor arcana cards** still missing — only 22 majors render today
 
 ## 📊 6. Telemetry (optional, post-launch)
 

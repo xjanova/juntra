@@ -69,7 +69,15 @@ class UpdateInfo extends Equatable {
   }
 
   @override
-  List<Object?> get props => [latestVersion, latestBuild, apkUrl];
+  // Intentionally exclude apkUrl from props/toString. UpdateInfo equality
+  // is keyed by (version, build) — those uniquely identify a release.
+  // Keeping apkUrl out means an accidental `print(updateInfo)` or any crash
+  // reporter that serializes Equatable.toString() can't leak the upstream
+  // GitHub URL into logs (UI separation contract — see update_service.dart).
+  List<Object?> get props => [latestVersion, latestBuild];
+
+  @override
+  String toString() => 'UpdateInfo($latestVersion+$latestBuild)';
 }
 
 /// Compare two semver strings. Returns:
