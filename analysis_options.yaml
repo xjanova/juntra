@@ -1,0 +1,19 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_const_declarations: true
+    use_super_parameters: true
+    avoid_print: true
+    require_trailing_commas: true
+
+analyzer:
+  errors:
+    unused_import: warning
+    unused_local_variable: warning
+  exclude:
+    - build/**
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"

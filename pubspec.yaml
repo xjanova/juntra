@@ -1,0 +1,120 @@
+name: juntra
+description: "จันทราพยากรณ์ — แอพดูดวงทาโรต์ AI โดยแม่หมอจันทรา · POWERED BY XMAN STUDIO"
+publish_to: 'none'
+
+# Single source of truth for app version. Bumped automatically by
+# .github/workflows/auto-bump-on-merge.yml on PR merge, then the release
+# workflow tags + builds APK + signs + publishes Release artifacts.
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+  flutter: ">=3.41.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management — proven Riverpod 2.x setup, matches thaipromptapp
+  flutter_riverpod: ^2.6.1
+
+  # Routing — declarative, supports deep links to specific screens later
+  go_router: ^14.6.2
+
+  # HTTP — Dio with retry + pretty logger for dev
+  dio: ^5.7.0
+  dio_smart_retry: ^7.0.1
+  pretty_dio_logger: ^1.4.0
+
+  # Storage
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.3
+  path_provider: ^2.1.5
+
+  # UI atoms — gold/purple cinematic look
+  google_fonts: ^6.2.1                 # Bai Jamjuree, Noto Sans Thai, Noto Serif Thai, Cinzel
+  cached_network_image: ^3.4.1
+  flutter_animate: ^4.5.2              # Concise animation chains for screen entries
+  shimmer: ^3.0.0                      # Skeleton loading on home/list
+  flutter_svg: ^2.0.16                 # Natal chart wheel + crescent moon glyphs
+  flutter_markdown: ^0.7.5             # Render update changelog markdown
+
+  # Device + system
+  device_info_plus: ^11.2.0
+  package_info_plus: ^8.1.1
+  permission_handler: ^11.3.1
+  connectivity_plus: ^6.1.0
+
+  # Auto-update internals (Android sideload).
+  # NOTE: We use GitHub Releases as artifact storage but expose ZERO github
+  # URLs in the UI — everything user-facing says "เซิร์ฟเวอร์อัปเดต".
+  open_filex: ^4.5.0
+  url_launcher: ^6.3.1
+
+  # QR (PromptPay payment + future affiliate referral QR)
+  qr_flutter: ^4.1.0
+
+  # Sensory polish — haptics on card tap + bell on reveal
+  vibration: ^2.0.0
+  audioplayers: ^6.1.0
+
+  # Utilities
+  collection: ^1.19.0
+  intl: ^0.20.1
+  logger: ^2.5.0
+  equatable: ^2.0.7
+  uuid: ^4.5.1
+  crypto: ^3.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.6
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/tarot/
+
+  # Thai display fonts pulled at runtime via google_fonts (Bai Jamjuree,
+  # Noto Sans Thai, Noto Serif Thai, Cinzel). No local font bundling needed
+  # since the app always has internet (auto-update + AI chat both require it).
+
+# ─── Launcher icons (run: dart run flutter_launcher_icons) ──────────────────
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/images/logo-chantra.png"
+  remove_alpha_ios: true
+  min_sdk_android: 26
+  adaptive_icon_background: "#1A0F2E"
+  adaptive_icon_foreground: "assets/images/logo-chantra.png"
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: false
+
+# ─── Native splash (run: dart run flutter_native_splash:create) ─────────────
+# Native splash bridges OS launch → first Flutter frame. After Flutter boots,
+# lib/features/splash renders the cinematic Mae Mor portrait + breathing glow.
+flutter_native_splash:
+  color: "#000000"
+  image: "assets/images/logo-chantra.png"
+  android_12:
+    color: "#000000"
+    image: "assets/images/logo-chantra.png"
+    icon_background_color: "#000000"
+  android: true
+  ios: true
+  web: false
+  fullscreen: false

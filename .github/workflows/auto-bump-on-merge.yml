@@ -1,0 +1,80 @@
+name: Auto-bump version on PR merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Bump level'
+        required: true
+        default: 'patch'
+        type: choice
+        options: [major, minor, patch, build]
+
+jobs:
+  bump:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide bump level
+        id: level
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          MANUAL: ${{ github.event.inputs.level }}
+        run: |
+          if [ -n "$MANUAL" ]; then
+            echo "level=$MANUAL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if echo "$LABELS" | grep -q "release:skip"; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if echo "$LABELS" | grep -q "release:major"; then echo "level=major" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "release:minor"; then echo "level=minor" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "release:build"; then echo "level=build" >> $GITHUB_OUTPUT
+          else echo "level=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump pubspec version
+        if: steps.level.outputs.skip != 'true'
+        id: bump
+        run: |
+          set -e
+          CURRENT=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:\s*//')
+          IFS='+' read -r SEMVER BUILD <<< "$CURRENT"
+          IFS='.' read -r MAJ MIN PAT <<< "$SEMVER"
+          BUILD=${BUILD:-0}
+          case "${{ steps.level.outputs.level }}" in
+            major) MAJ=$((MAJ+1)); MIN=0; PAT=0; BUILD=$((BUILD+1));;
+            minor) MIN=$((MIN+1)); PAT=0; BUILD=$((BUILD+1));;
+            patch) PAT=$((PAT+1)); BUILD=$((BUILD+1));;
+            build) BUILD=$((BUILD+1));;
+          esac
+          NEW="$MAJ.$MIN.$PAT+$BUILD"
+          sed -i -E "s/^version:.*/version: $NEW/" pubspec.yaml
+          echo "new=$NEW" >> $GITHUB_OUTPUT
+          echo "tag=v$NEW" >> $GITHUB_OUTPUT
+
+      - name: Commit + tag
+        if: steps.level.outputs.skip != 'true'
+        env:
+          NEW: ${{ steps.bump.outputs.new }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "release-bot"
+          git add pubspec.yaml
+          git commit -m "chore(release): bump to $NEW [skip ci]"
+          git tag -a "$TAG" -m "Release $NEW"
+          git push
+          git push origin "$TAG"

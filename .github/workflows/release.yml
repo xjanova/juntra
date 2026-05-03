@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0+1)'
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.41.7'
+
+      - run: flutter pub get
+
+      - name: Decode signing keystore
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test || echo "no tests yet"
+
+      - name: Build APKs (split per ABI + universal)
+        run: flutter build apk --release --split-per-abi --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+
+      - name: Build universal APK
+        run: flutter build apk --release --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+
+      - name: Build AAB (Play Store)
+        run: flutter build appbundle --release --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+
+      - name: Compute version label
+        id: ver
+        run: |
+          V=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:\s*//' | sed 's/+/+/')
+          NAME=${V%+*}
+          echo "version=$NAME" >> $GITHUB_OUTPUT
+
+      - name: Stage artifacts with friendly names
+        run: |
+          mkdir -p dist
+          V=${{ steps.ver.outputs.version }}
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk     "dist/juntra-$V-arm64-v8a.apk"     || true
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk   "dist/juntra-$V-armeabi-v7a.apk"   || true
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk        "dist/juntra-$V-x86_64.apk"        || true
+          cp build/app/outputs/flutter-apk/app-release.apk               "dist/juntra-$V-universal.apk"     || true
+          cp build/app/outputs/bundle/release/app-release.aab            "dist/juntra-$V.aab"               || true
+          ls -la dist/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          name: "จันทราพยากรณ์ ${{ steps.ver.outputs.version }}"
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

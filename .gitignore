@@ -1,0 +1,76 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# Android
+android/.gradle/
+android/.kotlin/
+android/captures/
+android/local.properties
+android/key.properties
+android/upload-keystore.jks
+/android/app/debug
+/android/app/profile
+/android/app/release
+**/android/**/gradle-wrapper.jar
+android/**/GeneratedPluginRegistrant.java
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# Generated launcher icons / splash
+android/app/src/main/res/mipmap-*/launcher_icon*
+android/app/src/main/res/drawable-*/launcher_icon*
+
+# Coverage / CI
+coverage/
+dist/
+
+# Local secrets
+.env
+.env.local
+*.keystore
+*.jks
+
+# Misc
+*.class
+*.log
+*.pyc
+*.swp

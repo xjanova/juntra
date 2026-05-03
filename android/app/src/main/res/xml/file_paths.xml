@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Where UpdateService writes the downloaded APK before opening
+         the system installer. Mapped to getApplicationDocumentsDirectory()
+         on Android via path_provider. -->
+    <files-path name="docs" path="."/>
+    <external-files-path name="external_files" path="."/>
+    <cache-path name="cache" path="."/>
+</paths>
