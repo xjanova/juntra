@@ -74,7 +74,10 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
-  flutter_native_splash: ^2.4.6
+  # flutter_native_splash removed — its CLI generates xml/drawables that are
+  # already committed; the Flutter plugin runtime registration was failing
+  # at compile time because the plugin emits a Java class that pulls extra
+  # AndroidX deps. We use the LaunchTheme style + ic_launcher only.
 
 flutter:
   uses-material-design: true
@@ -104,17 +107,8 @@ flutter_launcher_icons:
   macos:
     generate: false
 
-# ─── Native splash (run: dart run flutter_native_splash:create) ─────────────
-# Native splash bridges OS launch → first Flutter frame. After Flutter boots,
-# lib/features/splash renders the cinematic Mae Mor portrait + breathing glow.
-flutter_native_splash:
-  color: "#000000"
-  image: "assets/images/logo-chantra.png"
-  android_12:
-    color: "#000000"
-    image: "assets/images/logo-chantra.png"
-    icon_background_color: "#000000"
-  android: true
-  ios: true
-  web: false
-  fullscreen: false
+# Native splash config kept here for future reference. Currently we rely on
+# the LaunchTheme defined in android/app/src/main/res/values/styles.xml
+# (black background) + the Flutter splash widget for the animated portrait.
+# To regenerate native splash assets, re-add `flutter_native_splash` to
+# dev_dependencies and run `dart run flutter_native_splash:create`.

@@ -74,3 +74,4 @@ dist/
 *.log
 *.pyc
 *.swp
+KEYSTORE_INFO.md
