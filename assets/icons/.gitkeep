@@ -1,0 +1,3 @@
+# Placeholder so Flutter's asset bundler doesn't warn about an empty
+# assets/icons/ directory referenced from pubspec.yaml.
+# Custom SVG/PNG icons (e.g. element symbols, zodiac glyphs) go here.
