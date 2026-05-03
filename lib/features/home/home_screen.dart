@@ -20,7 +20,17 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final card = tarotDeck[18]; // The Moon — daily default
-    final weekday = DateFormat('EEEE', 'th').format(DateTime.now());
+    // Defensive: even with locale data initialized in main(), fall back
+    // to a hand-rolled Thai weekday array if anything goes sideways here
+    // — never let a single date format throw and black-out the screen.
+    String weekday;
+    try {
+      weekday = DateFormat('EEEE', 'th').format(DateTime.now());
+    } catch (_) {
+      const days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี',
+                    'ศุกร์', 'เสาร์', 'อาทิตย์'];
+      weekday = days[(DateTime.now().weekday - 1) % 7];
+    }
 
     return Scaffold(
       body: Stack(
