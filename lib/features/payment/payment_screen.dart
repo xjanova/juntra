@@ -80,7 +80,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     label: 'ยืนยันชำระ ฿${widget.amount}',
                     icon: const Icon(Icons.lock_outline),
                     size: GoldButtonSize.lg,
-                    onPressed: () => context.go(Routes.shuffle),
+                    onPressed: () => context.pushReplacement(Routes.shuffle),
                   ),
                 ),
               ],

@@ -35,7 +35,7 @@ class SpreadsScreen extends StatelessWidget {
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (_, i) => _SpreadTile(
                       spread: spreads[i],
-                      onTap: () => context.go(
+                      onTap: () => context.push(
                         '${Routes.shuffle}?spread=${spreads[i].id}'
                         '&category=${cat.id}',
                       ),
@@ -62,7 +62,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left, color: JuntraColors.gold, size: 28),
-            onPressed: () => context.go(Routes.home),
+            onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
           ),
           Expanded(
             child: Column(
@@ -85,7 +85,7 @@ class _Header extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.share_outlined, color: JuntraColors.purpleBright),
-            onPressed: () => context.go(Routes.share),
+            onPressed: () => context.push(Routes.share),
           ),
         ],
       ),

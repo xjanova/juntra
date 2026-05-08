@@ -168,7 +168,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left, color: JuntraColors.gold, size: 28),
-            onPressed: () => context.go(Routes.home),
+            onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
           ),
           ClipOval(
             child: Image.asset('assets/images/maehmor.png',

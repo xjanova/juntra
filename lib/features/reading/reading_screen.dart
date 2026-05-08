@@ -52,7 +52,7 @@ class ReadingScreen extends StatelessWidget {
                     IconButton(
                       icon: const Icon(Icons.chevron_left,
                           color: JuntraColors.gold, size: 28),
-                      onPressed: () => context.go(Routes.home),
+                      onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
                     ),
                     Expanded(
                       child: Column(
@@ -69,7 +69,7 @@ class ReadingScreen extends StatelessWidget {
                     IconButton(
                       icon: const Icon(Icons.share_outlined,
                           color: JuntraColors.purpleBright),
-                      onPressed: () => context.go(Routes.share),
+                      onPressed: () => context.push(Routes.share),
                     ),
                   ],
                 ),
@@ -94,7 +94,7 @@ class ReadingScreen extends StatelessWidget {
                       child: GoldButton(
                         label: 'คุยต่อกับแม่หมอ',
                         icon: const Icon(Icons.chat_bubble_outline),
-                        onPressed: () => context.go(Routes.chat),
+                        onPressed: () => context.push(Routes.chat),
                       ),
                     ),
                   ],

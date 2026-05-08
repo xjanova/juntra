@@ -33,14 +33,14 @@ class ProfileScreen extends StatelessWidget {
                   iconColor: JuntraColors.gold,
                   title: 'ผังดวงดาวเจ้าชะตา',
                   subtitle: 'ดวงเกิดของลูก คำนวณตามวันเวลา',
-                  onTap: () => context.go(Routes.natal),
+                  onTap: () => context.push(Routes.natal),
                 ),
                 _MenuCard(
                   icon: Icons.account_tree_outlined,
                   iconColor: JuntraColors.purpleBright,
                   title: 'ระบบสายงาน Affiliate',
                   subtitle: 'รายได้เดือนนี้ ฿4,250 · 47 คนในสายงาน',
-                  onTap: () => context.go(Routes.affiliate),
+                  onTap: () => context.push(Routes.affiliate),
                 ),
                 _MenuCard(
                   icon: Icons.bolt_outlined,
@@ -81,7 +81,7 @@ class _Header extends StatelessWidget {
       children: [
         IconButton(
           icon: const Icon(Icons.chevron_left, color: JuntraColors.gold, size: 28),
-          onPressed: () => context.go(Routes.home),
+          onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
         ),
         Expanded(child: Text('โปรไฟล์', style: baiJamjuree(size: 19))),
       ],

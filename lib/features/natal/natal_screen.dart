@@ -67,7 +67,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left, color: JuntraColors.gold, size: 28),
-            onPressed: () => context.go(Routes.profile),
+            onPressed: () => context.canPop() ? context.pop() : context.go(Routes.profile),
           ),
           Expanded(
             child: Column(

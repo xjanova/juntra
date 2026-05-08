@@ -31,7 +31,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       IconButton(
                         icon: const Icon(Icons.chevron_left,
                             color: JuntraColors.gold, size: 28),
-                        onPressed: () => context.go(Routes.home),
+                        onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
                       ),
                       Expanded(child: Text('ประวัติดูดวง', style: baiJamjuree(size: 19))),
                     ],

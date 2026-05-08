@@ -112,7 +112,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
       setState(() => _phase = _Phase.grid);
       await Future<void>.delayed(const Duration(milliseconds: 1400));
       if (!mounted) return;
-      context.go('${Routes.reading}?spread=${_spread.id}');
+      context.pushReplacement('${Routes.reading}?spread=${_spread.id}');
       return;
     }
     setState(() => _revealIdx += 1);
@@ -316,19 +316,28 @@ class _ShuffleScreenState extends State<ShuffleScreen>
     required bool picked,
     required int pickOrder,
   }) {
-    // 22 cards spread across an arc of ~80° (-40°..+40°), radius 220
-    final t = deckIndex / 21.0; // 0..1
-    final ang = (t - 0.5) * (math.pi * 0.45);
-    const radius = 200.0;
+    // 22 cards in 3 rows (8/7/7) so every card stays visible & tappable.
+    const rowSizes = [8, 7, 7];
+    var row = 0;
+    var idxInRow = deckIndex;
+    for (var i = 0; i < rowSizes.length; i++) {
+      if (idxInRow < rowSizes[i]) { row = i; break; }
+      idxInRow -= rowSizes[i];
+    }
+    final rowCount = rowSizes[row];
+
+    final t = rowCount == 1 ? 0.5 : idxInRow / (rowCount - 1.0);
+    final ang = (t - 0.5) * (math.pi * 0.32);
+    const radius = 280.0;
     final cx = constraints.maxWidth / 2;
-    final cy = constraints.maxHeight * 0.6;
+    final cy = 65.0 + row * 92.0;
     final x = cx + math.sin(ang) * radius;
-    final y = cy - math.cos(ang) * radius * 0.5;
+    final y = cy + (1 - math.cos(ang)) * 30;
     final rot = ang;
 
     return Positioned(
       left: x - 36,
-      top: y - 30 + (picked ? -38 : 0),
+      top: y - 30 + (picked ? -22 : 0),
       child: GestureDetector(
         onTap: () => _onPickCard(deckIndex),
         child: AnimatedScale(

@@ -310,7 +310,7 @@ class _CategoriesGrid extends StatelessWidget {
         final c = fortuneCategories[i];
         return InkWell(
           borderRadius: BorderRadius.circular(JuntraRadius.card),
-          onTap: () => context.go('${Routes.spreads}?category=${c.id}'),
+          onTap: () => context.push('${Routes.spreads}?category=${c.id}'),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -424,7 +424,7 @@ class _MaeMorOnlineCard extends StatelessWidget {
             ),
           ),
           InkWell(
-            onTap: () => context.go(Routes.chat),
+            onTap: () => context.push(Routes.chat),
             borderRadius: BorderRadius.circular(10),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -461,7 +461,7 @@ class _RecentReadingTile extends StatelessWidget {
     final cat = fortuneCategories.firstWhere((c) => c.id == category,
         orElse: () => fortuneCategories.last);
     return InkWell(
-      onTap: () => context.go(Routes.reading),
+      onTap: () => context.push(Routes.reading),
       borderRadius: BorderRadius.circular(JuntraRadius.card),
       child: Container(
         padding: const EdgeInsets.all(12),
