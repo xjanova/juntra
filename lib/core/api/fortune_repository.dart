@@ -3,52 +3,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_client.dart';
 import 'endpoints.dart';
 
-/// Thin wrapper around the /v1/fortune/* endpoints.
+/// Reading history — wraps `/v1/history/readings*`.
 ///
-/// Backed by the Laravel `FortuneAIService` pool — see
-/// `backend-patches/juntra/` for the controllers this calls.
+/// AI generation itself happens through the existing web flow (the
+/// shuffle-and-reveal screens currently render results client-side from
+/// the local TAROT_DECK; persisting them to the user's history is a
+/// future endpoint). This repository is the read-side surface for the
+/// History tab on the home screen and the dedicated `/history` route.
+///
+/// Credits / wallet balance live in [WalletRepository] now — the legacy
+/// `/v1/fortune/credits` shape was retired when juntraweb consolidated
+/// pricing under the wallet API.
 class FortuneRepository {
   FortuneRepository(this._api);
   final ApiClient _api;
 
-  Future<Map<String, dynamic>> categories() async {
-    return _api.get<Map<String, dynamic>>(Api.fortuneCategories);
-  }
-
-  Future<Map<String, dynamic>> spreads() async {
-    return _api.get<Map<String, dynamic>>(Api.fortuneSpreads);
-  }
-
-  Future<Map<String, dynamic>> credits() async {
-    return _api.get<Map<String, dynamic>>(Api.fortuneCredits);
-  }
-
-  Future<Map<String, dynamic>> history({int perPage = 20}) async {
+  /// List the user's recent readings.
+  /// Returns `{data: List, meta: {next_cursor}}`.
+  Future<Map<String, dynamic>> history({int limit = 20, String? cursor, String? type}) async {
     return _api.get<Map<String, dynamic>>(
-      Api.fortuneHistory,
-      query: {'per_page': perPage},
+      Api.historyReadings,
+      query: {
+        'limit': limit,
+        if (cursor != null) 'cursor': cursor,
+        if (type != null) 'type': type,
+      },
     );
   }
 
-  /// Begin a session: deduct credits + receive picked cards.
-  /// Returns: { reading_id, cards: [{tarot_id, position, reversed}], requires_payment, price }
-  Future<Map<String, dynamic>> draw({
-    required String spread,
-    String? category,
-    String? question,
-  }) async {
-    return _api.post<Map<String, dynamic>>(Api.fortuneDraw, data: {
-      'spread': spread,
-      if (category != null) 'category': category,
-      if (question != null) 'question': question,
-    });
-  }
-
-  /// Generate AI interpretation for a previously drawn reading.
-  Future<Map<String, dynamic>> read(int readingId) async {
-    return _api.post<Map<String, dynamic>>(Api.fortuneRead, data: {
-      'reading_id': readingId,
-    });
+  /// Get a single reading with cards (for tarot) and full AI interpretation.
+  Future<Map<String, dynamic>> reading(int id) async {
+    final res = await _api.get<Map<String, dynamic>>(Api.historyReading(id));
+    final inner = res['data'];
+    return inner is Map<String, dynamic> ? inner : res;
   }
 }
 
@@ -57,13 +44,7 @@ final fortuneRepositoryProvider = FutureProvider<FortuneRepository>((ref) async 
   return FortuneRepository(api);
 });
 
-/// Convenience providers used across the UI.
-final fortuneCreditsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
-  final repo = await ref.watch(fortuneRepositoryProvider.future);
-  final res = await repo.credits();
-  return (res['data'] is Map<String, dynamic>) ? res['data'] as Map<String, dynamic> : res;
-});
-
+/// History list provider — used by the home screen "ดูดวงล่าสุดของลูก" section.
 final fortuneHistoryProvider = FutureProvider<List<dynamic>>((ref) async {
   final repo = await ref.watch(fortuneRepositoryProvider.future);
   final res = await repo.history();

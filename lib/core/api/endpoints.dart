@@ -1,53 +1,41 @@
-/// API endpoint constants for the Thaiprompt-Affiliate Laravel backend.
+/// API endpoint constants for the juntraweb (จันทรา.online) Laravel backend.
 ///
-/// New `/v1/fortune/*` and `/v1/chat/*` endpoints are added by the backend
-/// patch that ships alongside this app (`backend-patches/juntra/`).
+/// Routes registered under `/api/v1/*` in juntraweb's routes/api.php.
+/// Auth is Sanctum bearer token. The Flutter app obtains the token via
+/// /auth/login, stores it in flutter_secure_storage, and the [ApiClient]
+/// interceptor attaches it as Authorization: Bearer <token> on every
+/// authenticated request. A 401 response auto-clears the stored token
+/// so a server-side revocation can't leave the app wedged.
+///
+/// AI calls are NOT made directly — juntraweb proxies them to the
+/// Thaiprompt-Affiliate API-key pool. The Flutter app only ever speaks
+/// to juntraweb (CLAUDE.md hard rule #2: app holds no AI provider keys).
 class Api {
   Api._();
 
+  // ─── Public ──────────────────────────────────────────────────
+  static const appHealth = '/v1/app/health';
+
   // ─── Auth (Sanctum) ──────────────────────────────────────────
-  static const login = '/v1/login';
-  static const register = '/v1/register';
-  static const logout = '/v1/logout';
-  static const me = '/v1/me';
+  static const authLogin    = '/v1/auth/login';
+  static const authRegister = '/v1/auth/register';
+  static const authMe       = '/v1/auth/me';
+  static const authLogout   = '/v1/auth/logout';
 
-  // ─── Profile + birth data ────────────────────────────────────
-  static const profile = '/v1/profile';
-  static const birthData = '/v1/profile/birth-data';
-  static const referralCode = '/v1/profile/referral-code';
-
-  // ─── Fortune (NEW — Juntra mobile API) ───────────────────────
-  static const fortuneCategories = '/v1/fortune/categories';
-  static const fortuneSpreads = '/v1/fortune/spreads';
-  static const fortuneDraw = '/v1/fortune/draw';        // POST start session
-  static const fortuneRead = '/v1/fortune/read';        // POST AI interpret
-  static const fortuneHistory = '/v1/fortune/history';
-  static const fortuneCredits = '/v1/fortune/credits';
-  static String fortuneReading(dynamic id) => '/v1/fortune/readings/$id';
+  // ─── Wallet ─────────────────────────────────────────────────
+  static const wallet               = '/v1/wallet';
+  static const walletTransactions   = '/v1/wallet/transactions';
+  static const walletTopupPromptpay = '/v1/wallet/topup/promptpay';
+  static String walletTopup(int id) => '/v1/wallet/topup/$id';
 
   // ─── Mae Mor AI Chat ─────────────────────────────────────────
-  static const chatStart = '/v1/chat/mae-mor/start';
-  static const chatSend = '/v1/chat/mae-mor/send';
-  static String chatSession(dynamic id) => '/v1/chat/mae-mor/sessions/$id';
+  static const chatConversations = '/v1/chat/conversations';
+  static String chatConversation(int id) => '/v1/chat/conversations/$id';
+  static String chatSend(int id) => '/v1/chat/conversations/$id/send';
 
-  // ─── Natal chart (server-side using Swiss Ephemeris) ─────────
-  static const natalCompute = '/v1/natal/compute';
-  static const natalDailyTransit = '/v1/natal/daily-transit';
-
-  // ─── Payment (PromptPay / TrueMoney / Card) ──────────────────
-  static const paymentMethods = '/v1/payment/methods';
-  static const paymentInitiate = '/v1/payment/initiate';
-  static String paymentStatus(dynamic id) => '/v1/payment/$id/status';
-
-  // ─── Affiliate (MLM downline) ────────────────────────────────
-  static const affiliateDashboard = '/v1/affiliate/dashboard';
-  static const affiliateDownline = '/v1/affiliate/downline';
-  static const affiliateCommissions = '/v1/affiliate/commissions';
-  static const affiliateLink = '/v1/affiliate/link';
-
-  // ─── App control ────────────────────────────────────────────
-  static const appConfig = '/v1/app/config';
-  static const appBanners = '/v1/app/banners';
+  // ─── Reading history (tarot / numerology / palmistry / auspicious) ─
+  static const historyReadings = '/v1/history/readings';
+  static String historyReading(int id) => '/v1/history/readings/$id';
 
   // ─── Auto-update (internal — never shown to user) ───────────
   /// GitHub Releases API. Called directly from [UpdateService].

@@ -3,31 +3,58 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_client.dart';
 import 'endpoints.dart';
 
-/// Mae Mor Chantra AI chat — wraps /v1/chat/mae-mor/*.
+/// Mae Mor Chantra AI chat — wraps /v1/chat/conversations*.
+///
+/// New conversation flow (juntraweb-side):
+///   1. POST /v1/chat/conversations          → returns {conversation, balance, cost}
+///   2. POST /v1/chat/conversations/{id}/send {message} → {reply, balance, cost}
+///   3. GET  /v1/chat/conversations          → list past conversations
+///   4. GET  /v1/chat/conversations/{id}     → get full message history
+///
+/// All AI calls happen server-side; juntra mobile app holds NO AI keys.
 class ChatRepository {
   ChatRepository(this._api);
   final ApiClient _api;
 
-  /// Returns: { session_id, greeting }
-  Future<Map<String, dynamic>> startSession() async {
-    final res = await _api.post<Map<String, dynamic>>(Api.chatStart);
-    return (res['data'] is Map<String, dynamic>)
-        ? res['data'] as Map<String, dynamic>
-        : res;
+  /// Start a new conversation. Returns:
+  ///   { conversation: {id, title, messages:[{role, content, ...}]},
+  ///     balance: float, cost: float }
+  Future<Map<String, dynamic>> startConversation() async {
+    final res = await _api.post<Map<String, dynamic>>(Api.chatConversations);
+    return _data(res);
   }
 
-  /// Returns: { session_id, reply, ai_provider }
+  /// List the user's recent conversations (max 50).
+  Future<List<Map<String, dynamic>>> listConversations() async {
+    final res = await _api.get<Map<String, dynamic>>(Api.chatConversations);
+    final list = (res['data'] as List?) ?? const [];
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Fetch a full conversation by id (includes all messages).
+  Future<Map<String, dynamic>> getConversation(int id) async {
+    final res = await _api.get<Map<String, dynamic>>(Api.chatConversation(id));
+    return _data(res);
+  }
+
+  /// Send a user message. Returns:
+  ///   { message: {id, role, content, created_at}, reply, balance, cost }
+  /// On 402 (insufficient funds) the [ApiException] is rethrown — the chat
+  /// screen catches statusCode==402 to deep-link the user to the wallet.
   Future<Map<String, dynamic>> send({
-    required String sessionId,
+    required int conversationId,
     required String text,
   }) async {
-    final res = await _api.post<Map<String, dynamic>>(Api.chatSend, data: {
-      'session_id': sessionId,
-      'text': text,
-    });
-    return (res['data'] is Map<String, dynamic>)
-        ? res['data'] as Map<String, dynamic>
-        : res;
+    final res = await _api.post<Map<String, dynamic>>(
+      Api.chatSend(conversationId),
+      data: {'message': text},
+    );
+    return _data(res);
+  }
+
+  Map<String, dynamic> _data(Map<String, dynamic> res) {
+    final inner = res['data'];
+    return inner is Map<String, dynamic> ? inner : res;
   }
 }
 

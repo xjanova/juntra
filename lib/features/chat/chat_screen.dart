@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/api_exceptions.dart';
 import '../../core/api/chat_repository.dart';
+import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
 /// Screen 7 — Mae Mor AI chat.
@@ -28,7 +30,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scroll = ScrollController();
   final _messages = <_Msg>[];
   bool _typing = false;
-  String? _sessionId;
+  int? _conversationId;
   bool _starting = true;
 
   @override
@@ -45,14 +47,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _startSession() async {
+    // Guests can't start a server-side conversation — bounce to /login.
+    final auth = ref.read(authControllerProvider);
+    if (auth is AuthGuest) {
+      if (!mounted) return;
+      setState(() => _starting = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go(Routes.login);
+      });
+      return;
+    }
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final res = await repo.startSession();
+      final res = await repo.startConversation();
       if (!mounted) return;
+      final convo = (res['conversation'] as Map?) ?? const {};
+      _conversationId = (convo['id'] as num?)?.toInt();
+      final msgs = (convo['messages'] as List?) ?? const [];
       setState(() {
-        _sessionId = res['session_id']?.toString();
-        _messages.add(_Msg.bot(res['greeting']?.toString()
-            ?? 'สวัสดีค่ะลูก แม่หมอจันทราอยู่ตรงนี้แล้ว'));
+        _messages.clear();
+        for (final m in msgs.cast<Map>()) {
+          _messages.add((m['role'] == 'assistant')
+              ? _Msg.bot(m['content']?.toString() ?? '')
+              : _Msg.user(m['content']?.toString() ?? ''));
+        }
+        if (_messages.isEmpty) {
+          _messages.add(_Msg.bot('สวัสดีค่ะลูก แม่หมอจันทราอยู่ตรงนี้แล้ว'));
+        }
         _starting = false;
       });
     } catch (_) {
@@ -78,13 +99,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     String reply;
     try {
-      if (_sessionId == null) {
+      if (_conversationId == null) {
         await _startSession();
       }
-      if (_sessionId == null) throw StateError('no session');
+      if (_conversationId == null) throw StateError('no conversation');
       final repo = await ref.read(chatRepositoryProvider.future);
-      final res = await repo.send(sessionId: _sessionId!, text: text);
+      final res = await repo.send(conversationId: _conversationId!, text: text);
       reply = res['reply']?.toString().trim() ?? _gracefulFallback();
+      // Backend echoes balance + cost on every send — sync the auth state's
+      // cached balance so the home screen's stat row updates without a
+      // round-trip to /me.
+      if (res['balance'] is num) {
+        ref.read(authControllerProvider.notifier).refresh();
+      }
+    } on ApiException catch (e) {
+      if (e.statusCode == 402) {
+        // Insufficient credit — surface the message and offer a tap-to-topup.
+        if (!mounted) return;
+        setState(() {
+          _typing = false;
+          _messages.add(_Msg.bot(e.message));
+        });
+        _scrollToEnd();
+        _showInsufficientFundsSheet(e.message);
+        return;
+      }
+      reply = e.statusCode == 401
+          ? 'session หมดอายุ — กรุณาเข้าสู่ระบบใหม่'
+          : _gracefulFallback();
     } catch (_) {
       reply = _gracefulFallback();
     }
@@ -95,6 +137,69 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _messages.add(_Msg.bot(reply));
     });
     _scrollToEnd();
+  }
+
+  Future<void> _showInsufficientFundsSheet(String message) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: JuntraColors.bgPurpleDeep,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: JuntraColors.gold.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('เครดิตไม่พอ', style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+              const SizedBox(height: 8),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13, color: JuntraColors.textLavender, height: 1.5,
+                  )),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: JuntraColors.gold,
+                    foregroundColor: JuntraColors.bgPurpleDeep,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(sheetCtx).pop();
+                    context.push(Routes.wallet);
+                  },
+                  child: const Text('ไปหน้าเติมเครดิต',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () => Navigator.of(sheetCtx).pop(),
+                child: const Text('ปิด',
+                    style: TextStyle(color: JuntraColors.textFaint)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _scrollToEnd() {

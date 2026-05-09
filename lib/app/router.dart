@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/affiliate/affiliate_screen.dart';
+import '../features/auth/login_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
@@ -14,6 +15,7 @@ import '../features/share/share_screen.dart';
 import '../features/shuffle/shuffle_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/spreads/spreads_screen.dart';
+import '../features/wallet/wallet_screen.dart';
 
 /// Root navigator key — required by [UpdateObserver] so the update dialog
 /// can attach to a Navigator that exists ABOVE the router builder. See
@@ -36,6 +38,8 @@ class Routes {
   static const natal = '/natal';
   static const affiliate = '/affiliate';
   static const share = '/share';
+  static const login = '/login';
+  static const wallet = '/wallet';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -78,6 +82,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.natal, builder: (c, s) => const NatalScreen()),
       GoRoute(path: Routes.affiliate, builder: (c, s) => const AffiliateScreen()),
       GoRoute(path: Routes.share, builder: (c, s) => const ShareScreen()),
+      GoRoute(path: Routes.login, builder: (c, s) => const LoginScreen()),
+      GoRoute(path: Routes.wallet, builder: (c, s) => const WalletScreen()),
     ],
   );
 });

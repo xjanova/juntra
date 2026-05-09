@@ -7,13 +7,18 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import 'api_exceptions.dart';
 
-/// Base URL for the Thaiprompt-Affiliate Laravel backend.
+/// Base URL for the juntraweb (จันทรา.online) Laravel backend.
 ///
-/// Override at build time:
-///   flutter build apk --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+/// All chat / wallet / membership / history flows go through juntraweb,
+/// which in turn proxies AI calls to the Thaiprompt-Affiliate API pool
+/// (juntra app holds NO upstream AI keys — see CLAUDE.md hard rule #2).
+///
+/// Override at build time, e.g. for staging or a local Laragon dev:
+///   flutter build apk --dart-define=JUNTRA_API_BASE=https://จันทรา.online/api
+///   flutter run --dart-define=JUNTRA_API_BASE=http://10.0.2.2:8000/api
 const String _kApiBase = String.fromEnvironment(
   'JUNTRA_API_BASE',
-  defaultValue: 'https://main.thaiprompt.online/api',
+  defaultValue: 'https://จันทรา.online/api',
 );
 
 /// Token storage key — same scheme as thaipromptapp so we could share
