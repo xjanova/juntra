@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'app/app.dart';
+import 'core/sound/sound_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +33,12 @@ void main() async {
     systemNavigationBarColor: Color(0xFF000000),
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+
+  // Pre-load mystical SFX (shuffle / pick / reveal / complete) so the first
+  // tap in the cinematic shuffle plays without a load-stutter. Async, fire
+  // and forget — SoundService.play() no-ops gracefully if init isn't done
+  // yet, so we don't block first paint on the audio backend.
+  unawaited(SoundService.instance.init());
 
   runApp(const ProviderScope(child: JuntraApp()));
 }

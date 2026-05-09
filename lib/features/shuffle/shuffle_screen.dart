@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/sound/sound_service.dart';
 import '../../shared/data/spreads.dart';
 import '../../shared/data/tarot_deck.dart';
 import '../../shared/widgets/gold_button.dart';
@@ -16,7 +17,7 @@ import '../../shared/widgets/tarot_card_widgets.dart';
 /// Phases:
 ///   1. Question — user sets intention
 ///   2. Shuffle — face-down cards swirl in center for ~2s
-///   3. Fan — 22 majors fanned (3-row arc), user taps to pick
+///   3. Fan — full 78-card deck fanned (scrollable arc rows), user taps to pick
 ///   4. Travel — selected cards fly to center stack
 ///   5. Reveal — one card at a time, 3D Y-flip with gold rays + spotlight
 ///   6. Grid (final) — cards arranged in spread layout, then routes to /reading
@@ -76,6 +77,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
     if (_phase != _Phase.question) return;
     setState(() => _phase = _Phase.shuffle);
     HapticFeedback.mediumImpact();
+    SoundService.instance.shuffle();
     _shuffleCtrl.forward(from: 0);
     await Future<void>.delayed(const Duration(milliseconds: 2200));
     if (!mounted) return;
@@ -85,6 +87,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
   void _onPickCard(int deckIndex) {
     if (_picked.contains(deckIndex) || _picked.length >= _spread.cards) return;
     HapticFeedback.lightImpact();
+    SoundService.instance.cardPick();
     setState(() => _picked.add(deckIndex));
     if (_picked.length == _spread.cards) {
       _enterTravel();
@@ -101,6 +104,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
       _phase = _Phase.reveal;
       _revealIdx = 0;
     });
+    SoundService.instance.reveal();
     await _revealCtrl.forward(from: 0);
   }
 
@@ -109,6 +113,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
     // animation that is still running.
     if (_revealCtrl.isAnimating) return;
     if (_revealIdx + 1 >= _picked.length) {
+      SoundService.instance.complete();
       setState(() => _phase = _Phase.grid);
       await Future<void>.delayed(const Duration(milliseconds: 1400));
       if (!mounted) return;
@@ -116,6 +121,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
       return;
     }
     setState(() => _revealIdx += 1);
+    SoundService.instance.reveal();
     await _revealCtrl.forward(from: 0);
     if (!mounted) return; // controller may complete after pop
   }
@@ -267,7 +273,20 @@ class _ShuffleScreenState extends State<ShuffleScreen>
   }
 
   // ─── Phase 3: Fan ───────────────────────────────────────────
+  // Full 78-card layout: 10 rows of 8 (last row 6) so every card stays
+  // tappable. Total stack height ~830px exceeds any phone viewport, so the
+  // area is wrapped in a SingleChildScrollView — the seeker scrolls down to
+  // browse the rest of the deck.
+  static const _fanRowSizes = [8, 8, 8, 8, 8, 8, 8, 8, 8, 6]; // sums to 78
+  static const _fanRowSpacing = 78.0;
+  static const _fanRowTopOffset = 60.0;
+  static const _fanCardW = 60.0;
+  static const _fanCardH = 98.0;
+
   Widget _buildFanPhase() {
+    final stackHeight = _fanRowTopOffset
+        + _fanRowSpacing * _fanRowSizes.length
+        + _fanCardH; // tail room so the last row isn't clipped
     return Column(
       key: const ValueKey('f'),
       children: [
@@ -276,32 +295,40 @@ class _ShuffleScreenState extends State<ShuffleScreen>
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
-              Text('เลือกไพ่ ${_spread.cards} ใบ',
-                  style: baiJamjuree(size: 22)),
+              Text('เลือกไพ่ ${_spread.cards} ใบจากสำรับเต็ม 78 ใบ',
+                  style: baiJamjuree(size: 20)),
               const SizedBox(height: 6),
               const Text(
-                'แตะไพ่ที่หัวใจดึงดูดให้ลูก ไม่ต้องคิดเยอะ',
+                'แตะไพ่ที่หัวใจดึงดูดให้ลูก · เลื่อนลงเพื่อดูเพิ่ม',
                 style: TextStyle(fontSize: 12, color: JuntraColors.textMuted),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
         Expanded(
           child: LayoutBuilder(
             builder: (_, constraints) {
-              return Stack(
-                alignment: Alignment.topCenter,
-                children: List.generate(22, (deckIndex) {
-                  final picked = _picked.contains(deckIndex);
-                  final pickOrder = picked ? _picked.indexOf(deckIndex) + 1 : 0;
-                  return _buildFanCard(
-                    deckIndex: deckIndex,
-                    constraints: constraints,
-                    picked: picked,
-                    pickOrder: pickOrder,
-                  );
-                }),
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: SizedBox(
+                  height: stackHeight,
+                  child: Stack(
+                    alignment: Alignment.topCenter,
+                    clipBehavior: Clip.none,
+                    children: List.generate(78, (deckIndex) {
+                      final picked = _picked.contains(deckIndex);
+                      final pickOrder =
+                          picked ? _picked.indexOf(deckIndex) + 1 : 0;
+                      return _buildFanCard(
+                        deckIndex: deckIndex,
+                        constraints: constraints,
+                        picked: picked,
+                        pickOrder: pickOrder,
+                      );
+                    }),
+                  ),
+                ),
               );
             },
           ),
@@ -316,27 +343,25 @@ class _ShuffleScreenState extends State<ShuffleScreen>
     required bool picked,
     required int pickOrder,
   }) {
-    // 22 cards in 3 rows (8/7/7) so every card stays visible & tappable.
-    const rowSizes = [8, 7, 7];
     var row = 0;
     var idxInRow = deckIndex;
-    for (var i = 0; i < rowSizes.length; i++) {
-      if (idxInRow < rowSizes[i]) { row = i; break; }
-      idxInRow -= rowSizes[i];
+    for (var i = 0; i < _fanRowSizes.length; i++) {
+      if (idxInRow < _fanRowSizes[i]) { row = i; break; }
+      idxInRow -= _fanRowSizes[i];
     }
-    final rowCount = rowSizes[row];
+    final rowCount = _fanRowSizes[row];
 
     final t = rowCount == 1 ? 0.5 : idxInRow / (rowCount - 1.0);
     final ang = (t - 0.5) * (math.pi * 0.32);
     const radius = 280.0;
     final cx = constraints.maxWidth / 2;
-    final cy = 65.0 + row * 92.0;
+    final cy = _fanRowTopOffset + row * _fanRowSpacing;
     final x = cx + math.sin(ang) * radius;
     final y = cy + (1 - math.cos(ang)) * 30;
     final rot = ang;
 
     return Positioned(
-      left: x - 36,
+      left: x - _fanCardW / 2,
       top: y - 30 + (picked ? -22 : 0),
       child: GestureDetector(
         onTap: () => _onPickCard(deckIndex),
@@ -350,7 +375,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
               children: [
                 Opacity(
                   opacity: picked ? 1.0 : 0.95,
-                  child: const CardBack(width: 72, height: 116),
+                  child: const CardBack(width: _fanCardW, height: _fanCardH),
                 ),
                 if (picked)
                   Positioned(

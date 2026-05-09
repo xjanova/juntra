@@ -75,3 +75,4 @@ dist/
 *.pyc
 *.swp
 KEYSTORE_INFO.md
+KEYSTORE_BASE64.txt
