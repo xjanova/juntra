@@ -1,15 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../shared/data/tarot_deck.dart';
 import 'api_client.dart';
 import 'endpoints.dart';
 
 /// Reading history — wraps `/v1/history/readings*`.
 ///
-/// AI generation itself happens through the existing web flow (the
-/// shuffle-and-reveal screens currently render results client-side from
-/// the local TAROT_DECK; persisting them to the user's history is a
-/// future endpoint). This repository is the read-side surface for the
-/// History tab on the home screen and the dedicated `/history` route.
+/// The shuffle-and-reveal cinematic happens client-side (it's the brand's
+/// signature interaction), then [createTarotReading] hands the picked
+/// cards to the backend which:
+///   1. Debits the user's wallet (412 / 402 on insufficient balance)
+///   2. Persists a Reading row + tarot_reading_cards
+///   3. Calls FortuneAiService to generate the AI interpretation
+///   4. Returns the full reading payload — same shape as [reading]
 ///
 /// Credits / wallet balance live in [WalletRepository] now — the legacy
 /// `/v1/fortune/credits` shape was retired when juntraweb consolidated
@@ -37,6 +40,58 @@ class FortuneRepository {
     final inner = res['data'];
     return inner is Map<String, dynamic> ? inner : res;
   }
+
+  /// Persist a freshly-completed mobile tarot reading. The Flutter
+  /// shuffle screen calls this once the user has revealed all picked
+  /// cards; on success it routes to /reading?id=<returned id>.
+  ///
+  /// [type] — 'tarot_three' (3 cards) or 'tarot_celtic' (10 cards).
+  /// [question] — optional intention text from Phase 1 of shuffle.
+  /// [picks] — the picked TarotCards in pick order. Each card maps to
+  /// its server-side slug via [TarotCard.slug]; reversed flag is chosen
+  /// client-side at reveal time and passed through.
+  ///
+  /// Returns the same shape as [reading], merged with `balance` + `cost`
+  /// so the caller can update the home greeting / wallet pill without
+  /// a second /auth/me round-trip.
+  ///
+  /// Throws [ApiException] with statusCode:
+  ///   - 402 → insufficient_funds (caller should route to /wallet)
+  ///   - 422 → validation (bad slug, wrong pick count)
+  ///   - 503 → reading_failed; wallet was refunded automatically
+  Future<Map<String, dynamic>> createTarotReading({
+    required String type,
+    String? question,
+    required List<TarotPick> picks,
+  }) async {
+    final res = await _api.post<Map<String, dynamic>>(
+      Api.historyReadings,
+      data: {
+        'type': type,
+        if (question != null && question.trim().isNotEmpty) 'question': question.trim(),
+        'picks': picks.map((p) => {
+          'slug': p.card.slug,
+          'reversed': p.reversed,
+        }).toList(),
+      },
+    );
+    final inner = res['data'];
+    final reading = inner is Map<String, dynamic> ? inner : res;
+    return {
+      ...reading,
+      if (res['balance'] != null) 'balance': res['balance'],
+      if (res['cost'] != null) 'cost': res['cost'],
+    };
+  }
+}
+
+/// Container for a single client-side pick — the local TarotCard plus
+/// the reversed orientation flipped at reveal time. The repository maps
+/// these to the wire payload (`{slug, reversed}`).
+class TarotPick {
+  const TarotPick({required this.card, this.reversed = false});
+  final TarotCard card;
+  final bool reversed;
 }
 
 final fortuneRepositoryProvider = FutureProvider<FortuneRepository>((ref) async {
@@ -49,4 +104,10 @@ final fortuneHistoryProvider = FutureProvider<List<dynamic>>((ref) async {
   final repo = await ref.watch(fortuneRepositoryProvider.future);
   final res = await repo.history();
   return (res['data'] is List) ? res['data'] as List : const [];
+});
+
+/// Single reading detail — keyed by id so multiple opens don't collide.
+final readingDetailProvider = FutureProvider.family<Map<String, dynamic>, int>((ref, id) async {
+  final repo = await ref.watch(fortuneRepositoryProvider.future);
+  return repo.reading(id);
 });

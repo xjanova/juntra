@@ -19,6 +19,27 @@ class TarotCard {
   final String meaning;    // Short upright meaning (Thai)
   final String element;    // Astrological glyph / suit symbol
   final String symbol;     // Roman numeral or court letter
+
+  /// Stable backend slug — matches the `slug` column on the server's
+  /// `tarot_cards` table (see TarotCardSeeder.php). Used as the wire
+  /// identifier when persisting a reading via POST /v1/history/readings
+  /// so the client doesn't have to know the server-side DB ids.
+  ///
+  /// Derivation rules (kept in sync with the seeder slugs):
+  ///   - Strip a leading "The " article ("The Fool" → "fool")
+  ///   - Lowercase + replace spaces with hyphens
+  ///
+  /// Examples:
+  ///   "The Fool"            → "fool"
+  ///   "The High Priestess"  → "high-priestess"
+  ///   "Wheel of Fortune"    → "wheel-of-fortune"
+  ///   "Ace of Cups"         → "ace-of-cups"
+  ///   "Page of Pentacles"   → "page-of-pentacles"
+  String get slug {
+    var s = name;
+    if (s.startsWith('The ')) s = s.substring(4);
+    return s.toLowerCase().replaceAll(' ', '-');
+  }
 }
 
 const tarotDeck = <TarotCard>[

@@ -65,9 +65,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.reading,
-        builder: (c, s) => ReadingScreen(
-          spreadId: s.uri.queryParameters['spread'] ?? '3card',
-        ),
+        builder: (c, s) {
+          // After-shuffle path: `?id=<readingId>` → fetch from API.
+          // Unsupported-spread / direct nav path: `?spread=<id>` →
+          // legacy hand-rolled sample reading. ReadingScreen branches
+          // internally based on which is present.
+          final idStr = s.uri.queryParameters['id'];
+          final id = idStr == null ? null : int.tryParse(idStr);
+          return ReadingScreen(
+            readingId: id,
+            spreadId: id == null
+                ? (s.uri.queryParameters['spread'] ?? '3card')
+                : null,
+          );
+        },
       ),
       GoRoute(
         path: Routes.payment,

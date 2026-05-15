@@ -1,10 +1,14 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/api_exceptions.dart';
+import '../../core/api/fortune_repository.dart';
+import '../../core/auth/auth_state.dart';
 import '../../core/sound/sound_service.dart';
 import '../../shared/data/spreads.dart';
 import '../../shared/data/tarot_deck.dart';
@@ -20,12 +24,20 @@ import '../../shared/widgets/tarot_card_widgets.dart';
 ///   3. Fan — full 78-card deck fanned (scrollable arc rows), user taps to pick
 ///   4. Travel — selected cards fly to center stack
 ///   5. Reveal — one card at a time, 3D Y-flip with gold rays + spotlight
-///   6. Grid (final) — cards arranged in spread layout, then routes to /reading
+///   6. Grid — cards arranged in spread layout (brief landing)
+///   7. Saving — POST /v1/history/readings, debits wallet, AI interprets
 ///
 /// This is the brand's signature interaction. Implementation favors
 /// FAITHFUL TIMING and FEEL over micro-pixel parity with the React proto:
 ///   shuffle: 2000ms · travel: 800ms+80ms stagger · reveal: 2500ms each
-class ShuffleScreen extends StatefulWidget {
+///
+/// For the **3-card** and **Celtic Cross** spreads the final action sends
+/// the picked cards (with random reversed flags) to juntraweb which
+/// debits the wallet, runs FortuneAiService, and returns a persisted
+/// Reading id — we then `pushReplacement('/reading?id=<id>')`. For all
+/// other (not-yet-supported on backend) spreads we fall back to the
+/// legacy client-side sample reading so the cinematic still completes.
+class ShuffleScreen extends ConsumerStatefulWidget {
   const ShuffleScreen({
     super.key, required this.spreadId, this.categoryId,
   });
@@ -33,17 +45,21 @@ class ShuffleScreen extends StatefulWidget {
   final String? categoryId;
 
   @override
-  State<ShuffleScreen> createState() => _ShuffleScreenState();
+  ConsumerState<ShuffleScreen> createState() => _ShuffleScreenState();
 }
 
-enum _Phase { question, shuffle, fan, travel, reveal, grid }
+enum _Phase { question, shuffle, fan, travel, reveal, grid, saving }
 
-class _ShuffleScreenState extends State<ShuffleScreen>
+class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     with TickerProviderStateMixin {
   _Phase _phase = _Phase.question;
   // Captured for telemetry — sent with /v1/fortune/draw payload later.
-  String _question = ''; // ignore: unused_field
+  String _question = '';
   final _picked = <int>[];
+  // Reversed flag per pick, decided at reveal time. Stable RNG seeded
+  // with picks order + DateTime micro so two consecutive readings of
+  // the same spread don't produce identical orientations.
+  final _reversed = <bool>[];
   int _revealIdx = 0;
   late final Spread _spread = spreads.firstWhere(
     (s) => s.id == widget.spreadId,
@@ -88,7 +104,15 @@ class _ShuffleScreenState extends State<ShuffleScreen>
     if (_picked.contains(deckIndex) || _picked.length >= _spread.cards) return;
     HapticFeedback.lightImpact();
     SoundService.instance.cardPick();
-    setState(() => _picked.add(deckIndex));
+    // Roll reversed orientation now so the reveal flip animation already
+    // knows which way to land. ~30% chance reversed mirrors the rate the
+    // web tarot reading produces (random_int(0,1) on a 0/1 split with a
+    // bias against reversed for kinder readings).
+    final rng = math.Random();
+    setState(() {
+      _picked.add(deckIndex);
+      _reversed.add(rng.nextInt(10) < 3);
+    });
     if (_picked.length == _spread.cards) {
       _enterTravel();
     }
@@ -117,13 +141,251 @@ class _ShuffleScreenState extends State<ShuffleScreen>
       setState(() => _phase = _Phase.grid);
       await Future<void>.delayed(const Duration(milliseconds: 1400));
       if (!mounted) return;
-      context.pushReplacement('${Routes.reading}?spread=${_spread.id}');
+      await _finalize();
       return;
     }
     setState(() => _revealIdx += 1);
     SoundService.instance.reveal();
     await _revealCtrl.forward(from: 0);
     if (!mounted) return; // controller may complete after pop
+  }
+
+  /// Persist the completed reading on supported spreads, otherwise fall
+  /// through to the legacy client-side sample renderer so cinematics on
+  /// not-yet-wired spreads (love, year, horseshoe, yes-no) still close
+  /// cleanly. This is the ONLY path that leaves /shuffle for /reading.
+  Future<void> _finalize() async {
+    final backendType = _backendTypeFor(_spread.id);
+    if (backendType == null) {
+      // Unsupported spread → keep old behaviour (sample reading screen).
+      context.pushReplacement('${Routes.reading}?spread=${_spread.id}');
+      return;
+    }
+
+    // Guests must sign in before we can debit a wallet. Preserve the
+    // shuffle progress mentally by bouncing through /login → user
+    // returns and reshuffles. (We could persist state across the
+    // round-trip; not worth the complexity for v1.)
+    final auth = ref.read(authControllerProvider);
+    if (auth is! AuthAuthenticated) {
+      _showLoginNeededSheet();
+      return;
+    }
+
+    setState(() => _phase = _Phase.saving);
+
+    try {
+      final repo = await ref.read(fortuneRepositoryProvider.future);
+      final picks = <TarotPick>[
+        for (var i = 0; i < _picked.length; i++)
+          TarotPick(
+            card: tarotDeck[_picked[i]],
+            reversed: i < _reversed.length ? _reversed[i] : false,
+          ),
+      ];
+      final reading = await repo.createTarotReading(
+        type: backendType,
+        question: _question.trim().isEmpty ? null : _question.trim(),
+        picks: picks,
+      );
+
+      // Backend echoes new wallet balance — refresh auth state so the
+      // home screen pill + chat header stay in sync without a /me hit.
+      if (reading['balance'] is num) {
+        // ignore: unawaited_futures
+        ref.read(authControllerProvider.notifier).refresh();
+      }
+      // Invalidate history list so the new reading appears at the top
+      // next time the user opens /history without us re-running a full
+      // fetch from inside the cinematic.
+      ref.invalidate(fortuneHistoryProvider);
+
+      if (!mounted) return;
+      final id = reading['id'];
+      if (id is num) {
+        context.pushReplacement('${Routes.reading}?id=${id.toInt()}');
+      } else {
+        // Saved but no id back — defensive fallback to the legacy path.
+        context.pushReplacement('${Routes.reading}?spread=${_spread.id}');
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.statusCode == 402) {
+        _showInsufficientFundsSheet(e.message);
+        return;
+      }
+      if (e.statusCode == 401) {
+        _showLoginNeededSheet();
+        return;
+      }
+      _showErrorSnack(e.message);
+      // Step back to the grid so the user can read what happened.
+      setState(() => _phase = _Phase.grid);
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnack('เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่');
+      setState(() => _phase = _Phase.grid);
+    }
+  }
+
+  /// Map a Flutter [Spread.id] to the backend reading `type`. Returns
+  /// `null` if the spread doesn't have backend support yet, in which
+  /// case the cinematic falls back to the legacy client-side renderer.
+  static String? _backendTypeFor(String spreadId) {
+    return switch (spreadId) {
+      '3card' => 'tarot_three',
+      'celtic' => 'tarot_celtic',
+      _ => null,
+    };
+  }
+
+  void _showErrorSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: JuntraColors.bgPurpleDeep,
+        content: Text(message,
+            style: const TextStyle(color: JuntraColors.textCream)),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _showInsufficientFundsSheet(String message) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: JuntraColors.bgPurpleDeep,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: JuntraColors.gold.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('เครดิตไม่พอเปิดไพ่',
+                  style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+              const SizedBox(height: 8),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13, color: JuntraColors.textLavender, height: 1.5,
+                  )),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: JuntraColors.gold,
+                    foregroundColor: JuntraColors.bgPurpleDeep,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(sheetCtx).pop();
+                    context.push(Routes.wallet);
+                  },
+                  child: const Text('ไปหน้าเติมเครดิต',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(sheetCtx).pop();
+                  if (!mounted) return;
+                  setState(() => _phase = _Phase.grid);
+                },
+                child: const Text('ปิด',
+                    style: TextStyle(color: JuntraColors.textFaint)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showLoginNeededSheet() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: JuntraColors.bgPurpleDeep,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: JuntraColors.gold.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('เข้าสู่ระบบก่อนค่ะ',
+                  style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+              const SizedBox(height: 8),
+              const Text(
+                'แม่หมอจะบันทึกผลทำนายเก็บไว้ในประวัติของลูก ลูกเข้าสู่ระบบก่อนนะคะ — เครดิตในวอลเลตจะใช้สำหรับเปิดไพ่ครั้งนี้',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13, color: JuntraColors.textLavender, height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: JuntraColors.gold,
+                    foregroundColor: JuntraColors.bgPurpleDeep,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(sheetCtx).pop();
+                    context.push(Routes.login);
+                  },
+                  child: const Text('เข้าสู่ระบบ',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(sheetCtx).pop();
+                  if (!mounted) return;
+                  setState(() => _phase = _Phase.grid);
+                },
+                child: const Text('ปิด',
+                    style: TextStyle(color: JuntraColors.textFaint)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -146,6 +408,7 @@ class _ShuffleScreenState extends State<ShuffleScreen>
                     _Phase.travel => _buildTravelPhase(),
                     _Phase.reveal => _buildRevealPhase(),
                     _Phase.grid => _buildGridPhase(),
+                    _Phase.saving => _buildSavingPhase(),
                   },
                 ),
               ],
@@ -513,6 +776,43 @@ class _ShuffleScreenState extends State<ShuffleScreen>
         children: _picked.map((i) {
           return CardFront(card: tarotDeck[i], width: 72, height: 118);
         }).toList(),
+      ),
+    );
+  }
+
+  // ─── Phase 7: Saving (POST /v1/history/readings, AI interpret) ──
+  // Spinner + reassuring copy while juntraweb debits the wallet, calls
+  // FortuneAiService (Thaiprompt pool with local AiOracle fallback), and
+  // persists the Reading row. Worst-case path: 8-12s with cold AI key.
+  Widget _buildSavingPhase() {
+    return Center(
+      key: const ValueKey('save'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 64, height: 64,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+                backgroundColor: JuntraColors.gold.withValues(alpha: 0.2),
+              ),
+            ),
+            const SizedBox(height: 28),
+            Text('แม่หมอกำลังพิจารณาไพ่ของลูก...',
+                style: baiJamjuree(size: 16, color: JuntraColors.gold)),
+            const SizedBox(height: 8),
+            const Text(
+              'รอสักครู่นะคะ · กำลังบันทึกผลทำนายและเตรียมคำอธิบาย',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12, color: JuntraColors.textMuted, height: 1.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/fortune_repository.dart';
+import '../../core/auth/auth_state.dart';
 import '../../shared/data/fortune_categories.dart';
 import '../../shared/data/tarot_deck.dart';
 import '../../shared/widgets/pill.dart';
@@ -14,11 +17,11 @@ import '../../shared/widgets/xman_studio_footer.dart';
 
 /// Screen 2 — Home. Daily card hero, daily transit reading, quick stats,
 /// fortune categories grid (2×4), Mae Mor online card, recent readings.
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final card = tarotDeck[18]; // The Moon — daily default
     // Defensive: even with locale data initialized in main(), fall back
     // to a hand-rolled Thai weekday array if anything goes sideways here
@@ -54,17 +57,7 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 18),
                 _MaeMorOnlineCard(),
                 const SizedBox(height: 18),
-                _SectionLabel('ดูดวงล่าสุดของลูก'),
-                const SizedBox(height: 10),
-                _RecentReadingTile(
-                  category: 'love', date: '2 พ.ค.', time: '14:32',
-                  preview: 'ทาโรต์ 3 ใบ ความรักของลูกกำลังก้าวจากเงาสู่แสง...',
-                ),
-                const SizedBox(height: 8),
-                _RecentReadingTile(
-                  category: 'work', date: '28 เม.ย.', time: '21:08',
-                  preview: 'ดวงการงาน เดือนนี้มีโอกาสใหม่เข้ามา ควรรีบคว้าไว้...',
-                ),
+                _RecentReadingsSection(),
                 const SizedBox(height: 24),
                 const Center(child: XmanStudioFooter()),
               ],
@@ -447,75 +440,198 @@ class _MaeMorOnlineCard extends StatelessWidget {
   }
 }
 
+/// "ดูดวงล่าสุดของลูก" — pulls the first 3 entries from
+/// [fortuneHistoryProvider]. For guests we hide the section entirely
+/// (rather than show a sign-in nag inline) since the home screen has
+/// plenty else to land on. On error / empty we show a one-line nudge to
+/// open the History tab; loading is silently elided because the home
+/// screen is already busy with the daily card hero above.
+class _RecentReadingsSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
+    if (auth is! AuthAuthenticated) {
+      return const SizedBox.shrink();
+    }
+    final async = ref.watch(fortuneHistoryProvider);
+
+    final rows = async.maybeWhen(
+      data: (list) => list,
+      orElse: () => const <dynamic>[],
+    );
+    final topThree = rows.take(3).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const _SectionLabel('ดูดวงล่าสุดของลูก'),
+            const Spacer(),
+            if (topThree.isNotEmpty)
+              InkWell(
+                onTap: () => context.push(Routes.history),
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text('ดูทั้งหมด →', style: TextStyle(
+                    fontSize: 11, color: JuntraColors.gold,
+                    fontWeight: FontWeight.w600,
+                  )),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (async.isLoading && topThree.isEmpty)
+          Container(
+            height: 64, alignment: Alignment.center,
+            child: const SizedBox(
+              width: 22, height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+              ),
+            ),
+          )
+        else if (topThree.isEmpty)
+          _emptyHint(context)
+        else
+          for (final r in topThree)
+            if (r is Map) Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _RecentReadingTile(reading: r),
+            ),
+      ],
+    );
+  }
+
+  Widget _emptyHint(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.18)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.auto_awesome,
+              color: JuntraColors.gold, size: 18),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'ยังไม่มีคำทำนาย · เริ่มเปิดไพ่ใบแรกของลูกได้เลย',
+              style: TextStyle(
+                fontSize: 12, color: JuntraColors.textMuted, height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RecentReadingTile extends StatelessWidget {
-  const _RecentReadingTile({
-    required this.category, required this.date,
-    required this.time, required this.preview,
-  });
-  final String category;
-  final String date;
-  final String time;
-  final String preview;
+  const _RecentReadingTile({required this.reading});
+  final Map reading;
+
+  static const Map<String, (String, String, Color)> _typeMeta = {
+    'tarot_three':  ('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
+    'tarot_celtic': ('เซลติกครอส',   '✧', JuntraColors.purpleBright),
+    'numerology':   ('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
+    'palmistry':    ('ดูลายมือ',     '✋', JuntraColors.gold),
+    'auspicious':   ('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
+  };
+
   @override
   Widget build(BuildContext context) {
-    final cat = fortuneCategories.firstWhere((c) => c.id == category,
-        orElse: () => fortuneCategories.last);
-    return InkWell(
-      onTap: () => context.push(Routes.reading),
-      borderRadius: BorderRadius.circular(JuntraRadius.card),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(JuntraRadius.card),
-          border: Border.all(color: cat.color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: cat.color.withValues(alpha: 0.18),
+    final type = reading['type']?.toString() ?? '';
+    final meta = _typeMeta[type] ?? ('คำทำนาย', '✦', JuntraColors.gold);
+    final id = (reading['id'] as num?)?.toInt();
+    final preview = reading['preview']?.toString() ?? '';
+    final relative = _relativeTime(reading['created_at']?.toString());
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: id == null ? null : () => context.push('${Routes.reading}?id=$id'),
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(JuntraRadius.card),
+            border: Border.all(color: meta.$3.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: meta.$3.withValues(alpha: 0.18),
+                ),
+                alignment: Alignment.center,
+                child: Text(meta.$2, style: TextStyle(
+                  fontSize: 18, color: meta.$3,
+                )),
               ),
-              alignment: Alignment.center,
-              child: Text(cat.icon, style: TextStyle(
-                fontSize: 18, color: cat.color,
-              )),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(cat.name, style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600,
-                        color: JuntraColors.textCream,
-                      )),
-                      const SizedBox(width: 6),
-                      Text('· $date $time', style: const TextStyle(
-                        fontSize: 10, color: JuntraColors.textFaint,
-                      )),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    preview,
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12, color: JuntraColors.textLavender,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(meta.$1, style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600,
+                          color: JuntraColors.textCream,
+                        )),
+                        if (relative != null) ...[
+                          const SizedBox(width: 6),
+                          Text('· $relative', style: const TextStyle(
+                            fontSize: 10, color: JuntraColors.textFaint,
+                          )),
+                        ],
+                      ],
                     ),
-                  ),
-                ],
+                    if (preview.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        preview,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12, color: JuntraColors.textLavender,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-            const Icon(Icons.chevron_right, color: JuntraColors.gold, size: 20),
-          ],
+              const Icon(Icons.chevron_right, color: JuntraColors.gold, size: 20),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  static String? _relativeTime(String? iso) {
+    if (iso == null || iso.isEmpty) return null;
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return null;
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'เมื่อสักครู่';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} นาทีก่อน';
+    if (diff.inHours < 24) return '${diff.inHours} ชั่วโมงก่อน';
+    if (diff.inDays < 7) return '${diff.inDays} วันก่อน';
+    try {
+      return DateFormat('d MMM', 'th').format(dt);
+    } catch (_) {
+      return DateFormat('d MMM').format(dt);
+    }
   }
 }
 
