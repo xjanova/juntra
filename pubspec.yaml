@@ -57,6 +57,11 @@ dependencies:
   # QR (PromptPay payment + future affiliate referral QR)
   qr_flutter: ^4.1.0
 
+  # Slip image picker — camera + gallery for native PromptPay top-up
+  # slip uploads. Pinned to 1.x so the Android EmbedderV2 quirks of 2.x
+  # don't bite. Has platform pickers; no separate iOS plugin needed.
+  image_picker: ^1.1.2
+
   # Sensory polish — haptics on card tap + bell on reveal
   vibration: ^2.0.0
   audioplayers: ^6.1.0

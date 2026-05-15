@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -15,11 +16,20 @@ import '../../shared/widgets/starry_background.dart';
 
 /// วอลเลต — credit balance, top-up start, recent transactions.
 ///
-/// Top-up flow: select amount → POST /wallet/topup/promptpay → backend
-/// returns the PromptPay receiving info + a `slip_upload_url` pointing
-/// to juntraweb's web `/wallet/topup/{tx}` page where the user uploads
-/// the slip image. We open that URL in the system browser (or in-app
-/// webview later) — same upload flow shared with the desktop site.
+/// Top-up flow:
+///   1. User taps an amount → POST /wallet/topup/promptpay returns the
+///      receiving info + a pending tx id.
+///   2. A bottom sheet shows PromptPay receiver name + ID. The user
+///      switches apps to their bank, pays externally, then returns
+///      and either:
+///         (a) taps "ถ่ายรูปสลิป" (camera via image_picker) OR
+///         (b) taps "เลือกจากแกลเลอรี" (gallery)
+///      and the picked image POSTs to /wallet/topup/{tx}/slip
+///      (multipart). On success the sheet closes and the wallet
+///      refreshes — admin approval still happens via Filament.
+///   3. Fallback: "เปิดเว็บแทน" links to the legacy `slip_upload_url`
+///      so a user on a device with broken image_picker plugins can
+///      still finish via the browser.
 class WalletScreen extends ConsumerStatefulWidget {
   const WalletScreen({super.key});
   @override
@@ -118,27 +128,61 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
   }
 
   Future<void> _startTopup(double amount) async {
+    final Map<String, dynamic> initiated;
     try {
       final repo = await ref.read(walletRepositoryProvider.future);
-      final res = await repo.startPromptPayTopup(amount: amount);
-      final url = res['slip_upload_url']?.toString();
-      if (!mounted) return;
-      if (url == null || url.isEmpty) {
-        _toast('สร้างรายการไม่สำเร็จ');
-        return;
-      }
-      final ok = await launchUrl(Uri.parse(url),
-          mode: LaunchMode.externalApplication);
-      if (!ok) {
-        _toast('เปิดหน้าเติมเงินไม่สำเร็จ — ลองอีกครั้ง');
-      } else {
-        _toast('โอนเงินตามจำนวน แล้วอัปโหลดสลิปในหน้าที่เปิดใหม่ค่ะ');
-        // Refresh after the user is likely back from the browser.
-        Future<void>.delayed(const Duration(seconds: 6), _refresh);
-      }
+      initiated = await repo.startPromptPayTopup(amount: amount);
     } on ApiException catch (e) {
-      _toast(e.message);
+      if (mounted) _toast(e.message);
+      return;
     }
+    if (!mounted) return;
+    final txMap = (initiated['transaction'] as Map?)?.cast<String, dynamic>()
+        ?? const {};
+    final txId = (txMap['id'] as num?)?.toInt();
+    if (txId == null) {
+      _toast('สร้างรายการไม่สำเร็จ — ไม่ได้รับเลขที่รายการ');
+      return;
+    }
+    await _openTopupSheet(
+      txId: txId,
+      amount: amount,
+      promptpay: (initiated['promptpay'] as Map?)?.cast<String, dynamic>()
+          ?? const {},
+      slipUploadUrl: initiated['slip_upload_url']?.toString(),
+    );
+    // After the sheet closes either with a successful upload or a
+    // dismissal, refresh so the new pending tx (or freshly-uploaded
+    // one) shows up in the recent-transactions list.
+    await _refresh();
+  }
+
+  Future<void> _openTopupSheet({
+    required int txId,
+    required double amount,
+    required Map<String, dynamic> promptpay,
+    String? slipUploadUrl,
+  }) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: JuntraColors.bgPurpleDeep,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => _TopupSheet(
+        txId: txId,
+        amount: amount,
+        promptpayId: promptpay['id']?.toString() ?? '',
+        promptpayName: promptpay['name']?.toString() ?? '',
+        webFallbackUrl: slipUploadUrl,
+        onUploaded: () {
+          if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+        },
+      ),
+    );
   }
 
   void _toast(String msg) {
@@ -265,8 +309,314 @@ class _TopupRow extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          'ระบบจะเปิดหน้าอัปโหลดสลิปในเว็บเบราว์เซอร์ · แอดมินอนุมัติภายในไม่กี่นาที',
+          'โอนตามจำนวน แล้วถ่ายรูปสลิปอัปโหลดในแอพได้เลย · แอดมินอนุมัติภายในไม่กี่นาที',
           style: TextStyle(fontSize: 11, color: JuntraColors.textFaint, height: 1.5),
+        ),
+      ],
+    );
+  }
+}
+
+/// Bottom sheet that opens after the user has picked a top-up amount.
+/// Shows PromptPay receiver info + camera/gallery pickers + a web
+/// fallback link. On a successful slip upload it calls [onUploaded]
+/// (which the parent uses to pop the sheet) so the parent's _refresh()
+/// can run with the fresh slip_path persisted server-side.
+class _TopupSheet extends ConsumerStatefulWidget {
+  const _TopupSheet({
+    required this.txId,
+    required this.amount,
+    required this.promptpayId,
+    required this.promptpayName,
+    required this.onUploaded,
+    this.webFallbackUrl,
+  });
+  final int txId;
+  final double amount;
+  final String promptpayId;
+  final String promptpayName;
+  final String? webFallbackUrl;
+  final VoidCallback onUploaded;
+
+  @override
+  ConsumerState<_TopupSheet> createState() => _TopupSheetState();
+}
+
+class _TopupSheetState extends ConsumerState<_TopupSheet> {
+  final _picker = ImagePicker();
+  bool _uploading = false;
+  String? _errorMsg;
+
+  Future<void> _pickAndUpload(ImageSource source) async {
+    if (_uploading) return;
+    setState(() => _errorMsg = null);
+
+    final XFile? picked;
+    try {
+      picked = await _picker.pickImage(
+        source: source,
+        // Slips usually need to be readable, but 1600px on the longest
+        // edge keeps file size under a few hundred KB and within the
+        // 4 MB server cap. JPEG quality 80 ditto.
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 80,
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      setState(() => _errorMsg = 'เปิดกล้อง/แกลเลอรีไม่ได้: ${e.toString()}');
+      return;
+    }
+    if (picked == null) return; // user cancelled
+
+    if (!mounted) return;
+    setState(() => _uploading = true);
+    try {
+      final repo = await ref.read(walletRepositoryProvider.future);
+      await repo.uploadTopupSlip(
+        transactionId: widget.txId,
+        filePath: picked.path,
+        fileName: picked.name,
+      );
+      // Surface success to the parent — it pops + refreshes.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('อัปโหลดสลิปสำเร็จ · แอดมินจะตรวจสอบและอนุมัติเร็วๆ นี้'),
+        backgroundColor: JuntraColors.bgPurpleDeep,
+        behavior: SnackBarBehavior.floating,
+      ));
+      widget.onUploaded();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _errorMsg = e.statusCode == 409
+            ? 'รายการนี้ดำเนินการเสร็จแล้ว ไม่สามารถอัปโหลดสลิปใหม่ได้'
+            : e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _errorMsg = 'อัปโหลดไม่สำเร็จ — กรุณาลองใหม่';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: JuntraColors.gold.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Center(
+              child: Text('เติมเครดิต ฿${widget.amount.toInt()}',
+                  style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+            ),
+            const SizedBox(height: 16),
+            _PromptPayInfoCard(
+              id: widget.promptpayId,
+              name: widget.promptpayName,
+              amount: widget.amount,
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              '1. โอนเงินผ่านแอพธนาคารของคุณตามจำนวนข้างต้น\n'
+              '2. กลับมาที่หน้านี้แล้วอัปโหลดสลิปด้านล่าง',
+              style: TextStyle(
+                fontSize: 12, color: JuntraColors.textLavender, height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_uploading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 28, height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            JuntraColors.gold),
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    Text('กำลังอัปโหลดสลิป...',
+                        style: TextStyle(
+                          fontSize: 12, color: JuntraColors.textMuted,
+                        )),
+                  ],
+                ),
+              )
+            else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: JuntraColors.gold,
+                        foregroundColor: JuntraColors.bgPurpleDeep,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('ถ่ายรูปสลิป',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      onPressed: () => _pickAndUpload(ImageSource.camera),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                            JuntraColors.purple.withValues(alpha: 0.3),
+                        foregroundColor: JuntraColors.textCream,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('แกลเลอรี',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      onPressed: () => _pickAndUpload(ImageSource.gallery),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (_errorMsg != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Colors.redAccent, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_errorMsg!,
+                          style: const TextStyle(
+                            fontSize: 12, color: JuntraColors.textCream,
+                          )),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (widget.webFallbackUrl != null && widget.webFallbackUrl!.isNotEmpty)
+              Center(
+                child: TextButton(
+                  onPressed: () async {
+                    final uri = Uri.parse(widget.webFallbackUrl!);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri,
+                          mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  child: const Text('เปิดเว็บเพื่ออัปโหลดแทน →',
+                      style: TextStyle(
+                          color: JuntraColors.textFaint, fontSize: 11)),
+                ),
+              ),
+            Center(
+              child: TextButton(
+                onPressed: _uploading ? null : () => Navigator.of(context).pop(),
+                child: const Text('ปิด',
+                    style: TextStyle(color: JuntraColors.textMuted)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PromptPayInfoCard extends StatelessWidget {
+  const _PromptPayInfoCard({
+    required this.id, required this.name, required this.amount,
+  });
+  final String id;
+  final String name;
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: JuntraColors.mysticHeroGradient,
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('โอนผ่าน PromptPay',
+              style: TextStyle(
+                fontSize: 10, letterSpacing: 1.8,
+                color: JuntraColors.textFaint, fontWeight: FontWeight.w600,
+              )),
+          const SizedBox(height: 8),
+          _row('ผู้รับ', name.isEmpty ? '— กรุณาตั้งค่าใน /admin/wallet-settings —' : name),
+          const SizedBox(height: 4),
+          _row('PromptPay ID', id.isEmpty ? '— ยังไม่ได้ตั้งค่า —' : id, mono: true),
+          const SizedBox(height: 4),
+          _row('จำนวน', '฿${NumberFormat.decimalPattern('th').format(amount)}',
+              highlight: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value,
+      {bool mono = false, bool highlight = false}) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 96,
+          child: Text(label, style: const TextStyle(
+            fontSize: 11.5, color: JuntraColors.textMuted,
+          )),
+        ),
+        Expanded(
+          child: SelectableText(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              color: highlight ? JuntraColors.gold : JuntraColors.textCream,
+              fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
+              fontFamily: mono ? 'monospace' : null,
+            ),
+          ),
         ),
       ],
     );

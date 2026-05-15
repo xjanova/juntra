@@ -66,5 +66,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- image_picker: camera + photo library for slip upload during
+	     PromptPay top-up. Strings are user-facing in the iOS permission
+	     dialog so they explain the specific reason. -->
+	<key>NSCameraUsageDescription</key>
+	<string>เพื่อถ่ายรูปสลิปการโอนเงินสำหรับเติมเครดิตในวอลเลตของลูก</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>เพื่อเลือกรูปสลิปการโอนเงินจากแกลเลอรีสำหรับเติมเครดิต</string>
 </dict>
 </plist>

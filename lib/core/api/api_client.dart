@@ -118,6 +118,31 @@ class ApiClient {
     }
   }
 
+  /// Multipart POST. Used by the native slip upload — `formData` is a
+  /// Dio [FormData] including a [MultipartFile] under the field name
+  /// the backend expects. Returns the decoded JSON body, same as [post].
+  Future<T> postMultipart<T>(String path, {required dynamic formData}) async {
+    try {
+      final res = await dio.post(
+        path,
+        data: formData,
+        options: Options(
+          // Let Dio set Content-Type with the multipart boundary —
+          // overriding it strips the boundary parameter and the server
+          // can't parse the form.
+          contentType: 'multipart/form-data',
+          // Higher receive timeout because slip uploads from flaky
+          // mobile networks can take longer than a typical JSON POST.
+          receiveTimeout: const Duration(seconds: 60),
+          sendTimeout: const Duration(seconds: 60),
+        ),
+      );
+      return _decode<T>(res);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   T _decode<T>(Response res) {
     if (res.statusCode != null && res.statusCode! >= 400) {
       throw ApiException(

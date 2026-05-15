@@ -27,6 +27,9 @@ class Api {
   static const walletTransactions   = '/v1/wallet/transactions';
   static const walletTopupPromptpay = '/v1/wallet/topup/promptpay';
   static String walletTopup(int id) => '/v1/wallet/topup/$id';
+  /// Multipart upload of the PromptPay slip image (field name `slip`).
+  /// 409 if status != pending; 422 if not a topup tx; 4 MB max image.
+  static String walletTopupSlip(int id) => '/v1/wallet/topup/$id/slip';
 
   // ─── Mae Mor AI Chat ─────────────────────────────────────────
   static const chatConversations = '/v1/chat/conversations';

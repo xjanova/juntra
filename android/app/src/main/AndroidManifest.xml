@@ -10,6 +10,15 @@
     <!-- Optional haptic feedback during cinematic shuffle reveal -->
     <uses-permission android:name="android.permission.VIBRATE"/>
 
+    <!-- Camera + photo gallery for native PromptPay slip upload.
+         On Android 13+ image_picker uses the system Photo Picker
+         which needs no permission — these declarations are for
+         older devices + camera capture which always needs CAMERA. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+
     <application
         android:label="จันทราพยากรณ์"
         android:name="${applicationName}"
