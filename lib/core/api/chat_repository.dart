@@ -62,3 +62,20 @@ final chatRepositoryProvider = FutureProvider<ChatRepository>((ref) async {
   final api = await ref.watch(apiClientProvider.future);
   return ChatRepository(api);
 });
+
+/// Conversation list provider — feeds ConversationListScreen and the
+/// "บทสนทนาเก่า" tab. Cached for the session; invalidate after
+/// startConversation()/send() so a new convo appears at the top.
+final chatConversationsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final repo = await ref.watch(chatRepositoryProvider.future);
+  return repo.listConversations();
+});
+
+/// Single conversation detail — keyed by id. Used by ChatScreen when
+/// resuming an existing conversation via `/chat?id=N`.
+final chatConversationProvider =
+    FutureProvider.family<Map<String, dynamic>, int>((ref, id) async {
+  final repo = await ref.watch(chatRepositoryProvider.future);
+  return repo.getConversation(id);
+});

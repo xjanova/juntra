@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../features/affiliate/affiliate_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/chat/chat_screen.dart';
+import '../features/chat/conversation_list_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/natal/natal_screen.dart';
@@ -33,6 +34,7 @@ class Routes {
   static const reading = '/reading';
   static const payment = '/payment';
   static const chat = '/chat';
+  static const chatConversations = '/chat-conversations';
   static const history = '/history';
   static const profile = '/profile';
   static const natal = '/natal';
@@ -87,7 +89,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           amount: int.tryParse(s.uri.queryParameters['amount'] ?? '0') ?? 0,
         ),
       ),
-      GoRoute(path: Routes.chat, builder: (c, s) => const ChatScreen()),
+      GoRoute(
+        path: Routes.chat,
+        builder: (c, s) {
+          // `?id=N` resumes an existing conversation; bare `/chat`
+          // starts a fresh one. ChatScreen branches in _bootstrap().
+          final idStr = s.uri.queryParameters['id'];
+          final id = idStr == null ? null : int.tryParse(idStr);
+          return ChatScreen(resumeConversationId: id);
+        },
+      ),
+      GoRoute(
+        path: Routes.chatConversations,
+        builder: (c, s) => const ConversationListScreen(),
+      ),
       GoRoute(path: Routes.history, builder: (c, s) => const HistoryScreen()),
       GoRoute(path: Routes.profile, builder: (c, s) => const ProfileScreen()),
       GoRoute(path: Routes.natal, builder: (c, s) => const NatalScreen()),

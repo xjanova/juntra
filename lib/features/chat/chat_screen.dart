@@ -12,15 +12,27 @@ import '../../shared/widgets/starry_background.dart';
 
 /// Screen 7 — Mae Mor AI chat.
 ///
-/// Wired to `POST /v1/chat/mae-mor/start` and `/send` which proxy to the
-/// FortuneAIService pool (Gemini 2.5-flash + Claude). The system prompt
-/// (server-side) makes the model answer in Mae Mor's voice — warm and
-/// mystical, calling the user "ลูก".
+/// Wired to `POST /v1/chat/conversations` (start) and
+/// `/v1/chat/conversations/{id}/send` which proxy to the FortuneAIService
+/// pool (Gemini 2.5-flash + Claude with local AiOracle fallback). The
+/// system prompt (server-side) makes the model answer in Mae Mor's voice
+/// — warm and mystical, calling the user "ลูก".
+///
+/// Two entry modes:
+///   - `/chat`        → start a fresh conversation (default)
+///   - `/chat?id=N`   → resume an existing conversation: fetches the
+///                       full message history from
+///                       /v1/chat/conversations/N before unlocking
+///                       the input bar.
 ///
 /// On network failure the screen shows a generic fallback so the
 /// conversation feels graceful rather than crashing.
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, this.resumeConversationId});
+
+  /// If provided, load that conversation instead of starting a new one.
+  final int? resumeConversationId;
+
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
@@ -36,7 +48,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startSession());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
   @override
@@ -46,8 +58,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
-  Future<void> _startSession() async {
-    // Guests can't start a server-side conversation — bounce to /login.
+  /// Decide whether to start a new conversation or resume the one from
+  /// the route param. Branches kept separate so a failed resume doesn't
+  /// silently fall through and create a fresh convo (which would lose
+  /// the user's place in the original).
+  Future<void> _bootstrap() async {
+    // Guests can't start or resume — bounce to /login.
     final auth = ref.read(authControllerProvider);
     if (auth is AuthGuest) {
       if (!mounted) return;
@@ -57,6 +73,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       });
       return;
     }
+
+    final resumeId = widget.resumeConversationId;
+    if (resumeId != null) {
+      await _resumeSession(resumeId);
+    } else {
+      await _startSession();
+    }
+  }
+
+  Future<void> _startSession() async {
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
       final res = await repo.startConversation();
@@ -76,12 +102,52 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         }
         _starting = false;
       });
+      // Refresh the list so the freshly-created conversation appears
+      // at the top of /chat-conversations on the next visit.
+      ref.invalidate(chatConversationsProvider);
     } catch (_) {
       // Network down → still let user use the screen with a local greeting.
       if (!mounted) return;
       setState(() {
         _messages.add(_Msg.bot('สวัสดีค่ะลูก แม่หมอจันทราอยู่ตรงนี้แล้ว · '
             'อยากปรึกษาเรื่องอะไรเป็นพิเศษวันนี้คะ?'));
+        _starting = false;
+      });
+    }
+  }
+
+  /// Resume an existing conversation. Pulls the full message history so
+  /// the new turn has context for the user (and the upstream session id
+  /// cached server-side stays consistent across reconnects).
+  Future<void> _resumeSession(int id) async {
+    try {
+      final repo = await ref.read(chatRepositoryProvider.future);
+      final convo = await repo.getConversation(id);
+      if (!mounted) return;
+      _conversationId = (convo['id'] as num?)?.toInt() ?? id;
+      final msgs = (convo['messages'] as List?) ?? const [];
+      setState(() {
+        _messages.clear();
+        for (final m in msgs.cast<Map>()) {
+          _messages.add((m['role'] == 'assistant')
+              ? _Msg.bot(m['content']?.toString() ?? '')
+              : _Msg.user(m['content']?.toString() ?? ''));
+        }
+        if (_messages.isEmpty) {
+          _messages.add(_Msg.bot('แม่หมอกลับมาอยู่ตรงนี้แล้วค่ะ · พิมพ์ต่อได้เลย'));
+        }
+        _starting = false;
+      });
+      _scrollToEnd();
+    } catch (e) {
+      // Resume failed (deleted? 404? offline?). Don't silently create a
+      // new conversation — that would lose the user's place and pile
+      // empty rows on the list. Surface the error and let them retry.
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_Msg.bot(
+            'แม่หมอเปิดบทสนทนาเก่าไม่ได้ค่ะ · กดย้อนกลับแล้วลองอีกครั้งได้นะคะ\n'
+            '(${e.toString()})'));
         _starting = false;
       });
     }
@@ -310,8 +376,9 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.more_horiz, color: JuntraColors.textMuted),
-            onPressed: () {},
+            icon: const Icon(Icons.history, color: JuntraColors.textMuted),
+            tooltip: 'บทสนทนาเก่า',
+            onPressed: () => context.push(Routes.chatConversations),
           ),
         ],
       ),
