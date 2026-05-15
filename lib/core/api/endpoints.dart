@@ -37,6 +37,11 @@ class Api {
   static const historyReadings = '/v1/history/readings';
   static String historyReading(int id) => '/v1/history/readings/$id';
 
+  // ─── MLM dashboard (requires thaiprompt_token; 403 unlinked) ────
+  static const mlmStats       = '/v1/mlm/stats';
+  static const mlmTree        = '/v1/mlm/tree';
+  static const mlmCommissions = '/v1/mlm/commissions';
+
   // ─── Auto-update (internal — never shown to user) ───────────
   /// GitHub Releases API. Called directly from [UpdateService].
   /// Switch to a self-hosted proxy if rate-limit becomes an issue
