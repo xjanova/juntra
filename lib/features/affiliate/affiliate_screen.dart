@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/affiliate_repository.dart';
+import '../../core/api/api_client.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
@@ -113,9 +114,84 @@ class AffiliateScreen extends ConsumerWidget {
   }
 }
 
-class _LinkedDashboard extends ConsumerWidget {
+/// Stateful wrapper so we can attach a [WidgetsBindingObserver] —
+/// when the user returns to the app after completing the Thaiprompt
+/// OAuth in the browser (foreground state regained), we auto-refresh
+/// /auth/me and the affiliate bundle so the dashboard appears without
+/// the user having to hunt for the refresh button.
+class _LinkedDashboard extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LinkedDashboard> createState() => _LinkedDashboardState();
+}
+
+class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
+    with WidgetsBindingObserver {
+  bool _oauthInFlight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Foreground regained AFTER we launched the OAuth URL — assume the
+    // user might have completed the link in the browser. Refresh auth
+    // (which carries the thaiprompt_linked flag) and invalidate the
+    // affiliate bundle so the screen re-renders against fresh data.
+    // Cheap; runs at most once per OAuth attempt.
+    if (state == AppLifecycleState.resumed && _oauthInFlight) {
+      _oauthInFlight = false;
+      // ignore: unawaited_futures
+      ref.read(authControllerProvider.notifier).refresh();
+      ref.invalidate(affiliateBundleProvider);
+    }
+  }
+
+  /// Build the mobile OAuth bootstrap URL using the user's Sanctum
+  /// bearer token from secure storage. The browser handoff carries the
+  /// token in the URL (HTTPS, one-shot) so juntraweb can establish a
+  /// matching web session for the same user before the Thaiprompt
+  /// callback fires.
+  Future<Uri?> _buildOauthUrl() async {
+    final api = await ref.read(apiClientProvider.future);
+    final token = await api.getToken();
+    if (token == null || token.isEmpty) return null;
+    return Uri.parse(
+        'https://จันทรา.online/auth/thaiprompt/mobile-start?bearer=$token');
+  }
+
+  Future<void> _launchOauth(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final uri = await _buildOauthUrl();
+    if (!mounted) return;
+    if (uri == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('เซสชั่นไม่พร้อม — กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง'),
+        backgroundColor: JuntraColors.bgPurpleDeep,
+      ));
+      return;
+    }
+    if (await canLaunchUrl(uri)) {
+      _oauthInFlight = true;
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('เปิดเบราว์เซอร์ไม่ได้ — กรุณาลองอีกครั้ง'),
+        backgroundColor: JuntraColors.bgPurpleDeep,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(affiliateBundleProvider);
     return async.when(
       loading: () => const Center(
@@ -303,19 +379,19 @@ class _LinkedDashboard extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                onPressed: () async {
-                  final url = Uri.parse('https://จันทรา.online/oauth/connect');
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  }
-                },
+                // /auth/thaiprompt/mobile-start carries the user's
+                // Sanctum bearer so juntraweb can establish a matching
+                // web session for the OAuth callback. When the user
+                // returns to the app, didChangeAppLifecycleState
+                // auto-refreshes — they shouldn't need to tap anything.
+                onPressed: () => _launchOauth(context),
                 child: const Text('เปิดเว็บเพื่อเชื่อมต่อ',
                     style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
             const SizedBox(height: 10),
             const Text(
-              'หลังเชื่อมต่อสำเร็จ กลับมาที่หน้านี้แล้วกดรีเฟรช',
+              'หลังเชื่อมต่อสำเร็จ กลับมาที่แอพ — ระบบจะอัปเดตข้อมูลให้อัตโนมัติ',
               style: TextStyle(
                 fontSize: 11, color: JuntraColors.textFaint, height: 1.5,
               ),
