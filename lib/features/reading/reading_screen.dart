@@ -88,7 +88,7 @@ class _ApiModeReading extends ConsumerWidget {
   Widget _error(BuildContext context, WidgetRef ref, Object e) {
     return Column(
       children: [
-        _BackHeader(title: 'ผลทำนาย'),
+        const _BackHeader(title: 'ผลทำนาย'),
         Expanded(
           child: Center(
             child: Padding(

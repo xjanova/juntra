@@ -10,6 +10,13 @@ import '../../shared/widgets/starry_background.dart';
 /// Screen 6 — Payment. Order summary, payment methods, promo input,
 /// confirm CTA. Wires to /v1/payment/initiate which returns a method-
 /// specific payload (PromptPay QR string, TrueMoney redirect URL, etc.)
+///
+/// NOTE: This per-reading checkout is **not currently in the navigation
+/// graph** — the shipped money model is the wallet (top-up via
+/// [WalletScreen] → readings debit credit). It's kept to match the design's
+/// 12-screen map. If it's ever wired up, generate the PromptPay block with
+/// the real `PromptPayQr` util (see `core/payments/promptpay_qr.dart`) using
+/// the receiver id from the backend rather than the demo string below.
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key, required this.spreadId, required this.amount});
   final String spreadId;
@@ -229,8 +236,9 @@ class _PromptPayQr extends StatelessWidget {
   final int amount;
   @override
   Widget build(BuildContext context) {
-    // In production, /v1/payment/initiate returns the EMV QR string.
-    // For now, we display a placeholder containing the amount.
+    // Demo-only string — NOT a scannable PromptPay QR. When this screen is
+    // wired, build a real payload with PromptPayQr.build(proxyId, amount).
+    // (The reachable wallet top-up already renders a real one.)
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

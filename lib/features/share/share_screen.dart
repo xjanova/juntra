@@ -9,7 +9,7 @@ class ShareScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final platforms = const [
+    const platforms = [
       _Platform('LINE', '🟢', Color(0xFF06C755)),
       _Platform('Facebook', '📘', Color(0xFF1877F2)),
       _Platform('Messenger', '💬', Color(0xFF0084FF)),

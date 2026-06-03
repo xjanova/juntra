@@ -32,7 +32,7 @@ class SpreadsScreen extends StatelessWidget {
                   child: ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     itemCount: spreads.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (_, i) => _SpreadTile(
                       spread: spreads[i],
                       onTap: () => context.push(
@@ -193,7 +193,7 @@ class _MiniDeck extends StatelessWidget {
               alignment: Alignment.center,
               child: Text(
                 i == shown - 1 ? '$count' : '☾',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 11,
                   color: JuntraColors.goldLight,
                   fontWeight: FontWeight.w700,

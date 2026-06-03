@@ -181,8 +181,8 @@ class _StarryPainter extends CustomPainter {
 
   void _paintMoon(Canvas canvas, Size size) {
     final cx = size.width - 40;
-    final cy = 70.0;
-    final r = 26.0;
+    const cy = 70.0;
+    const r = 26.0;
 
     // Outer glow
     final glow = Paint()

@@ -55,7 +55,7 @@ class _UpdateObserverState extends ConsumerState<UpdateObserver> {
       if (!mounted) return;
 
       final navCtx = rootNavigatorKey.currentContext;
-      if (navCtx == null) return;
+      if (navCtx == null || !navCtx.mounted) return;
       await UpdateDialog.show(navCtx, status);
     } catch (e) {
       if (kDebugMode) debugPrint('[UpdateObserver] $e');

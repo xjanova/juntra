@@ -51,7 +51,7 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 14),
                 _QuickStatsRow(),
                 const SizedBox(height: 18),
-                _SectionLabel('หมวดดูดวง'),
+                const _SectionLabel('หมวดดูดวง'),
                 const SizedBox(height: 10),
                 _CategoriesGrid(),
                 const SizedBox(height: 18),
@@ -197,18 +197,18 @@ class _DailyTransitCard extends StatelessWidget {
             )),
           ),
           const SizedBox(width: 12),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('ดาวดวงนี้บอกว่า', style: TextStyle(
+                Text('ดาวดวงนี้บอกว่า', style: TextStyle(
                   fontSize: 9, letterSpacing: 2.0,
                   color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
                 )),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
                   'พระจันทร์ขึ้นกุมราศีกรกฎ — ลูกจะรู้สึกอ่อนไหว เปิดใจฟังเสียงในหัวใจ',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5, color: JuntraColors.textLavender, height: 1.5,
                   ),
                 ),
@@ -224,8 +224,8 @@ class _DailyTransitCard extends StatelessWidget {
 class _QuickStatsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: const [
+    return const Row(
+      children: [
         Expanded(child: _Stat(label: 'โควต้าฟรี', value: '3', unit: 'ครั้ง')),
         SizedBox(width: 8),
         Expanded(child: _Stat(label: 'ดูไปแล้ว', value: '12', unit: 'ครั้ง')),
@@ -384,7 +384,7 @@ class _MaeMorOnlineCard extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/maehmor.png',
                   width: 48, height: 48, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     width: 48, height: 48,
                     color: JuntraColors.bgPurple,
                     alignment: Alignment.center,

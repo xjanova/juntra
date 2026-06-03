@@ -16,7 +16,7 @@ class ChantraLogo extends StatelessWidget {
       height: dim,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
-      errorBuilder: (_, __, ___) => SizedBox(
+      errorBuilder: (_, _, _) => SizedBox(
         width: dim, height: dim,
         child: const Center(child: Text('☾', style: TextStyle(fontSize: 48))),
       ),
