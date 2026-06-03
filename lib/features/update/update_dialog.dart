@@ -140,7 +140,7 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
                         fontSize: 13, color: JuntraColors.textLavender,
                       ),
                     ),
-                    onTapLink: (_, __, ___) {/* never open links from notes */},
+                    onTapLink: (_, _, _) {/* never open links from notes */},
                   ),
                 ),
               ),
@@ -197,8 +197,8 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
                         label: 'ข้ามเวอร์ชันนี้',
                         onPressed: () async {
                           await ref.read(updateServiceProvider)
-                              .dismissVersion(info.latestVersion);
-                          if (mounted) Navigator.pop(context);
+                              .dismissVersion(info.latestVersion, info.latestBuild);
+                          if (context.mounted) Navigator.pop(context);
                         },
                       ),
                     ),
