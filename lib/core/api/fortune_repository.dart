@@ -28,8 +28,8 @@ class FortuneRepository {
       Api.historyReadings,
       query: {
         'limit': limit,
-        if (cursor != null) 'cursor': cursor,
-        if (type != null) 'type': type,
+        'cursor': ?cursor,
+        'type': ?type,
       },
     );
   }
@@ -43,7 +43,7 @@ class FortuneRepository {
 
   /// Persist a freshly-completed mobile tarot reading. The Flutter
   /// shuffle screen calls this once the user has revealed all picked
-  /// cards; on success it routes to /reading?id=<returned id>.
+  /// cards; on success it routes to `/reading?id=<returned id>`.
   ///
   /// [type] — 'tarot_three' (3 cards) or 'tarot_celtic' (10 cards).
   /// [question] — optional intention text from Phase 1 of shuffle.

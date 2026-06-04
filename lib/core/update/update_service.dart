@@ -100,13 +100,28 @@ class UpdateService {
       }
 
       final pkg = await PackageInfo.fromPlatform();
-      final cmp = compareSemver(pkg.version, info.latestVersion);
-      if (cmp >= 0) return const UpdateUpToDate();
+      final currentBuild = int.tryParse(pkg.buildNumber) ?? 0;
 
-      // Honor "ข้ามเวอร์ชันนี้" until something even newer ships.
-      final dismissed = await _getDismissedVersion();
-      if (dismissed != null && compareSemver(dismissed, info.latestVersion) >= 0) {
+      // A release can bump the build number only (same X.Y.Z — e.g.
+      // 0.1.3+7 → 0.1.3+8 via the `release:build` label). compareSemver
+      // alone would miss that, so the build number breaks a version tie.
+      if (!isReleaseNewer(pkg.version, currentBuild,
+          info.latestVersion, info.latestBuild)) {
         return const UpdateUpToDate();
+      }
+
+      // Honor "ข้ามเวอร์ชันนี้" until something even newer ships. The marker
+      // stores "version+build" so a build-only bump after a skip still
+      // re-surfaces; legacy markers without "+build" parse as build 0 and
+      // therefore never wrongly suppress a newer build.
+      final dismissed = await _getDismissedVersion();
+      if (dismissed != null) {
+        final d = dismissed.split('+');
+        final dBuild = d.length > 1 ? int.tryParse(d[1]) ?? 0 : 0;
+        if (!isReleaseNewer(
+            d.first, dBuild, info.latestVersion, info.latestBuild)) {
+          return const UpdateUpToDate();
+        }
       }
 
       return UpdateAvailable(info: info);
@@ -187,9 +202,11 @@ class UpdateService {
     return prefs.getString(_kPrefDismissedVersion);
   }
 
-  Future<void> dismissVersion(String version) async {
+  /// Persist the skipped release as "version+build" so build-only bumps
+  /// after a skip aren't accidentally suppressed.
+  Future<void> dismissVersion(String version, int build) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kPrefDismissedVersion, version);
+    await prefs.setString(_kPrefDismissedVersion, '$version+$build');
   }
 }
 
@@ -203,5 +220,3 @@ final updateStatusProvider = FutureProvider<UpdateStatus>((ref) async {
   final svc = ref.watch(updateServiceProvider);
   return svc.checkForUpdate();
 });
-
-void unawaited(Future<void> f) {}

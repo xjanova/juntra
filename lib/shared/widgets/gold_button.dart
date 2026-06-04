@@ -76,7 +76,7 @@ class _GoldButtonState extends State<GoldButton> {
           boxShadow: disabled ? const [] : glow,
         ),
         transform: _pressed && !disabled
-            ? (Matrix4.identity()..translate(0.0, 1.0))
+            ? (Matrix4.identity()..translateByDouble(0.0, 1.0, 0.0, 1.0))
             : Matrix4.identity(),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

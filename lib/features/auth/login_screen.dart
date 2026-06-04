@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,7 +67,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = 'เกิดข้อผิดพลาด: $e');
+      // Never surface the raw exception (may carry internal detail/URLs).
+      if (kDebugMode) debugPrint('[Login] unexpected: $e');
+      setState(() => _error = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

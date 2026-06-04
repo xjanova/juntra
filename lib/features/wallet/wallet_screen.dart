@@ -1,15 +1,18 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/wallet_repository.dart';
+import '../../core/payments/promptpay_qr.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/starry_background.dart';
@@ -110,9 +113,14 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                           _PricingHint(pricing: pricing.cast<String, dynamic>()),
                           const SizedBox(height: 18),
                           if (txs.isNotEmpty) ...[
-                            _SectionLabel('รายการล่าสุด'),
+                            const _SectionLabel('รายการล่าสุด'),
                             const SizedBox(height: 8),
-                            for (final t in txs) _TxTile(tx: t.cast<String, dynamic>()),
+                            for (final t in txs)
+                              _TxTile(
+                                tx: t.cast<String, dynamic>(),
+                                onReupload: () =>
+                                    _reuploadSlip(t.cast<String, dynamic>()),
+                              ),
                           ],
                         ],
                       );
@@ -183,6 +191,40 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
         },
       ),
     );
+  }
+
+  /// Re-open the slip sheet for an already-pending top-up so a user who
+  /// dismissed it (or picked the wrong image) can upload again. We re-fetch
+  /// the tx so the PromptPay receiver info + web fallback are current; the
+  /// backend allows overwriting the slip while the tx is still pending.
+  Future<void> _reuploadSlip(Map<String, dynamic> tx) async {
+    final txId = (tx['id'] as num?)?.toInt();
+    if (txId == null) {
+      _toast('ไม่พบเลขที่รายการ — กรุณารีเฟรชแล้วลองใหม่');
+      return;
+    }
+    final amount = ((tx['amount'] as num?)?.toDouble() ?? 0).abs();
+    Map<String, dynamic> show;
+    try {
+      final repo = await ref.read(walletRepositoryProvider.future);
+      show = await repo.topupShow(txId);
+    } on ApiException catch (e) {
+      if (mounted) _toast(e.message);
+      return;
+    } catch (_) {
+      // Defensive: an unexpected body shape surfaces as a cast error, not an
+      // ApiException — don't let the tap fail silently on the money flow.
+      if (mounted) _toast('เปิดรายการไม่สำเร็จ — กรุณาลองใหม่');
+      return;
+    }
+    if (!mounted) return;
+    await _openTopupSheet(
+      txId: txId,
+      amount: amount,
+      promptpay: (show['promptpay'] as Map?)?.cast<String, dynamic>() ?? const {},
+      slipUploadUrl: show['slip_upload_url']?.toString(),
+    );
+    await _refresh();
   }
 
   void _toast(String msg) {
@@ -363,8 +405,9 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
         imageQuality: 80,
       );
     } on Exception catch (e) {
+      if (kDebugMode) debugPrint('[Wallet] picker error: $e');
       if (!mounted) return;
-      setState(() => _errorMsg = 'เปิดกล้อง/แกลเลอรีไม่ได้: ${e.toString()}');
+      setState(() => _errorMsg = 'เปิดกล้อง/แกลเลอรีไม่ได้ กรุณาลองใหม่');
       return;
     }
     if (picked == null) return; // user cancelled
@@ -570,6 +613,12 @@ class _PromptPayInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // EMVCo PromptPay payload — non-null only when the receiver id is set
+    // and well-formed. When present we render a scannable QR so the user
+    // can pay without hand-typing the id; otherwise we fall back to text.
+    final payload =
+        id.isEmpty ? null : PromptPayQr.build(proxyId: id, amount: amount);
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -585,6 +634,11 @@ class _PromptPayInfoCard extends StatelessWidget {
                 fontSize: 10, letterSpacing: 1.8,
                 color: JuntraColors.textFaint, fontWeight: FontWeight.w600,
               )),
+          if (payload != null) ...[
+            const SizedBox(height: 12),
+            Center(child: _QrBlock(payload: payload)),
+            const SizedBox(height: 12),
+          ],
           const SizedBox(height: 8),
           _row('ผู้รับ', name.isEmpty ? '— กรุณาตั้งค่าใน /admin/wallet-settings —' : name),
           const SizedBox(height: 4),
@@ -619,6 +673,51 @@ class _PromptPayInfoCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Scannable EMVCo PromptPay QR on the mandatory white quiet-zone. Banks'
+/// scanners need dark modules on a light field, so this stays white even
+/// inside the purple sheet.
+class _QrBlock extends StatelessWidget {
+  const _QrBlock({required this.payload});
+  final String payload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        boxShadow: const [
+          BoxShadow(color: Color(0x55000000), blurRadius: 16, offset: Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('PromptPay',
+              style: TextStyle(
+                fontSize: 12, letterSpacing: 1.2,
+                color: Color(0xFF002C6E), fontWeight: FontWeight.w800,
+              )),
+          const SizedBox(height: 8),
+          QrImageView(
+            data: payload,
+            version: QrVersions.auto,
+            size: 196,
+            backgroundColor: Colors.white,
+            // Medium EC tolerates a little print/screen noise while keeping
+            // the module count low enough to scan from a phone screen.
+            errorCorrectionLevel: QrErrorCorrectLevel.M,
+          ),
+          const SizedBox(height: 6),
+          const Text('สแกนด้วยแอพธนาคารเพื่อโอน',
+              style: TextStyle(fontSize: 11, color: Color(0xFF555555))),
+        ],
+      ),
     );
   }
 }
@@ -688,8 +787,14 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _TxTile extends StatelessWidget {
-  const _TxTile({required this.tx});
+  const _TxTile({required this.tx, this.onReupload});
   final Map<String, dynamic> tx;
+
+  /// When set and this is a *pending top-up*, a "อัปโหลดสลิป" pill lets the
+  /// user re-open the slip sheet — covers the case where they dismissed it
+  /// before uploading.
+  final VoidCallback? onReupload;
+
   @override
   Widget build(BuildContext context) {
     final amount = (tx['amount'] as num?)?.toDouble() ?? 0;
@@ -698,6 +803,8 @@ class _TxTile extends StatelessWidget {
     final status = tx['status']?.toString() ?? 'success';
     final desc = tx['description']?.toString() ?? '';
     final created = tx['created_at']?.toString() ?? '';
+    final canReupload =
+        onReupload != null && type == 'topup' && status == 'pending';
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -706,46 +813,61 @@ class _TxTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(JuntraRadius.card),
         border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.2)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (isPositive
+          Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: (isPositive
+                          ? JuntraColors.mintGreen
+                          : JuntraColors.purpleBright)
+                      .withValues(alpha: 0.2),
+                ),
+                alignment: Alignment.center,
+                child: Text(_typeIcon(type),
+                    style: const TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(desc.isEmpty ? _typeLabel(type) : desc,
+                        style: const TextStyle(
+                          fontSize: 12.5, color: JuntraColors.textCream,
+                          fontWeight: FontWeight.w600,
+                        )),
+                    const SizedBox(height: 2),
+                    Text('${_formatDate(created)} · ${_statusLabel(status)}',
+                        style: const TextStyle(
+                          fontSize: 10.5, color: JuntraColors.textFaint,
+                        )),
+                  ],
+                ),
+              ),
+              Text(
+                '${isPositive ? '+' : ''}฿${amount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w700,
+                  color: isPositive
                       ? JuntraColors.mintGreen
-                      : JuntraColors.purpleBright)
-                  .withValues(alpha: 0.2),
-            ),
-            alignment: Alignment.center,
-            child: Text(_typeIcon(type),
-                style: const TextStyle(fontSize: 16)),
+                      : JuntraColors.purpleBright,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(desc.isEmpty ? _typeLabel(type) : desc,
-                    style: const TextStyle(
-                      fontSize: 12.5, color: JuntraColors.textCream,
-                      fontWeight: FontWeight.w600,
-                    )),
-                const SizedBox(height: 2),
-                Text('${_formatDate(created)} · ${_statusLabel(status)}',
-                    style: const TextStyle(
-                      fontSize: 10.5, color: JuntraColors.textFaint,
-                    )),
-              ],
+          if (canReupload) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _SlipReuploadPill(onTap: onReupload!),
             ),
-          ),
-          Text(
-            (isPositive ? '+' : '') + '฿${amount.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w700,
-              color: isPositive ? JuntraColors.mintGreen : JuntraColors.purpleBright,
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -776,6 +898,39 @@ class _TxTile extends StatelessWidget {
     final dt = DateTime.tryParse(iso);
     if (dt == null) return iso;
     return DateFormat('d MMM HH:mm', 'th').format(dt.toLocal());
+  }
+}
+
+/// Small gold-outline call-to-action shown on a pending top-up tile.
+class _SlipReuploadPill extends StatelessWidget {
+  const _SlipReuploadPill({required this.onTap});
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: JuntraColors.gold.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.5)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.upload_file_outlined, size: 14, color: JuntraColors.gold),
+            SizedBox(width: 6),
+            Text('อัปโหลดสลิป',
+                style: TextStyle(
+                  fontSize: 12, color: JuntraColors.gold,
+                  fontWeight: FontWeight.w700,
+                )),
+          ],
+        ),
+      ),
+    );
   }
 }
 

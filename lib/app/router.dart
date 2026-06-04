@@ -12,6 +12,7 @@ import '../features/natal/natal_screen.dart';
 import '../features/payment/payment_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
+import '../features/settings/settings_screen.dart';
 import '../features/share/share_screen.dart';
 import '../features/shuffle/shuffle_screen.dart';
 import '../features/splash/splash_screen.dart';
@@ -42,6 +43,7 @@ class Routes {
   static const share = '/share';
   static const login = '/login';
   static const wallet = '/wallet';
+  static const settings = '/settings';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -110,6 +112,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.share, builder: (c, s) => const ShareScreen()),
       GoRoute(path: Routes.login, builder: (c, s) => const LoginScreen()),
       GoRoute(path: Routes.wallet, builder: (c, s) => const WalletScreen()),
+      GoRoute(path: Routes.settings, builder: (c, s) => const SettingsScreen()),
     ],
   );
 });

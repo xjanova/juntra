@@ -508,7 +508,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
             width: 320, height: 320,
             child: AnimatedBuilder(
               animation: _shuffleCtrl,
-              builder: (_, __) {
+              builder: (_, _) {
                 return Stack(
                   alignment: Alignment.center,
                   children: List.generate(14, (i) {
@@ -716,7 +716,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                 _GoldRays(),
                 AnimatedBuilder(
                   animation: _revealCtrl,
-                  builder: (_, __) {
+                  builder: (_, _) {
                     final v = _revealCtrl.value;
                     final scale = 0.3 + Curves.easeOutBack.transform(v.clamp(0.0, 1.0)) * 0.7;
                     final flipAngle = (1 - v) * math.pi;
@@ -796,7 +796,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
               width: 64, height: 64,
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+                valueColor: const AlwaysStoppedAnimation<Color>(JuntraColors.gold),
                 backgroundColor: JuntraColors.gold.withValues(alpha: 0.2),
               ),
             ),
@@ -842,7 +842,7 @@ class _GoldRaysState extends State<_GoldRays>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ctrl,
-      builder: (_, __) => Transform.rotate(
+      builder: (_, _) => Transform.rotate(
         angle: _ctrl.value * math.pi * 2,
         child: CustomPaint(
           painter: _RaysPainter(),

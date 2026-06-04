@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -143,11 +144,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // Resume failed (deleted? 404? offline?). Don't silently create a
       // new conversation — that would lose the user's place and pile
       // empty rows on the list. Surface the error and let them retry.
+      if (kDebugMode) debugPrint('[Chat] resume failed: $e');
       if (!mounted) return;
       setState(() {
         _messages.add(_Msg.bot(
-            'แม่หมอเปิดบทสนทนาเก่าไม่ได้ค่ะ · กดย้อนกลับแล้วลองอีกครั้งได้นะคะ\n'
-            '(${e.toString()})'));
+            'แม่หมอเปิดบทสนทนาเก่าไม่ได้ค่ะ · กดย้อนกลับแล้วลองอีกครั้งได้นะคะ'));
         _starting = false;
       });
     }

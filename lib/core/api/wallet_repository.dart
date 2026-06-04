@@ -29,7 +29,7 @@ class WalletRepository {
       Api.walletTransactions,
       query: {
         'limit': limit,
-        if (cursor != null) 'cursor': cursor,
+        'cursor': ?cursor,
       },
     );
     return res;

@@ -3,7 +3,7 @@
 /// Routes registered under `/api/v1/*` in juntraweb's routes/api.php.
 /// Auth is Sanctum bearer token. The Flutter app obtains the token via
 /// /auth/login, stores it in flutter_secure_storage, and the [ApiClient]
-/// interceptor attaches it as Authorization: Bearer <token> on every
+/// interceptor attaches it as `Authorization: Bearer <token>` on every
 /// authenticated request. A 401 response auto-clears the stored token
 /// so a server-side revocation can't leave the app wedged.
 ///

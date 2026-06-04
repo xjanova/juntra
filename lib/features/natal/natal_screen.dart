@@ -1,35 +1,34 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/astronomy/birth_data_store.dart';
 import '../../core/astronomy/natal_chart.dart';
 import '../../shared/widgets/starry_background.dart';
+import 'birth_data_editor.dart';
 
 /// Screen 10 — Natal Chart. Beautiful astrology wheel computed from
 /// the user's birth data. Three tabs: ผังดวง / ดาวพระเคราะห์ / คำพยากรณ์.
-class NatalScreen extends StatefulWidget {
+class NatalScreen extends ConsumerStatefulWidget {
   const NatalScreen({super.key});
   @override
-  State<NatalScreen> createState() => _NatalScreenState();
+  ConsumerState<NatalScreen> createState() => _NatalScreenState();
 }
 
-class _NatalScreenState extends State<NatalScreen> {
+class _NatalScreenState extends ConsumerState<NatalScreen> {
   int _tab = 0;
-
-  // Demo birth data — in production, loaded from /v1/profile/birth-data
-  late final NatalChart _chart = NatalChart.compute(BirthData(
-    year: 1995, month: 11, day: 14,
-    hour: 8, minute: 30,
-    lat: 13.7563, lng: 100.5018, // Bangkok
-    placeName: 'กรุงเทพมหานคร',
-    tzOffsetHours: 7,
-  ));
 
   @override
   Widget build(BuildContext context) {
+    // Birth data comes from the local store — the demo default until the user
+    // saves their own — and the chart is recomputed whenever it changes.
+    final birth = ref.watch(birthDataProvider);
+    final chart = NatalChart.compute(birth.data);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -37,15 +36,20 @@ class _NatalScreenState extends State<NatalScreen> {
           SafeArea(
             child: Column(
               children: [
-                _Header(),
+                _Header(
+                  subtitle: birth.isCustom
+                      ? '${birth.data.placeName} · ${birth.data.day}/${birth.data.month}/${birth.data.year}'
+                      : 'ข้อมูลตัวอย่าง · แตะ ✎ เพื่อใส่วันเกิดของลูก',
+                  onEdit: () => showBirthDataEditor(context, birth.data),
+                ),
                 _TabRow(current: _tab, onTap: (i) => setState(() => _tab = i)),
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 250),
                     child: switch (_tab) {
-                      0 => _ChartView(chart: _chart),
-                      1 => _PlanetsView(chart: _chart),
-                      _ => _ReadingView(chart: _chart),
+                      0 => _ChartView(chart: chart),
+                      1 => _PlanetsView(chart: chart),
+                      _ => _ReadingView(chart: chart),
                     },
                   ),
                 ),
@@ -59,6 +63,9 @@ class _NatalScreenState extends State<NatalScreen> {
 }
 
 class _Header extends StatelessWidget {
+  const _Header({required this.subtitle, required this.onEdit});
+  final String subtitle;
+  final VoidCallback onEdit;
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -74,13 +81,19 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('ผังดวงดาวเจ้าชะตา', style: baiJamjuree(size: 18)),
-                Text('NATAL CHART', style: cinzel(size: 10)),
+                Text(subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5, color: JuntraColors.textMuted,
+                    )),
               ],
             ),
           ),
           IconButton(
             icon: const Icon(Icons.edit_outlined, color: JuntraColors.purpleBright),
-            onPressed: () {},
+            tooltip: 'แก้ไขข้อมูลวันเกิด',
+            onPressed: onEdit,
           ),
         ],
       ),
@@ -94,7 +107,7 @@ class _TabRow extends StatelessWidget {
   final ValueChanged<int> onTap;
   @override
   Widget build(BuildContext context) {
-    final tabs = const ['ผังดวง', 'ดาวพระเคราะห์', 'คำพยากรณ์'];
+    const tabs = ['ผังดวง', 'ดาวพระเคราะห์', 'คำพยากรณ์'];
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(4),
@@ -299,7 +312,7 @@ class _PlanetsView extends StatelessWidget {
       key: const ValueKey('p'),
       padding: const EdgeInsets.all(16),
       itemCount: chart.planets.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
         final p = chart.planets[i];
         return Container(
@@ -328,7 +341,7 @@ class _PlanetsView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(p.labelTh, style: baiJamjuree(size: 14)),
-                    Text('${p.signTh} · ${p.lon.toStringAsFixed(1)}°',
+                    Text('ราศี${p.signTh} ${p.degInSign.toStringAsFixed(1)}°',
                         style: const TextStyle(
                           fontSize: 11, color: JuntraColors.textMuted,
                         )),

@@ -18,7 +18,9 @@ class ApiException implements Exception {
     } else if (e.type == DioExceptionType.connectionError) {
       msg = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้';
     } else {
-      msg = 'เกิดข้อผิดพลาด: ${e.message ?? "unknown"}';
+      // Generic — the raw DioException message can carry the request URL /
+      // host and other internals we must not surface to the user.
+      msg = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
     }
     return ApiException(statusCode: code, message: msg);
   }

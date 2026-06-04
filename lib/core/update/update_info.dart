@@ -96,3 +96,14 @@ int compareSemver(String a, String b) {
   }
   return 0;
 }
+
+/// True if (newVersion, newBuild) is strictly newer than (curVersion,
+/// curBuild): the semver dominates; the build number breaks a version tie.
+/// This is what catches `release:build` bumps — same X.Y.Z, higher +build —
+/// which a version-only compare would silently report as up-to-date.
+bool isReleaseNewer(
+    String curVersion, int curBuild, String newVersion, int newBuild) {
+  final cmp = compareSemver(curVersion, newVersion);
+  if (cmp != 0) return cmp < 0;
+  return newBuild > curBuild;
+}
