@@ -89,3 +89,21 @@ final walletRepositoryProvider = FutureProvider<WalletRepository>((ref) async {
   final api = await ref.watch(apiClientProvider.future);
   return WalletRepository(api);
 });
+
+/// Per-feature pricing from `GET /v1/wallet` (`pricing` map), keyed by the
+/// backend feature key (`tarot_three`, `tarot_celtic`, `chat_message`, …).
+/// The app reads this so spread/feature prices always match what the backend
+/// actually debits — never a hardcoded number that can drift.
+final walletPricingProvider = FutureProvider<Map<String, num>>((ref) async {
+  final repo = await ref.watch(walletRepositoryProvider.future);
+  final data = await repo.overview();
+  final p = data['pricing'];
+  if (p is Map) {
+    return {
+      for (final e in p.entries)
+        e.key.toString():
+            (e.value is num) ? e.value as num : (num.tryParse('${e.value}') ?? 0),
+    };
+  }
+  return const {};
+});

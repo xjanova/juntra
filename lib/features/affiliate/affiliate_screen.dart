@@ -164,8 +164,11 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
     final api = await ref.read(apiClientProvider.future);
     final token = await api.getToken();
     if (token == null || token.isEmpty) return null;
-    return Uri.parse(
-        'https://จันทรา.online/auth/thaiprompt/mobile-start?bearer=$token');
+    // Build via Uri.https so the bearer is percent-encoded — a Sanctum token
+    // is `<id>|<hash>` and the raw `|` would otherwise corrupt the query.
+    return Uri.https('จันทรา.online', '/auth/thaiprompt/mobile-start', {
+      'bearer': token,
+    });
   }
 
   Future<void> _launchOauth(BuildContext context) async {

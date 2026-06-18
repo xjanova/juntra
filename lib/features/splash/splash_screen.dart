@@ -77,7 +77,7 @@ class SplashScreen extends StatelessWidget {
                           const SizedBox(height: 10),
                           GhostButton(
                             label: 'ลงชื่อเข้าใช้',
-                            onPressed: () => context.go(Routes.home),
+                            onPressed: () => context.go(Routes.login),
                           ).animate().fadeIn(duration: 600.ms, delay: 950.ms),
                           const SizedBox(height: 28),
                           const XmanStudioFooter(showVersion: true),

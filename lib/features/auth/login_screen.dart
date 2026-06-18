@@ -43,8 +43,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Client-side pre-validation so blank/invalid fields never round-trip to
+  /// the API and come back as a raw server error. Returns a Thai message or
+  /// null when the form is good to submit.
+  String? _validate() {
+    final email = _email.text.trim();
+    final password = _password.text;
+    if (_signUp && _name.text.trim().isEmpty) {
+      return 'กรุณากรอกชื่อที่จะให้แม่หมอเรียก';
+    }
+    if (email.isEmpty) return 'กรุณากรอกอีเมล';
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return 'รูปแบบอีเมลไม่ถูกต้อง';
+    }
+    if (password.isEmpty) return 'กรุณากรอกรหัสผ่าน';
+    if (password.length < 8) return 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร';
+    if (_signUp && password != _confirm.text) {
+      return 'รหัสผ่านและการยืนยันไม่ตรงกัน';
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     if (_busy) return;
+    final validationError = _validate();
+    if (validationError != null) {
+      setState(() => _error = validationError);
+      return;
+    }
     setState(() { _busy = true; _error = null; });
     try {
       final auth = ref.read(authControllerProvider.notifier);

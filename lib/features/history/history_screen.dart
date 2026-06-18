@@ -25,11 +25,16 @@ class HistoryScreen extends ConsumerStatefulWidget {
 
 /// Backend type → (chip label, friendly title, icon, tint).
 const Map<String, _TypeMeta> _typeMeta = {
-  'tarot_three':  _TypeMeta('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
-  'tarot_celtic': _TypeMeta('เซลติกครอส',   '✧', JuntraColors.purpleBright),
-  'numerology':   _TypeMeta('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
-  'palmistry':    _TypeMeta('ดูลายมือ',     '✋', JuntraColors.gold),
-  'auspicious':   _TypeMeta('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
+  'tarot_single':   _TypeMeta('ไพ่ใบเดียว',  '✦', JuntraColors.gold),
+  'tarot_three':    _TypeMeta('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
+  'tarot_love':     _TypeMeta('ความรัก',     '♥', Color(0xFFFF6B9D)),
+  'tarot_career':   _TypeMeta('การงาน-เงิน', '✦', JuntraColors.gold),
+  'tarot_decision': _TypeMeta('ทางแยก',      '✧', JuntraColors.purpleBright),
+  'tarot_celtic':   _TypeMeta('เซลติกครอส',   '✧', JuntraColors.purpleBright),
+  'tarot_year':     _TypeMeta('ดวง 12 เดือน', '☾', JuntraColors.gold),
+  'numerology':     _TypeMeta('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
+  'palmistry':      _TypeMeta('ดูลายมือ',     '✋', JuntraColors.gold),
+  'auspicious':     _TypeMeta('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
 };
 
 class _TypeMeta {
@@ -265,8 +270,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     // for types that have data shown on this screen.
     final entries = <(String?, String)>[
       (null, 'ทั้งหมด'),
+      ('tarot_single', 'ไพ่ใบเดียว'),
       ('tarot_three', 'ทาโรต์ 3 ใบ'),
+      ('tarot_love', 'ความรัก'),
+      ('tarot_career', 'การงาน-เงิน'),
+      ('tarot_decision', 'ทางแยก'),
       ('tarot_celtic', 'เซลติกครอส'),
+      ('tarot_year', 'ดวง 12 เดือน'),
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,

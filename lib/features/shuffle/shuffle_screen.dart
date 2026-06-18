@@ -228,15 +228,12 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     }
   }
 
-  /// Map a Flutter [Spread.id] to the backend reading `type`. Returns
-  /// `null` if the spread doesn't have backend support yet, in which
-  /// case the cinematic falls back to the legacy client-side renderer.
+  /// Map a Flutter [Spread.id] to the backend reading `type`. Every spread
+  /// in the catalog now has backend support (its id IS the backend key), so
+  /// this returns `tarot_<id>` for any known spread. Unknown ids return
+  /// `null` and fall back to the legacy client-side sample renderer.
   static String? _backendTypeFor(String spreadId) {
-    return switch (spreadId) {
-      '3card' => 'tarot_three',
-      'celtic' => 'tarot_celtic',
-      _ => null,
-    };
+    return spreadIds.contains(spreadId) ? 'tarot_$spreadId' : null;
   }
 
   void _showErrorSnack(String message) {

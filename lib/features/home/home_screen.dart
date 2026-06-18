@@ -70,11 +70,16 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _Greeting extends StatelessWidget {
+class _Greeting extends ConsumerWidget {
   const _Greeting({required this.weekday});
   final String weekday;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
+    final name = auth is AuthAuthenticated ? auth.displayName : 'แขก';
+    // Grapheme-safe first letter (runes handle surrogate pairs / emoji names).
+    final initial =
+        name.runes.isEmpty ? '?' : String.fromCharCode(name.runes.first);
     return Row(
       children: [
         Expanded(
@@ -89,7 +94,7 @@ class _Greeting extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              Text('คุณมาลี ✨', style: baiJamjuree(size: 22)),
+              Text('$name ✨', style: baiJamjuree(size: 22)),
             ],
           ),
         ),
@@ -103,7 +108,7 @@ class _Greeting extends StatelessWidget {
             border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.5)),
           ),
           alignment: Alignment.center,
-          child: const Text('ม', style: TextStyle(
+          child: Text(initial, style: const TextStyle(
             color: JuntraColors.goldLight,
             fontWeight: FontWeight.w700,
           )),
@@ -221,54 +226,93 @@ class _DailyTransitCard extends StatelessWidget {
   }
 }
 
-class _QuickStatsRow extends StatelessWidget {
+/// Real wallet balance (member) or a sign-in invite (guest) — replaces the
+/// old hardcoded quota/used/points placeholders that showed the same fake
+/// numbers to everyone.
+class _QuickStatsRow extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        Expanded(child: _Stat(label: 'โควต้าฟรี', value: '3', unit: 'ครั้ง')),
-        SizedBox(width: 8),
-        Expanded(child: _Stat(label: 'ดูไปแล้ว', value: '12', unit: 'ครั้ง')),
-        SizedBox(width: 8),
-        Expanded(child: _Stat(label: 'แต้มสะสม', value: '480', unit: 'pt')),
-      ],
-    );
-  }
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
 
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, required this.unit});
-  final String label;
-  final String value;
-  final String unit;
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.6),
+    if (auth is AuthAuthenticated) {
+      final symbol = auth.walletCurrency == 'THB' ? '฿' : auth.walletCurrency;
+      final balance = auth.walletBalance ?? 0;
+      return InkWell(
+        onTap: () => context.push(Routes.wallet),
         borderRadius: BorderRadius.circular(JuntraRadius.card),
-        border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        children: [
-          Text(label, style: const TextStyle(
-            fontSize: 10, color: JuntraColors.textFaint,
-          )),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: JuntraColors.purpleCardGradient,
+            borderRadius: BorderRadius.circular(JuntraRadius.card),
+            border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
+          ),
+          child: Row(
             children: [
-              Text(value, style: baiJamjuree(size: 22, color: JuntraColors.gold)),
-              const SizedBox(width: 4),
-              Text(unit, style: const TextStyle(
-                fontSize: 10, color: JuntraColors.textMuted,
-              )),
+              const Icon(Icons.account_balance_wallet_outlined,
+                  color: JuntraColors.gold, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('เครดิตคงเหลือ',
+                        style: TextStyle(
+                          fontSize: 10, letterSpacing: 1.4,
+                          color: JuntraColors.textFaint,
+                        )),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$symbol${NumberFormat.decimalPattern('th').format(balance)}',
+                      style: baiJamjuree(size: 22, color: JuntraColors.gold),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: JuntraColors.gold.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('เติมเครดิต',
+                    style: TextStyle(
+                      fontSize: 12, color: JuntraColors.gold,
+                      fontWeight: FontWeight.w700,
+                    )),
+              ),
             ],
           ),
-        ],
+        ),
+      );
+    }
+
+    // Guest — invite sign-in instead of fabricated stats.
+    return InkWell(
+      onTap: () => context.push(Routes.login),
+      borderRadius: BorderRadius.circular(JuntraRadius.card),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: JuntraColors.mysticHeroGradient,
+          borderRadius: BorderRadius.circular(JuntraRadius.card),
+          border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.lock_open_outlined, color: JuntraColors.gold, size: 22),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'เข้าสู่ระบบเพื่อเก็บประวัติคำทำนายและเครดิตของคุณ',
+                style: TextStyle(
+                  fontSize: 12.5, color: JuntraColors.textCream, height: 1.4,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_forward_rounded, color: JuntraColors.gold, size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -538,11 +582,16 @@ class _RecentReadingTile extends StatelessWidget {
   final Map reading;
 
   static const Map<String, (String, String, Color)> _typeMeta = {
-    'tarot_three':  ('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
-    'tarot_celtic': ('เซลติกครอส',   '✧', JuntraColors.purpleBright),
-    'numerology':   ('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
-    'palmistry':    ('ดูลายมือ',     '✋', JuntraColors.gold),
-    'auspicious':   ('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
+    'tarot_single':   ('ไพ่ใบเดียว',  '✦', JuntraColors.gold),
+    'tarot_three':    ('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
+    'tarot_love':     ('ความรัก',     '♥', Color(0xFFFF6B9D)),
+    'tarot_career':   ('การงาน-เงิน', '✦', JuntraColors.gold),
+    'tarot_decision': ('ทางแยก',      '✧', JuntraColors.purpleBright),
+    'tarot_celtic':   ('เซลติกครอส',   '✧', JuntraColors.purpleBright),
+    'tarot_year':     ('ดวง 12 เดือน', '☾', JuntraColors.gold),
+    'numerology':     ('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
+    'palmistry':      ('ดูลายมือ',     '✋', JuntraColors.gold),
+    'auspicious':     ('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
   };
 
   @override

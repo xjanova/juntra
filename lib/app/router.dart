@@ -63,7 +63,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.shuffle,
         builder: (c, s) => ShuffleScreen(
-          spreadId: s.uri.queryParameters['spread'] ?? '3card',
+          spreadId: s.uri.queryParameters['spread'] ?? 'three',
           categoryId: s.uri.queryParameters['category'],
         ),
       ),
@@ -79,7 +79,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ReadingScreen(
             readingId: id,
             spreadId: id == null
-                ? (s.uri.queryParameters['spread'] ?? '3card')
+                ? (s.uri.queryParameters['spread'] ?? 'three')
                 : null,
           );
         },
@@ -87,7 +87,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.payment,
         builder: (c, s) => PaymentScreen(
-          spreadId: s.uri.queryParameters['spread'] ?? '3card',
+          spreadId: s.uri.queryParameters['spread'] ?? 'three',
           amount: int.tryParse(s.uri.queryParameters['amount'] ?? '0') ?? 0,
         ),
       ),
