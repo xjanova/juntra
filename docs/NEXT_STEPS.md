@@ -34,9 +34,13 @@ Open https://github.com/xjanova/juntra/settings/secrets/actions and add **4** se
 | Secret | Value |
 |---|---|
 | `ANDROID_KEYSTORE_BASE64` | (paste from clipboard above) |
-| `ANDROID_KEYSTORE_PASSWORD` | `xJu3wuVpYQy8kAuWfMYbyQSE` |
+| `ANDROID_KEYSTORE_PASSWORD` | see `KEYSTORE_INFO.md` (gitignored) |
 | `ANDROID_KEY_ALIAS` | `juntra-upload` |
-| `ANDROID_KEY_PASSWORD` | `xJu3wuVpYQy8kAuWfMYbyQSE` |
+| `ANDROID_KEY_PASSWORD` | see `KEYSTORE_INFO.md` (gitignored) |
+
+These secrets are already set on the repo. **Never paste the keystore password
+into a tracked file** — the credentials live only in `KEYSTORE_INFO.md`
+(gitignored) and the GitHub Actions secrets.
 
 **Then re-run the release workflow** (Actions → Release → most recent run → Re-run jobs)
 to produce a properly-signed APK.
