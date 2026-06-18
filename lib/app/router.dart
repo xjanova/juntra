@@ -20,6 +20,7 @@ import '../features/share/share_screen.dart';
 import '../features/shuffle/shuffle_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/spreads/spreads_screen.dart';
+import '../features/wallet/transactions_screen.dart';
 import '../features/wallet/wallet_screen.dart';
 
 /// Root navigator key — required by [UpdateObserver] so the update dialog
@@ -49,6 +50,7 @@ class Routes {
   static const share = '/share';
   static const login = '/login';
   static const wallet = '/wallet';
+  static const transactions = '/transactions';
   static const settings = '/settings';
 }
 
@@ -120,6 +122,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.share, builder: (c, s) => const ShareScreen()),
       GoRoute(path: Routes.login, builder: (c, s) => const LoginScreen()),
       GoRoute(path: Routes.wallet, builder: (c, s) => const WalletScreen()),
+      GoRoute(path: Routes.transactions, builder: (c, s) => const TransactionsScreen()),
       GoRoute(path: Routes.settings, builder: (c, s) => const SettingsScreen()),
     ],
   );

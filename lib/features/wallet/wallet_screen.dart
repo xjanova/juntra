@@ -123,6 +123,14 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                                 onCancel: () =>
                                     _cancelTopup(t.cast<String, dynamic>()),
                               ),
+                            const SizedBox(height: 10),
+                            Center(
+                              child: TextButton(
+                                onPressed: () => context.push(Routes.transactions),
+                                child: const Text('ดูประวัติทั้งหมด →',
+                                    style: TextStyle(color: JuntraColors.gold, fontSize: 13)),
+                              ),
+                            ),
                           ],
                         ],
                       );
