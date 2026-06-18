@@ -21,6 +21,9 @@ class Api {
   static const authRegister = '/v1/auth/register';
   static const authMe       = '/v1/auth/me';
   static const authLogout   = '/v1/auth/logout';
+  /// Short-lived single-use code for the web OAuth bootstrap (so the bearer
+  /// never goes in the mobile-start URL). POST; bearer in the auth header.
+  static const authHandoff  = '/v1/auth/handoff';
 
   // ─── Wallet ─────────────────────────────────────────────────
   static const wallet               = '/v1/wallet';

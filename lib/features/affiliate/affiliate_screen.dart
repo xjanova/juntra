@@ -9,6 +9,7 @@ import '../../app/theme.dart';
 import '../../core/api/affiliate_repository.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exceptions.dart';
+import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
@@ -163,13 +164,21 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
   /// callback fires.
   Future<Uri?> _buildOauthUrl() async {
     final api = await ref.read(apiClientProvider.future);
-    final token = await api.getToken();
-    if (token == null || token.isEmpty) return null;
-    // Build via Uri.https so the bearer is percent-encoded — a Sanctum token
-    // is `<id>|<hash>` and the raw `|` would otherwise corrupt the query.
-    return Uri.https('จันทรา.online', '/auth/thaiprompt/mobile-start', {
-      'bearer': token,
-    });
+    // Mint a SHORT-LIVED single-use handoff code instead of putting the
+    // long-lived bearer in the URL (the bearer rides in the auth header on
+    // this POST). The code expires in 120s and can't be replayed, so it's
+    // safe to appear in browser history / logs.
+    try {
+      final res = await api.post<Map<String, dynamic>>(Api.authHandoff);
+      final data = res['data'];
+      final code = (data is Map ? data['code'] : null)?.toString();
+      if (code == null || code.isEmpty) return null;
+      return Uri.https('จันทรา.online', '/auth/thaiprompt/mobile-start', {
+        'code': code,
+      });
+    } on ApiException {
+      return null;
+    }
   }
 
   Future<void> _launchOauth(BuildContext context) async {
