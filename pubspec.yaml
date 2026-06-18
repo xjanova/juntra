@@ -5,7 +5,7 @@ publish_to: 'none'
 # Single source of truth for app version. Bumped automatically by
 # .github/workflows/auto-bump-on-merge.yml on PR merge, then the release
 # workflow tags + builds APK + signs + publishes Release artifacts.
-version: 0.2.0+8
+version: 0.2.1+9
 
 environment:
   sdk: ^3.11.0
