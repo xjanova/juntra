@@ -56,6 +56,10 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 10),
                 _CategoriesGrid(),
                 const SizedBox(height: 18),
+                const _SectionLabel('บริการดูดวงอื่น ๆ'),
+                const SizedBox(height: 10),
+                _OtherServices(),
+                const SizedBox(height: 18),
                 _MaeMorOnlineCard(),
                 const SizedBox(height: 18),
                 _RecentReadingsSection(),
@@ -315,6 +319,47 @@ class _QuickStatsRow extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Non-tarot services row (daily horoscope / numerology / auspicious dates).
+class _OtherServices extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    const items = [
+      ('ดวงรายวัน', '☀', Routes.horoscope, JuntraColors.gold),
+      ('เลขศาสตร์', '⊛', Routes.numerology, JuntraColors.mintGreen),
+      ('ฤกษ์ยาม', '☼', Routes.auspicious, JuntraColors.cyan),
+    ];
+    return Row(
+      children: [
+        for (final (label, icon, route, color) in items)
+          Expanded(
+            child: InkWell(
+              onTap: () => context.push(route),
+              borderRadius: BorderRadius.circular(JuntraRadius.card),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  gradient: JuntraColors.purpleCardGradient,
+                  borderRadius: BorderRadius.circular(JuntraRadius.card),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(icon, style: TextStyle(fontSize: 24, color: color)),
+                    const SizedBox(height: 6),
+                    Text(label, style: const TextStyle(
+                      fontSize: 12, color: JuntraColors.textCream, fontWeight: FontWeight.w600,
+                    )),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

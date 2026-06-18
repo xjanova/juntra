@@ -46,6 +46,15 @@ class Api {
   static const historyReadings = '/v1/history/readings';
   static String historyReading(int id) => '/v1/history/readings/$id';
 
+  // ─── Non-tarot paid readings ─────────────────────────────────
+  static const fortuneNumerology = '/v1/fortune/numerology';
+  static const fortuneAuspicious = '/v1/fortune/auspicious';
+  static const fortunePalmistry  = '/v1/fortune/palmistry';
+
+  // ─── Daily horoscope (free, read-only) ───────────────────────
+  static const horoscopeIndex = '/v1/horoscope';
+  static String horoscope(String slug) => '/v1/horoscope/$slug';
+
   // ─── MLM dashboard (requires thaiprompt_token; 403 unlinked) ────
   static const mlmStats       = '/v1/mlm/stats';
   static const mlmTree        = '/v1/mlm/tree';

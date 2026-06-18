@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/affiliate/affiliate_screen.dart';
+import '../features/auspicious/auspicious_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/chat/chat_screen.dart';
+import '../features/horoscope/horoscope_screen.dart';
 import '../features/chat/conversation_list_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/natal/natal_screen.dart';
+import '../features/numerology/numerology_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -32,6 +35,9 @@ class Routes {
   static const spreads = '/spreads';
   static const shuffle = '/shuffle';
   static const reading = '/reading';
+  static const numerology = '/numerology';
+  static const auspicious = '/auspicious';
+  static const horoscope = '/horoscope';
   static const chat = '/chat';
   static const chatConversations = '/chat-conversations';
   static const history = '/history';
@@ -95,6 +101,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.chatConversations,
         builder: (c, s) => const ConversationListScreen(),
+      ),
+      GoRoute(path: Routes.numerology, builder: (c, s) => const NumerologyScreen()),
+      GoRoute(path: Routes.auspicious, builder: (c, s) => const AuspiciousScreen()),
+      GoRoute(
+        path: Routes.horoscope,
+        builder: (c, s) => HoroscopeScreen(
+          initialSlug: s.uri.queryParameters['sign'],
+        ),
       ),
       GoRoute(path: Routes.history, builder: (c, s) => const HistoryScreen()),
       GoRoute(path: Routes.profile, builder: (c, s) => const ProfileScreen()),
