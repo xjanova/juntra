@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
+import 'api_exceptions.dart';
 import 'endpoints.dart';
 
 /// MLM affiliate dashboard — wraps `/v1/mlm/*` which proxies to the
@@ -42,7 +43,20 @@ class AffiliateRepository {
   /// caller cast on use. The ApiClient sets `validateStatus < 500` so
   /// the 403 body still arrives as a normal Future.
   Future<MlmResult> _wrap(Future<Map<String, dynamic>> Function() fetch) async {
-    final res = await fetch();
+    final Map<String, dynamic> res;
+    try {
+      res = await fetch();
+    } on ApiException catch (e) {
+      // ApiClient._decode throws on every >=400 — but a 403 from the MLM
+      // proxy is the EXPECTED "not linked" state (reason_code:
+      // thaiprompt_not_linked), not an error. Map it to MlmNotLinked so the
+      // screen shows the "link account" CTA instead of a generic failure.
+      // Anything else re-throws into the screen's error state.
+      if (e.statusCode == 403) {
+        return MlmNotLinked(reasonCode: 'thaiprompt_not_linked', message: e.message);
+      }
+      rethrow;
+    }
     if (res['linked'] == true) {
       return MlmLinked(
         payload: res['data'],

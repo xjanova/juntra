@@ -162,13 +162,17 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
     final payable = (initiated['payable_amount'] as num?)?.toDouble()
         ?? (txMap['amount'] as num?)?.toDouble()
         ?? amount;
+    final promptpay =
+        (initiated['promptpay'] as Map?)?.cast<String, dynamic>() ?? const {};
     await _openTopupSheet(
       txId: txId,
       amount: payable,
-      promptpay: (initiated['promptpay'] as Map?)?.cast<String, dynamic>()
-          ?? const {},
+      promptpay: promptpay,
       slipUploadUrl: initiated['slip_upload_url']?.toString(),
-      qrPayload: initiated['qr_payload']?.toString(),
+      // qr_payload is nested INSIDE promptpay (data.promptpay.qr_payload), not
+      // top-level — read it from there so the backend's exact reserved-amount
+      // QR is used instead of a locally rebuilt one.
+      qrPayload: promptpay['qr_payload']?.toString(),
       instructions: initiated['instructions']?.toString(),
       autoConfirm: initiated['auto_confirm'] == true,
     );
@@ -237,11 +241,16 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       return;
     }
     if (!mounted) return;
+    final promptpay =
+        (show['promptpay'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final payable = (show['payable_amount'] as num?)?.toDouble() ?? amount;
     await _openTopupSheet(
       txId: txId,
-      amount: amount,
-      promptpay: (show['promptpay'] as Map?)?.cast<String, dynamic>() ?? const {},
+      amount: payable,
+      promptpay: promptpay,
       slipUploadUrl: show['slip_upload_url']?.toString(),
+      // topupShow now returns the promptpay/QR block — render it on re-upload.
+      qrPayload: promptpay['qr_payload']?.toString(),
     );
     await _refresh();
   }
