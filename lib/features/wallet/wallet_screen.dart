@@ -120,6 +120,8 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                                 tx: t.cast<String, dynamic>(),
                                 onReupload: () =>
                                     _reuploadSlip(t.cast<String, dynamic>()),
+                                onCancel: () =>
+                                    _cancelTopup(t.cast<String, dynamic>()),
                               ),
                           ],
                         ],
@@ -241,6 +243,51 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       promptpay: (show['promptpay'] as Map?)?.cast<String, dynamic>() ?? const {},
       slipUploadUrl: show['slip_upload_url']?.toString(),
     );
+    await _refresh();
+  }
+
+  /// Cancel a pending top-up (releases the reserved amount). Confirms first —
+  /// it's destructive (the user can't un-cancel).
+  Future<void> _cancelTopup(Map<String, dynamic> tx) async {
+    final txId = (tx['id'] as num?)?.toInt();
+    if (txId == null) {
+      _toast('ไม่พบเลขที่รายการ — กรุณารีเฟรชแล้วลองใหม่');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: JuntraColors.bgPurpleDeep,
+        title: Text('ยกเลิกรายการเติมเงิน?',
+            style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+        content: const Text(
+          'รายการที่รออนุมัตินี้จะถูกยกเลิก — ทำได้เฉพาะกรณียังไม่ได้โอนเงิน',
+          style: TextStyle(color: JuntraColors.textLavender, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('ไม่ยกเลิก',
+                style: TextStyle(color: JuntraColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('ยกเลิกรายการ',
+                style: TextStyle(color: Color(0xFFFF8FA0))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final repo = await ref.read(walletRepositoryProvider.future);
+      await repo.cancelTopup(txId);
+      if (mounted) _toast('ยกเลิกรายการเติมเงินแล้ว');
+    } on ApiException catch (e) {
+      if (mounted) _toast(e.message);
+    } catch (_) {
+      if (mounted) _toast('ยกเลิกไม่สำเร็จ — กรุณาลองใหม่');
+    }
     await _refresh();
   }
 
@@ -867,13 +914,16 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _TxTile extends StatelessWidget {
-  const _TxTile({required this.tx, this.onReupload});
+  const _TxTile({required this.tx, this.onReupload, this.onCancel});
   final Map<String, dynamic> tx;
 
   /// When set and this is a *pending top-up*, a "อัปโหลดสลิป" pill lets the
   /// user re-open the slip sheet — covers the case where they dismissed it
   /// before uploading.
   final VoidCallback? onReupload;
+
+  /// When set and this is a *pending top-up*, a "ยกเลิก" pill cancels it.
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -943,9 +993,25 @@ class _TxTile extends StatelessWidget {
           ),
           if (canReupload) ...[
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _SlipReuploadPill(onTap: onReupload!),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (onCancel != null) ...[
+                  _TopupActionPill(
+                    label: 'ยกเลิก',
+                    icon: Icons.close_rounded,
+                    color: const Color(0xFFFF8FA0),
+                    onTap: onCancel!,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _TopupActionPill(
+                  label: 'อัปโหลดสลิป',
+                  icon: Icons.upload_file_outlined,
+                  color: JuntraColors.gold,
+                  onTap: onReupload!,
+                ),
+              ],
             ),
           ],
         ],
@@ -981,9 +1047,18 @@ class _TxTile extends StatelessWidget {
   }
 }
 
-/// Small gold-outline call-to-action shown on a pending top-up tile.
-class _SlipReuploadPill extends StatelessWidget {
-  const _SlipReuploadPill({required this.onTap});
+/// Small outlined call-to-action pill shown on a pending top-up tile
+/// (re-upload slip / cancel).
+class _TopupActionPill extends StatelessWidget {
+  const _TopupActionPill({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
@@ -993,19 +1068,18 @@ class _SlipReuploadPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: JuntraColors.gold.withValues(alpha: 0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.5)),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.upload_file_outlined, size: 14, color: JuntraColors.gold),
-            SizedBox(width: 6),
-            Text('อัปโหลดสลิป',
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(label,
                 style: TextStyle(
-                  fontSize: 12, color: JuntraColors.gold,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 12, color: color, fontWeight: FontWeight.w700,
                 )),
           ],
         ),

@@ -54,6 +54,13 @@ class WalletRepository {
     return _data(res);
   }
 
+  /// Cancel a still-pending top-up (releases the reserved amount). Throws
+  /// [ApiException] with 409 if it's no longer pending (already approved/
+  /// rejected) so the UI can refresh instead of insisting.
+  Future<void> cancelTopup(int id) async {
+    await _api.delete<dynamic>(Api.walletTopupCancel(id));
+  }
+
   /// Native slip upload. [filePath] is the local path returned by
   /// image_picker. Returns the updated transaction payload.
   ///

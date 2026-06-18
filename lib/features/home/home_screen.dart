@@ -10,6 +10,7 @@ import '../../core/api/fortune_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/data/fortune_categories.dart';
 import '../../shared/data/tarot_deck.dart';
+import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/pill.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/tarot_card_widgets.dart';
@@ -65,7 +66,7 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      bottomNavigationBar: const _JuntraTabBar(currentIndex: 0),
+      bottomNavigationBar: const JuntraTabBar(currentIndex: 0),
     );
   }
 }
@@ -684,67 +685,3 @@ class _RecentReadingTile extends StatelessWidget {
   }
 }
 
-/// Bottom tab bar — minimal 4-tab design (Home, History, Chat, Profile).
-class _JuntraTabBar extends StatelessWidget {
-  const _JuntraTabBar({required this.currentIndex});
-  final int currentIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: JuntraColors.bgDeepest.withValues(alpha: 0.85),
-        border: Border(top: BorderSide(
-          color: JuntraColors.gold.withValues(alpha: 0.2),
-        )),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _TabIcon(icon: Icons.home_filled, label: 'หน้าแรก', selected: currentIndex == 0,
-              onTap: () => context.go(Routes.home)),
-          _TabIcon(icon: Icons.history, label: 'ประวัติ', selected: currentIndex == 1,
-              onTap: () => context.go(Routes.history)),
-          _TabIcon(icon: Icons.auto_awesome, label: 'แม่หมอ', selected: currentIndex == 2,
-              onTap: () => context.go(Routes.chat)),
-          _TabIcon(icon: Icons.person, label: 'โปรไฟล์', selected: currentIndex == 3,
-              onTap: () => context.go(Routes.profile)),
-        ],
-      ),
-    );
-  }
-}
-
-class _TabIcon extends StatelessWidget {
-  const _TabIcon({
-    required this.icon, required this.label,
-    required this.selected, required this.onTap,
-  });
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? JuntraColors.gold : JuntraColors.textFaint;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 3),
-            Text(label, style: TextStyle(
-              fontSize: 10, color: color,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            )),
-          ],
-        ),
-      ),
-    );
-  }
-}

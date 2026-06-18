@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/affiliate_repository.dart';
 import '../../core/api/api_client.dart';
+import '../../core/api/api_exceptions.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
@@ -318,7 +319,12 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
                 )),
             const SizedBox(height: 6),
             Text(
-              e.toString(),
+              // Only surface a localized ApiException message; anything else
+              // (cast/parse errors from the opaque upstream payload) gets a
+              // generic line so internal detail never reaches the user.
+              e is ApiException
+                  ? e.message
+                  : 'ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง',
               maxLines: 2, overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(

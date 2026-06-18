@@ -118,6 +118,15 @@ class ApiClient {
     }
   }
 
+  Future<T> delete<T>(String path, {dynamic data, Map<String, dynamic>? query}) async {
+    try {
+      final res = await dio.delete(path, data: data, queryParameters: query);
+      return _decode<T>(res);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   /// Multipart POST. Used by the native slip upload — `formData` is a
   /// Dio [FormData] including a [MultipartFile] under the field name
   /// the backend expects. Returns the decoded JSON body, same as [post].

@@ -7,6 +7,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/starry_background.dart';
 
 /// Screen 8 — History. Filter chips (by reading type) + reverse-chrono
@@ -53,6 +54,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final history = ref.watch(fortuneHistoryProvider);
 
     return Scaffold(
+      bottomNavigationBar: const JuntraTabBar(currentIndex: 1),
       body: Stack(
         children: [
           const StarryBackground(density: 30, intensity: 0.4),

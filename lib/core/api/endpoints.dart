@@ -25,11 +25,14 @@ class Api {
   // ─── Wallet ─────────────────────────────────────────────────
   static const wallet               = '/v1/wallet';
   static const walletTransactions   = '/v1/wallet/transactions';
+  static const walletTopups         = '/v1/wallet/topups';
   static const walletTopupPromptpay = '/v1/wallet/topup/promptpay';
   static String walletTopup(int id) => '/v1/wallet/topup/$id';
   /// Multipart upload of the PromptPay slip image (field name `slip`).
   /// 409 if status != pending; 422 if not a topup tx; 4 MB max image.
   static String walletTopupSlip(int id) => '/v1/wallet/topup/$id/slip';
+  /// DELETE — cancel a still-pending top-up (releases the reserved amount).
+  static String walletTopupCancel(int id) => '/v1/wallet/topup/$id';
 
   // ─── Mae Mor AI Chat ─────────────────────────────────────────
   static const chatConversations = '/v1/chat/conversations';
