@@ -331,6 +331,7 @@ class _OtherServices extends StatelessWidget {
       ('ดวงรายวัน', '☀', Routes.horoscope, JuntraColors.gold),
       ('เลขศาสตร์', '⊛', Routes.numerology, JuntraColors.mintGreen),
       ('ฤกษ์ยาม', '☼', Routes.auspicious, JuntraColors.cyan),
+      ('ลายมือ', '✋', Routes.palmistry, JuntraColors.purpleBright),
     ];
     return Row(
       children: [
@@ -349,11 +350,13 @@ class _OtherServices extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    Text(icon, style: TextStyle(fontSize: 24, color: color)),
+                    Text(icon, style: TextStyle(fontSize: 22, color: color)),
                     const SizedBox(height: 6),
-                    Text(label, style: const TextStyle(
-                      fontSize: 12, color: JuntraColors.textCream, fontWeight: FontWeight.w600,
-                    )),
+                    Text(label,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11, color: JuntraColors.textCream, fontWeight: FontWeight.w600,
+                        )),
                   ],
                 ),
               ),

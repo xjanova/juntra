@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/data/tarot_deck.dart';
@@ -112,6 +113,26 @@ class FortuneRepository {
         'from_date': ?fromDate,
         'to_date': ?toDate,
       },
+    );
+    return _readingId(res);
+  }
+
+  /// Create a palmistry reading from a palm photo (multipart). The backend
+  /// returns 503 (palmistry_unavailable) when no vision model is configured.
+  Future<int> createPalmistry({
+    required String filePath,
+    String? fileName,
+    String? question,
+  }) async {
+    final map = <String, dynamic>{
+      'image': await MultipartFile.fromFile(filePath, filename: fileName ?? 'palm.jpg'),
+    };
+    final q = question?.trim();
+    if (q != null && q.isNotEmpty) map['question'] = q;
+
+    final res = await _api.postMultipart<Map<String, dynamic>>(
+      Api.fortunePalmistry,
+      formData: FormData.fromMap(map),
     );
     return _readingId(res);
   }

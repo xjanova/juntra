@@ -12,6 +12,7 @@ import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/natal/natal_screen.dart';
 import '../features/numerology/numerology_screen.dart';
+import '../features/palmistry/palmistry_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -37,6 +38,7 @@ class Routes {
   static const reading = '/reading';
   static const numerology = '/numerology';
   static const auspicious = '/auspicious';
+  static const palmistry = '/palmistry';
   static const horoscope = '/horoscope';
   static const chat = '/chat';
   static const chatConversations = '/chat-conversations';
@@ -104,6 +106,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: Routes.numerology, builder: (c, s) => const NumerologyScreen()),
       GoRoute(path: Routes.auspicious, builder: (c, s) => const AuspiciousScreen()),
+      GoRoute(path: Routes.palmistry, builder: (c, s) => const PalmistryScreen()),
       GoRoute(
         path: Routes.horoscope,
         builder: (c, s) => HoroscopeScreen(
