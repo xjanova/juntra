@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform, File;
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -153,6 +154,19 @@ class UpdateService {
 
     await for (final p in controller.stream) {
       yield p;
+    }
+
+    // Integrity check (MITM / corrupted-download guard): if the release
+    // published a SHA-256 digest, the downloaded APK MUST match it before we
+    // hand it to the OS installer. Stream-hash to avoid loading the whole APK
+    // into memory. Releases without a digest skip this (can't verify what
+    // wasn't published) rather than block the update.
+    if (info.apkSha256.isNotEmpty) {
+      final digest = await sha256.bind(file.openRead()).first;
+      if (digest.toString().toLowerCase() != info.apkSha256) {
+        if (await file.exists()) await file.delete();
+        throw StateError('ไฟล์อัปเดตไม่ผ่านการตรวจสอบความถูกต้อง กรุณาลองใหม่');
+      }
     }
 
     // Launch the OS package installer.

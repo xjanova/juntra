@@ -9,7 +9,6 @@ import '../features/chat/conversation_list_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/natal/natal_screen.dart';
-import '../features/payment/payment_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -33,7 +32,6 @@ class Routes {
   static const spreads = '/spreads';
   static const shuffle = '/shuffle';
   static const reading = '/reading';
-  static const payment = '/payment';
   static const chat = '/chat';
   static const chatConversations = '/chat-conversations';
   static const history = '/history';
@@ -63,7 +61,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.shuffle,
         builder: (c, s) => ShuffleScreen(
-          spreadId: s.uri.queryParameters['spread'] ?? '3card',
+          spreadId: s.uri.queryParameters['spread'] ?? 'three',
           categoryId: s.uri.queryParameters['category'],
         ),
       ),
@@ -79,17 +77,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           return ReadingScreen(
             readingId: id,
             spreadId: id == null
-                ? (s.uri.queryParameters['spread'] ?? '3card')
+                ? (s.uri.queryParameters['spread'] ?? 'three')
                 : null,
           );
         },
-      ),
-      GoRoute(
-        path: Routes.payment,
-        builder: (c, s) => PaymentScreen(
-          spreadId: s.uri.queryParameters['spread'] ?? '3card',
-          amount: int.tryParse(s.uri.queryParameters['amount'] ?? '0') ?? 0,
-        ),
       ),
       GoRoute(
         path: Routes.chat,

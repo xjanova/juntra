@@ -5,7 +5,7 @@
 ## Project identity
 - **Name:** จันทราพยากรณ์ (Juntra) — fortune-telling app for "แม่หมอจันทรา"
 - **Repo:** `xjanova/juntra` (Flutter mobile)
-- **Backend:** `xjanova/Thaiprompt-Affiliate` Laravel (`main.thaiprompt.online`)
+- **Backend:** `xjanova/juntraweb` Laravel at `จันทรา.online` — the app connects to juntraweb ONLY; juntraweb proxies AI to the Thaiprompt-Affiliate pool server-side
 - **Branding:** "POWERED BY XMAN STUDIO" must appear on splash + global footer
 
 ## ⚠️ Hard rules

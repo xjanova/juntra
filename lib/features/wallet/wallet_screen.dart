@@ -120,6 +120,8 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                                 tx: t.cast<String, dynamic>(),
                                 onReupload: () =>
                                     _reuploadSlip(t.cast<String, dynamic>()),
+                                onCancel: () =>
+                                    _cancelTopup(t.cast<String, dynamic>()),
                               ),
                           ],
                         ],
@@ -152,12 +154,23 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       _toast('สร้างรายการไม่สำเร็จ — ไม่ได้รับเลขที่รายการ');
       return;
     }
+    // CRITICAL for SMS-checker auto-credit: when enabled, the backend reserves
+    // a UNIQUE payable amount (e.g. ฿100.37) and returns the exact EMVCo
+    // `qr_payload` carrying it. The user MUST pay that exact figure (and scan
+    // that exact QR) or the incoming bank SMS won't match the reservation.
+    // Fall back to the round amount only when the backend didn't reserve one.
+    final payable = (initiated['payable_amount'] as num?)?.toDouble()
+        ?? (txMap['amount'] as num?)?.toDouble()
+        ?? amount;
     await _openTopupSheet(
       txId: txId,
-      amount: amount,
+      amount: payable,
       promptpay: (initiated['promptpay'] as Map?)?.cast<String, dynamic>()
           ?? const {},
       slipUploadUrl: initiated['slip_upload_url']?.toString(),
+      qrPayload: initiated['qr_payload']?.toString(),
+      instructions: initiated['instructions']?.toString(),
+      autoConfirm: initiated['auto_confirm'] == true,
     );
     // After the sheet closes either with a successful upload or a
     // dismissal, refresh so the new pending tx (or freshly-uploaded
@@ -170,6 +183,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
     required double amount,
     required Map<String, dynamic> promptpay,
     String? slipUploadUrl,
+    String? qrPayload,
+    String? instructions,
+    bool autoConfirm = false,
   }) async {
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -186,6 +202,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
         promptpayId: promptpay['id']?.toString() ?? '',
         promptpayName: promptpay['name']?.toString() ?? '',
         webFallbackUrl: slipUploadUrl,
+        qrPayload: qrPayload,
+        instructions: instructions,
+        autoConfirm: autoConfirm,
         onUploaded: () {
           if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
         },
@@ -224,6 +243,51 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       promptpay: (show['promptpay'] as Map?)?.cast<String, dynamic>() ?? const {},
       slipUploadUrl: show['slip_upload_url']?.toString(),
     );
+    await _refresh();
+  }
+
+  /// Cancel a pending top-up (releases the reserved amount). Confirms first —
+  /// it's destructive (the user can't un-cancel).
+  Future<void> _cancelTopup(Map<String, dynamic> tx) async {
+    final txId = (tx['id'] as num?)?.toInt();
+    if (txId == null) {
+      _toast('ไม่พบเลขที่รายการ — กรุณารีเฟรชแล้วลองใหม่');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: JuntraColors.bgPurpleDeep,
+        title: Text('ยกเลิกรายการเติมเงิน?',
+            style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+        content: const Text(
+          'รายการที่รออนุมัตินี้จะถูกยกเลิก — ทำได้เฉพาะกรณียังไม่ได้โอนเงิน',
+          style: TextStyle(color: JuntraColors.textLavender, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('ไม่ยกเลิก',
+                style: TextStyle(color: JuntraColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('ยกเลิกรายการ',
+                style: TextStyle(color: Color(0xFFFF8FA0))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final repo = await ref.read(walletRepositoryProvider.future);
+      await repo.cancelTopup(txId);
+      if (mounted) _toast('ยกเลิกรายการเติมเงินแล้ว');
+    } on ApiException catch (e) {
+      if (mounted) _toast(e.message);
+    } catch (_) {
+      if (mounted) _toast('ยกเลิกไม่สำเร็จ — กรุณาลองใหม่');
+    }
     await _refresh();
   }
 
@@ -310,7 +374,8 @@ class _BalanceCard extends StatelessWidget {
 class _TopupRow extends StatelessWidget {
   const _TopupRow({required this.onPick});
   final ValueChanged<double> onPick;
-  static const _options = <double>[100, 200, 500, 1000];
+  // Matches config/pricing.php `topup_bundles` on the backend.
+  static const _options = <double>[50, 100, 200, 500, 1000, 2000];
 
   @override
   Widget build(BuildContext context) {
@@ -323,35 +388,40 @@ class _TopupRow extends StatelessWidget {
               color: JuntraColors.textCream,
             )),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            for (final amt in _options) ...[
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(JuntraRadius.card),
-                  onTap: () => onPick(amt),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: JuntraColors.mysticHeroGradient,
+        LayoutBuilder(
+          builder: (_, c) {
+            final tileW = (c.maxWidth - 16) / 3; // 3 per row, 8px gaps
+            return Wrap(
+              spacing: 8, runSpacing: 8,
+              children: [
+                for (final amt in _options)
+                  SizedBox(
+                    width: tileW,
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(JuntraRadius.card),
-                      border: Border.all(
-                        color: JuntraColors.gold.withValues(alpha: 0.3),
+                      onTap: () => onPick(amt),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          gradient: JuntraColors.mysticHeroGradient,
+                          borderRadius: BorderRadius.circular(JuntraRadius.card),
+                          border: Border.all(
+                            color: JuntraColors.gold.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text('฿${amt.toInt()}',
+                            style: baiJamjuree(size: 16, color: JuntraColors.gold)),
                       ),
                     ),
-                    child: Text('฿${amt.toInt()}',
-                        style: baiJamjuree(size: 16, color: JuntraColors.gold)),
                   ),
-                ),
-              ),
-            ],
-          ],
+              ],
+            );
+          },
         ),
         const SizedBox(height: 6),
         const Text(
-          'โอนตามจำนวน แล้วถ่ายรูปสลิปอัปโหลดในแอพได้เลย · แอดมินอนุมัติภายในไม่กี่นาที',
+          'โอนตามจำนวนให้ตรงเป๊ะ ๆ · เติมขั้นต่ำ ฿20 · ระบบเครดิตอัตโนมัติเมื่อเงินเข้า หรืออัปโหลดสลิปให้แอดมินอนุมัติ',
           style: TextStyle(fontSize: 11, color: JuntraColors.textFaint, height: 1.5),
         ),
       ],
@@ -372,12 +442,23 @@ class _TopupSheet extends ConsumerStatefulWidget {
     required this.promptpayName,
     required this.onUploaded,
     this.webFallbackUrl,
+    this.qrPayload,
+    this.instructions,
+    this.autoConfirm = false,
   });
   final int txId;
   final double amount;
   final String promptpayId;
   final String promptpayName;
   final String? webFallbackUrl;
+  /// Exact EMVCo payload reserved by the backend (carries the unique payable
+  /// amount). When present we render THIS, not a locally-rebuilt QR.
+  final String? qrPayload;
+  /// Backend-provided instruction copy (auto-credit vs manual approval).
+  final String? instructions;
+  /// True when SMS-checker auto-credit is on — payment is confirmed
+  /// automatically once the matching bank SMS arrives.
+  final bool autoConfirm;
   final VoidCallback onUploaded;
 
   @override
@@ -477,12 +558,41 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
               id: widget.promptpayId,
               name: widget.promptpayName,
               amount: widget.amount,
+              qrPayload: widget.qrPayload,
             ),
             const SizedBox(height: 14),
-            const Text(
-              '1. โอนเงินผ่านแอพธนาคารของคุณตามจำนวนข้างต้น\n'
-              '2. กลับมาที่หน้านี้แล้วอัปโหลดสลิปด้านล่าง',
-              style: TextStyle(
+            if (widget.autoConfirm) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: JuntraColors.mintGreen.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: JuntraColors.mintGreen.withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.bolt, size: 16, color: JuntraColors.mintGreen),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'โอนตามจำนวนนี้เป๊ะ ๆ แล้วระบบจะเติมเครดิตให้อัตโนมัติทันทีที่เงินเข้า',
+                        style: TextStyle(
+                          fontSize: 12, color: JuntraColors.textCream, height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text(
+              (widget.instructions?.trim().isNotEmpty ?? false)
+                  ? widget.instructions!.trim()
+                  : '1. โอนเงินผ่านแอพธนาคารของคุณ "ตามจำนวนข้างต้นเป๊ะ ๆ"\n'
+                      '2. กลับมาที่หน้านี้แล้วอัปโหลดสลิปด้านล่าง',
+              style: const TextStyle(
                 fontSize: 12, color: JuntraColors.textLavender, height: 1.6,
               ),
             ),
@@ -605,19 +715,23 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
 
 class _PromptPayInfoCard extends StatelessWidget {
   const _PromptPayInfoCard({
-    required this.id, required this.name, required this.amount,
+    required this.id, required this.name, required this.amount, this.qrPayload,
   });
   final String id;
   final String name;
   final double amount;
+  /// Exact EMVCo payload from the backend (carries the unique payable amount).
+  /// Preferred over a locally-built one so the QR matches the reserved amount.
+  final String? qrPayload;
 
   @override
   Widget build(BuildContext context) {
-    // EMVCo PromptPay payload — non-null only when the receiver id is set
-    // and well-formed. When present we render a scannable QR so the user
-    // can pay without hand-typing the id; otherwise we fall back to text.
-    final payload =
-        id.isEmpty ? null : PromptPayQr.build(proxyId: id, amount: amount);
+    // Prefer the backend's exact payload (correct unique amount for SMS
+    // auto-credit). Fall back to building one locally from id+amount only when
+    // the backend didn't supply it and the receiver id is set + well-formed.
+    final payload = (qrPayload != null && qrPayload!.trim().isNotEmpty)
+        ? qrPayload!.trim()
+        : (id.isEmpty ? null : PromptPayQr.build(proxyId: id, amount: amount));
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -727,12 +841,25 @@ class _PricingHint extends StatelessWidget {
   final Map<String, dynamic> pricing;
   @override
   Widget build(BuildContext context) {
+    // Show every feature the backend actually prices (keys present in the
+    // /wallet pricing map), in a sensible order. Absent keys are skipped so we
+    // never show a phantom "ฟรี" for a feature the backend didn't return.
+    const defs = <(String, String, String)>[
+      ('💬', 'สนทนากับแม่หมอ', 'chat_message'),
+      ('🃏', 'ไพ่ใบเดียว',      'tarot_single'),
+      ('🃏', 'เปิดไพ่ 3 ใบ',     'tarot_three'),
+      ('❤️', 'ไพ่ความรัก',      'tarot_love'),
+      ('💼', 'ไพ่การงาน-เงิน',   'tarot_career'),
+      ('⚖️', 'ไพ่ทางแยก',       'tarot_decision'),
+      ('🔮', 'Celtic Cross',     'tarot_celtic'),
+      ('📅', 'ดวง 12 เดือน',     'tarot_year'),
+      ('🔢', 'เลขศาสตร์',         'numerology'),
+      ('✋', 'ดูลายมือ',          'palmistry'),
+      ('☼', 'ฤกษ์ยาม',          'auspicious'),
+    ];
     final items = <(String, String, num)>[
-      ('💬', 'สนทนากับแม่หมอ', _num(pricing['chat_message'])),
-      ('🃏', 'เปิดไพ่ 3 ใบ',     _num(pricing['tarot_three'])),
-      ('🔮', 'Celtic Cross',     _num(pricing['tarot_celtic'])),
-      ('🔢', 'เลขศาสตร์',         _num(pricing['numerology'])),
-      ('✋', 'ดูลายมือ',          _num(pricing['palmistry'])),
+      for (final (icon, label, key) in defs)
+        if (pricing.containsKey(key)) (icon, label, _num(pricing[key])),
     ];
     return Container(
       padding: const EdgeInsets.all(14),
@@ -787,13 +914,16 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _TxTile extends StatelessWidget {
-  const _TxTile({required this.tx, this.onReupload});
+  const _TxTile({required this.tx, this.onReupload, this.onCancel});
   final Map<String, dynamic> tx;
 
   /// When set and this is a *pending top-up*, a "อัปโหลดสลิป" pill lets the
   /// user re-open the slip sheet — covers the case where they dismissed it
   /// before uploading.
   final VoidCallback? onReupload;
+
+  /// When set and this is a *pending top-up*, a "ยกเลิก" pill cancels it.
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -863,9 +993,25 @@ class _TxTile extends StatelessWidget {
           ),
           if (canReupload) ...[
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _SlipReuploadPill(onTap: onReupload!),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (onCancel != null) ...[
+                  _TopupActionPill(
+                    label: 'ยกเลิก',
+                    icon: Icons.close_rounded,
+                    color: const Color(0xFFFF8FA0),
+                    onTap: onCancel!,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _TopupActionPill(
+                  label: 'อัปโหลดสลิป',
+                  icon: Icons.upload_file_outlined,
+                  color: JuntraColors.gold,
+                  onTap: onReupload!,
+                ),
+              ],
             ),
           ],
         ],
@@ -901,9 +1047,18 @@ class _TxTile extends StatelessWidget {
   }
 }
 
-/// Small gold-outline call-to-action shown on a pending top-up tile.
-class _SlipReuploadPill extends StatelessWidget {
-  const _SlipReuploadPill({required this.onTap});
+/// Small outlined call-to-action pill shown on a pending top-up tile
+/// (re-upload slip / cancel).
+class _TopupActionPill extends StatelessWidget {
+  const _TopupActionPill({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
@@ -913,19 +1068,18 @@ class _SlipReuploadPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: JuntraColors.gold.withValues(alpha: 0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.5)),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.upload_file_outlined, size: 14, color: JuntraColors.gold),
-            SizedBox(width: 6),
-            Text('อัปโหลดสลิป',
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(label,
                 style: TextStyle(
-                  fontSize: 12, color: JuntraColors.gold,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 12, color: color, fontWeight: FontWeight.w700,
                 )),
           ],
         ),

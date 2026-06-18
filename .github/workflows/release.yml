@@ -65,14 +65,19 @@ jobs:
       # so we defer it until the app graduates to Play Store; for now,
       # GitHub Releases delivers APKs and the in-app UpdateService picks
       # the universal asset.
+      # No --dart-define for the API base: the app connects to จันทรา.online
+      # ONLY, which is the compiled-in default (ApiClient._kApiBase). Letting
+      # the default apply keeps release identical to debug and avoids piping a
+      # non-ASCII (Thai IDN) host through the CI shell. (Earlier releases wrongly
+      # pointed at main.thaiprompt.online — the Thaiprompt pool, not juntraweb.)
       - name: Build split-per-ABI APKs (arm64, armv7, x86_64)
-        run: flutter build apk --release --split-per-abi --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+        run: flutter build apk --release --split-per-abi
 
       - name: Clean intermediates so universal build won't collide
         run: flutter clean && flutter pub get
 
       - name: Build universal APK
-        run: flutter build apk --release --dart-define=JUNTRA_API_BASE=https://main.thaiprompt.online/api
+        run: flutter build apk --release
 
       - name: Compute version label
         id: ver

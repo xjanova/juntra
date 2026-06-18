@@ -85,14 +85,19 @@ lib/
 
 ## 🔌 Backend integration
 
-Calls Thaiprompt-Affiliate Laravel backend at `main.thaiprompt.online`:
+The app talks to the **juntraweb** Laravel backend (`xjanova/juntraweb`) at
+`จันทรา.online` **ONLY**. juntraweb proxies AI to the Thaiprompt-Affiliate
+pool server-side, so the app holds no upstream AI keys.
 
-- `/v1/login` `/v1/register` `/v1/me` — Sanctum auth
-- `/v1/fortune/*` — Tarot reading (uses **shared FortuneAIService pool**)
-- `/v1/chat/mae-mor/*` — AI chat
-- `/v1/natal/compute` — Server-side natal chart (Swiss Ephemeris)
-- `/v1/payment/initiate` — PromptPay/TrueMoney/Card
-- `/v1/affiliate/*` — MLM downline data
+Endpoints (Sanctum bearer; see `lib/core/api/endpoints.dart`, all under `/api/v1`):
+
+- `/v1/auth/login` `/v1/auth/register` `/v1/auth/me` `/v1/auth/logout` — auth
+- `/v1/history/readings*` — tarot readings (debits wallet, runs FortuneAiService)
+- `/v1/chat/conversations*` — Mae Mor AI chat
+- `/v1/wallet*` — balance, PromptPay top-up + slip upload, transactions, cancel
+- `/v1/mlm/*` — MLM downline stats / tree / commissions
+
+> Natal chart is computed on-device; payments go through the wallet top-up flow.
 
 > Required backend patches live in `backend-patches/juntra/` — apply before first release.
 

@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/affiliate_repository.dart';
 import '../../core/api/api_client.dart';
+import '../../core/api/api_exceptions.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
@@ -164,8 +165,11 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
     final api = await ref.read(apiClientProvider.future);
     final token = await api.getToken();
     if (token == null || token.isEmpty) return null;
-    return Uri.parse(
-        'https://จันทรา.online/auth/thaiprompt/mobile-start?bearer=$token');
+    // Build via Uri.https so the bearer is percent-encoded — a Sanctum token
+    // is `<id>|<hash>` and the raw `|` would otherwise corrupt the query.
+    return Uri.https('จันทรา.online', '/auth/thaiprompt/mobile-start', {
+      'bearer': token,
+    });
   }
 
   Future<void> _launchOauth(BuildContext context) async {
@@ -315,7 +319,12 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
                 )),
             const SizedBox(height: 6),
             Text(
-              e.toString(),
+              // Only surface a localized ApiException message; anything else
+              // (cast/parse errors from the opaque upstream payload) gets a
+              // generic line so internal detail never reaches the user.
+              e is ApiException
+                  ? e.message
+                  : 'ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง',
               maxLines: 2, overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(

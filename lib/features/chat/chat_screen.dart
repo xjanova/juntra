@@ -9,6 +9,7 @@ import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/chat_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/starry_background.dart';
 
 /// Screen 7 — Mae Mor AI chat.
@@ -285,6 +286,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const JuntraTabBar(currentIndex: 2),
       body: Stack(
         children: [
           const StarryBackground(density: 30, intensity: 0.4),

@@ -39,7 +39,7 @@ class ReadingScreen extends ConsumerWidget {
     if (readingId != null) {
       return _ApiModeReading(readingId: readingId!);
     }
-    return _SampleModeReading(spreadId: spreadId ?? '3card');
+    return _SampleModeReading(spreadId: spreadId ?? 'three');
   }
 }
 
@@ -171,11 +171,16 @@ class _ApiModeReading extends ConsumerWidget {
 
   static String _titleFor(String type) {
     return switch (type) {
-      'tarot_three'  => 'ทาโรต์ 3 ใบ',
-      'tarot_celtic' => 'เซลติกครอส',
-      'numerology'   => 'ดวงเลขศาสตร์',
-      'palmistry'    => 'ดูลายมือ',
-      'auspicious'   => 'ฤกษ์ยาม',
+      'tarot_single'   => 'ไพ่ใบเดียว',
+      'tarot_three'    => 'อดีต ปัจจุบัน อนาคต',
+      'tarot_love'     => 'ความรัก / เนื้อคู่',
+      'tarot_career'   => 'การงาน / การเงิน',
+      'tarot_decision' => 'ทางแยก / ตัดสินใจ',
+      'tarot_celtic'   => 'เซลติกครอส',
+      'tarot_year'     => 'พยากรณ์ 12 เดือน',
+      'numerology'     => 'ดวงเลขศาสตร์',
+      'palmistry'      => 'ดูลายมือ',
+      'auspicious'     => 'ฤกษ์ยาม',
       _ => 'คำทำนาย',
     };
   }

@@ -13,6 +13,7 @@ class UpdateInfo extends Equatable {
     required this.apkUrl,
     required this.apkSizeBytes,
     required this.publishedAt,
+    this.apkSha256 = '',
   });
 
   /// Semver string like "1.0.3" (the tag without leading "v" or "+build")
@@ -29,6 +30,11 @@ class UpdateInfo extends Equatable {
 
   final int apkSizeBytes;
   final DateTime publishedAt;
+
+  /// Lowercase hex SHA-256 of the APK asset, from the GitHub asset `digest`
+  /// field (`sha256:<hex>`). Empty when the release predates digest support;
+  /// callers then skip verification rather than block the install.
+  final String apkSha256;
 
   /// Parse the GitHub Releases API JSON response.
   ///
@@ -56,6 +62,12 @@ class UpdateInfo extends Equatable {
         pick((n) => n.contains('arm64')) ??
         pick((n) => true);
 
+    // GitHub returns `digest: "sha256:<hex>"` on assets uploaded via the API.
+    final rawDigest = (asset?['digest'] as String? ?? '').trim();
+    final sha = rawDigest.startsWith('sha256:')
+        ? rawDigest.substring('sha256:'.length).toLowerCase()
+        : '';
+
     return UpdateInfo(
       latestVersion: version,
       latestBuild: build,
@@ -65,6 +77,7 @@ class UpdateInfo extends Equatable {
           (asset?['size'] is num) ? (asset!['size'] as num).toInt() : 0,
       publishedAt: DateTime.tryParse(j['published_at']?.toString() ?? '') ??
           DateTime.now(),
+      apkSha256: sha,
     );
   }
 

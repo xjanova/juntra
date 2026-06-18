@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/gold_button.dart';
+import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/xman_studio_footer.dart';
 import '../update/check_for_update.dart';
@@ -24,6 +25,7 @@ class ProfileScreen extends ConsumerWidget {
     final auth = ref.watch(authControllerProvider);
 
     return Scaffold(
+      bottomNavigationBar: const JuntraTabBar(currentIndex: 3),
       body: Stack(
         children: [
           const StarryBackground(density: 30, intensity: 0.4),

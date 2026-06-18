@@ -1,24 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/wallet_repository.dart';
 import '../../shared/data/fortune_categories.dart';
 import '../../shared/data/spreads.dart';
 import '../../shared/widgets/pill.dart';
 import '../../shared/widgets/starry_background.dart';
 
 /// Screen 3 — Spreads. Choose a tarot spread within a category.
-class SpreadsScreen extends StatelessWidget {
+class SpreadsScreen extends ConsumerWidget {
   const SpreadsScreen({super.key, this.categoryId});
   final String? categoryId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cat = fortuneCategories.firstWhere(
       (c) => c.id == (categoryId ?? 'love'),
       orElse: () => fortuneCategories.first,
     );
+
+    // Live prices from the backend; fall back to the catalog value while the
+    // wallet call is in flight or if it fails, so the list always renders.
+    final pricing = ref.watch(walletPricingProvider).valueOrNull ?? const {};
+    int priceFor(Spread s) =>
+        (pricing['tarot_${s.id}'] ?? s.price).round();
 
     return Scaffold(
       body: Stack(
@@ -35,6 +43,7 @@ class SpreadsScreen extends StatelessWidget {
                     separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (_, i) => _SpreadTile(
                       spread: spreads[i],
+                      price: priceFor(spreads[i]),
                       onTap: () => context.push(
                         '${Routes.shuffle}?spread=${spreads[i].id}'
                         '&category=${cat.id}',
@@ -94,8 +103,9 @@ class _Header extends StatelessWidget {
 }
 
 class _SpreadTile extends StatelessWidget {
-  const _SpreadTile({required this.spread, required this.onTap});
+  const _SpreadTile({required this.spread, required this.price, required this.onTap});
   final Spread spread;
+  final int price; // live price resolved from backend (fallback: catalog)
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
@@ -137,16 +147,16 @@ class _SpreadTile extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: spread.price == 0
+                          color: price == 0
                               ? JuntraColors.mintGreen.withValues(alpha: 0.18)
                               : JuntraColors.gold.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          spread.price == 0 ? 'ฟรี' : '฿${spread.price}',
+                          price == 0 ? 'ฟรี' : '฿$price',
                           style: TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w700,
-                            color: spread.price == 0
+                            color: price == 0
                                 ? JuntraColors.mintGreen
                                 : JuntraColors.gold,
                           ),
