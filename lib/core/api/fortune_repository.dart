@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/data/tarot_deck.dart';
 import 'api_client.dart';
+import 'api_exceptions.dart';
 import 'endpoints.dart';
 
 /// Reading history — wraps `/v1/history/readings*`.
@@ -82,6 +84,67 @@ class FortuneRepository {
       if (res['balance'] != null) 'balance': res['balance'],
       if (res['cost'] != null) 'cost': res['cost'],
     };
+  }
+
+  /// Create a numerology reading → returns the new reading id (route to
+  /// `/reading?id=`). Throws [ApiException] on 402/422/503 etc.
+  Future<int> createNumerology({
+    required String name,
+    required String birthDate,
+  }) async {
+    final res = await _api.post<Map<String, dynamic>>(
+      Api.fortuneNumerology,
+      data: {'name': name, 'birth_date': birthDate},
+    );
+    return _readingId(res);
+  }
+
+  /// Create an auspicious-dates reading. The backend returns 422
+  /// (`no_auspicious_day`) when the window has no good day → [ApiException].
+  Future<int> createAuspicious({
+    required String occasion,
+    String? fromDate,
+    String? toDate,
+  }) async {
+    final res = await _api.post<Map<String, dynamic>>(
+      Api.fortuneAuspicious,
+      data: {
+        'occasion': occasion,
+        'from_date': ?fromDate,
+        'to_date': ?toDate,
+      },
+    );
+    return _readingId(res);
+  }
+
+  /// Create a palmistry reading from a palm photo (multipart). The backend
+  /// returns 503 (palmistry_unavailable) when no vision model is configured.
+  Future<int> createPalmistry({
+    required String filePath,
+    String? fileName,
+    String? question,
+  }) async {
+    final map = <String, dynamic>{
+      'image': await MultipartFile.fromFile(filePath, filename: fileName ?? 'palm.jpg'),
+    };
+    final q = question?.trim();
+    if (q != null && q.isNotEmpty) map['question'] = q;
+
+    final res = await _api.postMultipart<Map<String, dynamic>>(
+      Api.fortunePalmistry,
+      formData: FormData.fromMap(map),
+    );
+    return _readingId(res);
+  }
+
+  int _readingId(Map<String, dynamic> res) {
+    final data = res['data'];
+    final id = data is Map ? data['id'] : null;
+    if (id is num) return id.toInt();
+    throw ApiException(
+      statusCode: 500,
+      message: 'ไม่ได้รับผลทำนายจากเซิร์ฟเวอร์ กรุณาลองใหม่',
+    );
   }
 }
 

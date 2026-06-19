@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/affiliate/affiliate_screen.dart';
+import '../features/auspicious/auspicious_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/chat/chat_screen.dart';
+import '../features/horoscope/horoscope_screen.dart';
 import '../features/chat/conversation_list_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/natal/natal_screen.dart';
+import '../features/numerology/numerology_screen.dart';
+import '../features/palmistry/palmistry_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -16,6 +20,7 @@ import '../features/share/share_screen.dart';
 import '../features/shuffle/shuffle_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/spreads/spreads_screen.dart';
+import '../features/wallet/transactions_screen.dart';
 import '../features/wallet/wallet_screen.dart';
 
 /// Root navigator key — required by [UpdateObserver] so the update dialog
@@ -32,6 +37,10 @@ class Routes {
   static const spreads = '/spreads';
   static const shuffle = '/shuffle';
   static const reading = '/reading';
+  static const numerology = '/numerology';
+  static const auspicious = '/auspicious';
+  static const palmistry = '/palmistry';
+  static const horoscope = '/horoscope';
   static const chat = '/chat';
   static const chatConversations = '/chat-conversations';
   static const history = '/history';
@@ -41,6 +50,7 @@ class Routes {
   static const share = '/share';
   static const login = '/login';
   static const wallet = '/wallet';
+  static const transactions = '/transactions';
   static const settings = '/settings';
 }
 
@@ -96,6 +106,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.chatConversations,
         builder: (c, s) => const ConversationListScreen(),
       ),
+      GoRoute(path: Routes.numerology, builder: (c, s) => const NumerologyScreen()),
+      GoRoute(path: Routes.auspicious, builder: (c, s) => const AuspiciousScreen()),
+      GoRoute(path: Routes.palmistry, builder: (c, s) => const PalmistryScreen()),
+      GoRoute(
+        path: Routes.horoscope,
+        builder: (c, s) => HoroscopeScreen(
+          initialSlug: s.uri.queryParameters['sign'],
+        ),
+      ),
       GoRoute(path: Routes.history, builder: (c, s) => const HistoryScreen()),
       GoRoute(path: Routes.profile, builder: (c, s) => const ProfileScreen()),
       GoRoute(path: Routes.natal, builder: (c, s) => const NatalScreen()),
@@ -103,6 +122,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.share, builder: (c, s) => const ShareScreen()),
       GoRoute(path: Routes.login, builder: (c, s) => const LoginScreen()),
       GoRoute(path: Routes.wallet, builder: (c, s) => const WalletScreen()),
+      GoRoute(path: Routes.transactions, builder: (c, s) => const TransactionsScreen()),
       GoRoute(path: Routes.settings, builder: (c, s) => const SettingsScreen()),
     ],
   );

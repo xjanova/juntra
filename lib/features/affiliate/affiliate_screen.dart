@@ -9,6 +9,7 @@ import '../../app/theme.dart';
 import '../../core/api/affiliate_repository.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exceptions.dart';
+import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
@@ -163,13 +164,21 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
   /// callback fires.
   Future<Uri?> _buildOauthUrl() async {
     final api = await ref.read(apiClientProvider.future);
-    final token = await api.getToken();
-    if (token == null || token.isEmpty) return null;
-    // Build via Uri.https so the bearer is percent-encoded — a Sanctum token
-    // is `<id>|<hash>` and the raw `|` would otherwise corrupt the query.
-    return Uri.https('จันทรา.online', '/auth/thaiprompt/mobile-start', {
-      'bearer': token,
-    });
+    // Mint a SHORT-LIVED single-use handoff code instead of putting the
+    // long-lived bearer in the URL (the bearer rides in the auth header on
+    // this POST). The code expires in 120s and can't be replayed, so it's
+    // safe to appear in browser history / logs.
+    try {
+      final res = await api.post<Map<String, dynamic>>(Api.authHandoff);
+      final data = res['data'];
+      final code = (data is Map ? data['code'] : null)?.toString();
+      if (code == null || code.isEmpty) return null;
+      return Uri.https('จันทรา.online', '/auth/thaiprompt/mobile-start', {
+        'code': code,
+      });
+    } on ApiException {
+      return null;
+    }
   }
 
   Future<void> _launchOauth(BuildContext context) async {
@@ -423,8 +432,11 @@ class _EarningsHero extends StatelessWidget {
     final totals = (stats['totals'] as Map?)?.cast<String, dynamic>() ?? const {};
     final allTime = (totals['all_time'] as num?)?.toDouble() ?? 0;
     final thisMonth = (totals['this_month'] as num?)?.toDouble() ?? 0;
-    final lastMonth = (totals['last_month'] as num?)?.toDouble() ?? 0;
-    final up = thisMonth >= lastMonth;
+    // `totals.last_month` isn't sent upstream; derive it from monthly_series
+    // (the series the web chart uses) — the second-to-last point. Null when
+    // unknown so we don't render a fake "฿0 / always up" comparison.
+    final lastMonth = _lastMonthFromSeries(stats);
+    final up = lastMonth == null ? null : thisMonth >= lastMonth;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -452,23 +464,41 @@ class _EarningsHero extends StatelessWidget {
               Expanded(child: _MiniStat(
                 label: 'เดือนนี้', value: '฿${_fmt(thisMonth)}', up: up,
               )),
-              const SizedBox(width: 8),
-              Expanded(child: _MiniStat(
-                label: 'เดือนที่แล้ว', value: '฿${_fmt(lastMonth)}', up: !up,
-              )),
+              if (lastMonth != null) ...[
+                const SizedBox(width: 8),
+                Expanded(child: _MiniStat(
+                  label: 'เดือนที่แล้ว', value: '฿${_fmt(lastMonth)}',
+                  up: up == null ? null : !up,
+                )),
+              ],
             ],
           ),
         ],
       ),
     );
   }
+
+  /// Last month's earnings from `stats.monthly_series` (the second-to-last
+  /// point), or null when the series isn't present / too short.
+  static double? _lastMonthFromSeries(Map<String, dynamic> stats) {
+    final series = stats['monthly_series'];
+    if (series is! List || series.length < 2) return null;
+    final prev = series[series.length - 2];
+    if (prev is num) return prev.toDouble();
+    if (prev is Map) {
+      final v = prev['amount'] ?? prev['value'] ?? prev['commission'] ?? prev['total'];
+      if (v is num) return v.toDouble();
+    }
+    return null;
+  }
 }
 
 class _MiniStat extends StatelessWidget {
-  const _MiniStat({required this.label, required this.value, required this.up});
+  const _MiniStat({required this.label, required this.value, this.up});
   final String label;
   final String value;
-  final bool up;
+  /// null → no trend arrow (we don't have a real comparison).
+  final bool? up;
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -495,10 +525,12 @@ class _MiniStat extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(up ? Icons.arrow_upward : Icons.arrow_downward,
-                  size: 12,
-                  color: up ? JuntraColors.mintGreen : Colors.redAccent),
+              if (up != null) ...[
+                const SizedBox(width: 4),
+                Icon(up! ? Icons.arrow_upward : Icons.arrow_downward,
+                    size: 12,
+                    color: up! ? JuntraColors.mintGreen : Colors.redAccent),
+              ],
             ],
           ),
         ],
@@ -631,6 +663,16 @@ class _DownlineList extends StatelessWidget {
     if (children is List) {
       _walkChildren(children, level: 1, out: out);
     }
+    // Actual upstream shape: { tree: { name, children: [...], fortune_commission } }
+    // — a single root node. Descend its children (the web dashboard reads it
+    // this way). Kept additive so other shapes still degrade to empty.
+    final root = tree['tree'];
+    if (root is Map) {
+      final rootChildren = root['children'];
+      if (rootChildren is List) {
+        _walkChildren(rootChildren, level: 1, out: out);
+      }
+    }
     return out;
   }
 
@@ -640,7 +682,9 @@ class _DownlineList extends StatelessWidget {
         name: (c['name'] ?? c['label'])?.toString() ?? 'ไม่ระบุชื่อ',
         level: level,
         count: (c['team_size'] as num?)?.toInt() ?? 0,
-        earnings: (c['earnings'] as num?)?.toDouble() ?? 0,
+        earnings: (c['fortune_commission'] as num?)?.toDouble()
+            ?? (c['earnings'] as num?)?.toDouble()
+            ?? (c['total_pv'] as num?)?.toDouble() ?? 0,
       ));
       final inner = c['children'];
       if (inner is List) {
@@ -734,9 +778,11 @@ class _CommissionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final amount = (commission['amount'] as num?)?.toDouble() ?? 0;
-    final from = (commission['customer_name']
-            ?? commission['from_user']
-            ?? commission['user']
+    // `from_user` is a nested object {name,...} upstream — read .name; fall
+    // back to reading.customer (what the web dashboard consumes).
+    final from = ((commission['from_user'] as Map?)?['name']
+            ?? (commission['reading'] as Map?)?['customer']
+            ?? commission['customer_name']
             ?? '—')
         .toString();
     final level = (commission['level'] as num?)?.toInt() ?? 0;

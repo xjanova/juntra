@@ -35,6 +35,17 @@ class WalletRepository {
     return res;
   }
 
+  /// All of the user's top-ups (newest first), optionally filtered by status.
+  /// Each carries `slip_uploaded` + `expires_at`; `meta.pending_count`. Lets
+  /// the app surface pending top-ups older than the last-10 overview window.
+  Future<Map<String, dynamic>> topups({String? status}) async {
+    final res = await _api.get<Map<String, dynamic>>(
+      Api.walletTopups,
+      query: {'status': ?status},
+    );
+    return res;
+  }
+
   /// Initiates a PromptPay top-up. Returns:
   ///   {transaction:{id,...}, promptpay:{id,name},
   ///    slip_upload_url, instructions}
