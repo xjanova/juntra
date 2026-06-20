@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write   # dispatch release.yml at the end (see "Trigger Release build")
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,3 +79,19 @@ jobs:
           git tag -a "$TAG" -m "Release $NEW"
           git push
           git push origin "$TAG"
+
+      # WHY THIS STEP EXISTS — the bug behind "the app never auto-updates":
+      # the tag above is pushed with the default GITHUB_TOKEN, and GitHub
+      # deliberately does NOT fire `push`/`tag` workflow events for refs
+      # created by GITHUB_TOKEN (infinite-loop prevention). So release.yml
+      # (which triggers `on: push: tags: ['v*']`) NEVER ran on a PR-merge
+      # bump — the version moved but no APK was ever built or published, so
+      # the in-app UpdateService found nothing newer. We dispatch release.yml
+      # explicitly here: workflow_dispatch DOES run under GITHUB_TOKEN, so
+      # merging a labelled PR now builds + signs + publishes the APK.
+      - name: Trigger Release build for the new tag
+        if: steps.level.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: gh workflow run release.yml -f tag="$TAG"

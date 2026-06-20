@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -179,5 +182,118 @@ class CardFront extends StatelessWidget {
     return reversed
         ? Transform.rotate(angle: 3.14159, child: body)
         : body;
+  }
+}
+
+/// Face-up tarot card that PREFERS the real web art (Rider-Waite served from
+/// จันทรา.online) and falls back to the built-in [CardFront] drawing when no
+/// [imageUrl] is given, while the image is still loading, or if it fails to
+/// load (offline / 404). This is the widget the seeker sees on reveal + in
+/// the reading result — the local drawing is only ever the safety net.
+class CardFace extends StatelessWidget {
+  const CardFace({
+    super.key,
+    required this.card,
+    this.imageUrl,
+    this.width = 88,
+    this.height = 145,
+    this.reversed = false,
+  });
+
+  final TarotCard card;
+  final String? imageUrl;
+  final double width;
+  final double height;
+  final bool reversed;
+
+  @override
+  Widget build(BuildContext context) {
+    // Built-in drawing (no internal rotation — CardFace rotates the whole
+    // widget below so the image + fallback flip identically).
+    final fallback = CardFront(card: card, width: width, height: height);
+
+    final url = imageUrl;
+    final Widget face;
+    if (url == null || url.isEmpty) {
+      face = fallback;
+    } else {
+      // Match CardFront's gold frame + drop shadow so a real photo and the
+      // drawn fallback sit in the same deck without a visible seam.
+      face = Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(width * 0.08),
+          border: Border.all(color: JuntraColors.goldDark, width: 1.6),
+          boxShadow: const [
+            BoxShadow(color: Color(0xCC000000), blurRadius: 18, offset: Offset(0, 8)),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(width * 0.08 - 1.6),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            fadeInDuration: const Duration(milliseconds: 250),
+            placeholder: (_, _) => fallback,
+            errorWidget: (_, _, _) => fallback,
+          ),
+        ),
+      );
+    }
+
+    return reversed
+        ? Transform.rotate(angle: math.pi, child: face)
+        : face;
+  }
+}
+
+/// Face-down card that prefers the operator's web card-back (from
+/// `card_back_url`) and falls back to the built-in [CardBack] filigree.
+/// Used for the prominent hero backs (travel stack + reveal flip-side);
+/// the lightweight [CardBack] still draws the dense 78-card fan for speed.
+class CardBackFace extends StatelessWidget {
+  const CardBackFace({
+    super.key,
+    this.imageUrl,
+    this.width = 88,
+    this.height = 145,
+  });
+
+  final String? imageUrl;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = CardBack(width: width, height: height);
+    final url = imageUrl;
+    if (url == null || url.isEmpty) return fallback;
+
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(width * 0.08),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.55), width: 1.4),
+        boxShadow: const [
+          BoxShadow(color: Color(0xCC000000), blurRadius: 18, offset: Offset(0, 8)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(width * 0.08 - 1.4),
+        child: CachedNetworkImage(
+          imageUrl: url,
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          fadeInDuration: const Duration(milliseconds: 200),
+          placeholder: (_, _) => fallback,
+          errorWidget: (_, _, _) => fallback,
+        ),
+      ),
+    );
   }
 }

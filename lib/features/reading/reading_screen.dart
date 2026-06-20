@@ -300,19 +300,27 @@ class _CardThumb extends StatelessWidget {
     final slug = card['slug']?.toString();
     final reversed = card['reversed'] == true;
     final positionLabel = card['position_label']?.toString() ?? '';
+    final imageUrl = card['image_url']?.toString();
     final local = _localFor(slug);
 
     return Column(
       children: [
-        // Rotate the card 180° for reversed picks so the orientation
-        // matches what the AI is interpreting.
-        Transform.rotate(
-          angle: reversed ? 3.14159 : 0,
-          child: local != null
-              ? CardFront(card: local, width: width, height: height)
-              : _CardPlaceholder(width: width, height: height,
-                  thai: card['name_th']?.toString() ?? '?'),
-        ),
+        // Prefer the real web art the backend resolved (image_url), falling
+        // back to the built-in drawing per card. CardFace rotates the whole
+        // card 180° for reversed picks so it matches the AI interpretation.
+        local != null
+            ? CardFace(
+                card: local,
+                imageUrl: (imageUrl != null && imageUrl.isNotEmpty) ? imageUrl : null,
+                width: width,
+                height: height,
+                reversed: reversed,
+              )
+            : Transform.rotate(
+                angle: reversed ? 3.14159 : 0,
+                child: _CardPlaceholder(width: width, height: height,
+                    thai: card['name_th']?.toString() ?? '?'),
+              ),
         const SizedBox(height: 6),
         SizedBox(
           width: width + 8,
