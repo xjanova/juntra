@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/fortune_repository.dart';
+import '../../core/api/tarot_catalog_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/sound/sound_service.dart';
 import '../../shared/data/spreads.dart';
@@ -53,6 +54,9 @@ enum _Phase { question, shuffle, fan, travel, reveal, grid, saving }
 class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     with TickerProviderStateMixin {
   _Phase _phase = _Phase.question;
+  /// Web card-art catalog (faces + back) resolved in [build]; empty until the
+  /// จันทรา.online catalog loads, at which point cards swap to their real art.
+  TarotCatalog _catalog = TarotCatalog.empty;
   // Captured for telemetry — sent with /v1/fortune/draw payload later.
   String _question = '';
   final _picked = <int>[];
@@ -387,6 +391,8 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Real web art when available; the built-in drawing is the per-card fallback.
+    _catalog = ref.watch(tarotCatalogProvider).valueOrNull ?? TarotCatalog.empty;
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -680,7 +686,10 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
               children: List.generate(_picked.length, (i) {
                 return Transform.translate(
                   offset: Offset(i * 4.0, -i * 3.0),
-                  child: const CardBack(width: 90, height: 145),
+                  child: CardBackFace(
+                    imageUrl: _catalog.cardBackUrl,
+                    width: 90, height: 145,
+                  ),
                 );
               }),
             ),
@@ -725,11 +734,18 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                           ..setEntry(3, 2, 0.001)
                           ..rotateY(flipAngle),
                         child: flipAngle < math.pi / 2
-                            ? CardFront(card: card, width: 180, height: 290)
+                            ? CardFace(
+                                card: card,
+                                imageUrl: _catalog.faceUrlFor(card.slug),
+                                width: 180, height: 290,
+                              )
                             : Transform(
                                 alignment: Alignment.center,
                                 transform: Matrix4.rotationY(math.pi),
-                                child: const CardBack(width: 180, height: 290),
+                                child: CardBackFace(
+                                  imageUrl: _catalog.cardBackUrl,
+                                  width: 180, height: 290,
+                                ),
                               ),
                       ),
                     );
@@ -771,7 +787,12 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
         spacing: 8, runSpacing: 8,
         alignment: WrapAlignment.center,
         children: _picked.map((i) {
-          return CardFront(card: tarotDeck[i], width: 72, height: 118);
+          final c = tarotDeck[i];
+          return CardFace(
+            card: c,
+            imageUrl: _catalog.faceUrlFor(c.slug),
+            width: 72, height: 118,
+          );
         }).toList(),
       ),
     );

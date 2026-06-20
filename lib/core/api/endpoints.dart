@@ -55,6 +55,12 @@ class Api {
   static const horoscopeIndex = '/v1/horoscope';
   static String horoscope(String slug) => '/v1/horoscope/$slug';
 
+  // ─── Tarot card catalog (public — real card face images) ─────
+  /// Returns every card's resolved face-image URL (or null) + the global
+  /// card-back, so the app renders จันทรา.online art and falls back to its
+  /// own built-in drawing per card. No auth required.
+  static const tarotCards = '/v1/tarot/cards';
+
   // ─── MLM dashboard (requires thaiprompt_token; 403 unlinked) ────
   static const mlmStats       = '/v1/mlm/stats';
   static const mlmTree        = '/v1/mlm/tree';

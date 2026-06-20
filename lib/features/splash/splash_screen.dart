@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/tarot_catalog_repository.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../shared/widgets/chantra_logo.dart';
@@ -11,8 +13,27 @@ import '../../shared/widgets/xman_studio_footer.dart';
 
 /// Screen 1 — Splash. Mae Mor portrait centered on starry sky with a
 /// gold radial glow and a slow breathing animation.
-class SplashScreen extends StatelessWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
+
+  @override
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends ConsumerState<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Warm the web card-art catalog early (cached-first) so the shuffle
+    // cinematic already has real card faces by the time it reveals. Fully
+    // fire-and-forget: swallow any provider-init error so a cold launch with
+    // no network/storage can never raise an unhandled rejection.
+    Future.microtask(
+      () => ref.read(tarotCatalogProvider.future).catchError(
+        (_) => TarotCatalog.empty,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
