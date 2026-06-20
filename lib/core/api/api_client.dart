@@ -16,9 +16,17 @@ import 'api_exceptions.dart';
 /// Override at build time, e.g. for staging or a local Laragon dev:
 ///   flutter build apk --dart-define=JUNTRA_API_BASE=https://จันทรา.online/api
 ///   flutter run --dart-define=JUNTRA_API_BASE=http://10.0.2.2:8000/api
+///
+/// The default host is the PUNYCODE form of จันทรา.online
+/// (`xn--82c4af5bzdj.online`) — the exact same domain, Cloudflare origin and
+/// TLS certificate, only ASCII. Dart's `HttpClient` on Android does NOT
+/// ToASCII-encode a Thai IDN host, so `https://จันทรา.online/...` fails DNS
+/// resolution on real devices → every API call silently fails (the app falls
+/// back to offline behaviour and looks "stuck"). Punycode resolves on every
+/// network. The user never sees this host — no UI renders it.
 const String _kApiBase = String.fromEnvironment(
   'JUNTRA_API_BASE',
-  defaultValue: 'https://จันทรา.online/api',
+  defaultValue: 'https://xn--82c4af5bzdj.online/api',
 );
 
 /// Token storage key — same scheme as thaipromptapp so we could share

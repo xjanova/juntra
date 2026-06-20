@@ -340,6 +340,8 @@ class _CardArtTile extends ConsumerWidget {
           '${value.bySlug.values.where((a) => a.imageUrl != null).length}/${value.bySlug.length} ใบ',
           JuntraColors.mintGreen,
         ),
+      AsyncData(:final value) when value.error != null =>
+        ('ดึงไม่ได้: ${value.error}', JuntraColors.gold),
       AsyncLoading() => ('กำลังโหลด...', JuntraColors.textMuted),
       _ => ('ใช้ภาพวาดในแอพ', JuntraColors.gold),
     };
