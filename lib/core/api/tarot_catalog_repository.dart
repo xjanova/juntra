@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,11 +31,17 @@ class TarotCatalog {
     required this.bySlug,
     this.cardBackUrl,
     this.version,
+    this.error,
   });
 
   final Map<String, CardArt> bySlug;
   final String? cardBackUrl;
   final String? version;
+
+  /// Short reason the live fetch failed (only set when [bySlug] is empty and
+  /// nothing was cached) — surfaced in Settings → "ภาพไพ่จากเว็บ" so a stuck
+  /// device reports the actual failure (e.g. `connectionError`, `HTTP 404`).
+  final String? error;
 
   static const empty = TarotCatalog(bySlug: {});
 
@@ -79,8 +86,19 @@ class TarotCatalogRepository {
           /* corrupt cache — fall through to empty */
         }
       }
-      return TarotCatalog.empty;
+      // Empty + no cache: carry a short failure reason for the diagnostic row.
+      return TarotCatalog(bySlug: const {}, error: _shortError(e));
     }
+  }
+
+  /// Compact, human-readable failure reason for the Settings diagnostic.
+  String _shortError(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      if (code != null) return 'HTTP $code';
+      return e.type.name; // connectionError / connectionTimeout / ...
+    }
+    return e.runtimeType.toString();
   }
 
   TarotCatalog _parse(Map<String, dynamic> json) {
