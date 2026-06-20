@@ -111,11 +111,12 @@ final tarotCatalogRepositoryProvider =
   return TarotCatalogRepository(api);
 });
 
-/// App-wide tarot art catalog. Loaded once (cached-first) and reused by the
-/// shuffle cinematic + reading screens. [ref.keepAlive] holds it for the
-/// session so the cinematic never refetches mid-flow and re-warms instantly.
+/// App-wide tarot art catalog. Loaded cached-first and shared by the shuffle
+/// cinematic + reading screens. Deliberately NOT kept alive: if the very first
+/// load happened while จันทรา.online was briefly unreachable (→ empty catalog),
+/// the shuffle screen invalidates this provider so a fresh game re-fetches the
+/// real art — the seeker never has to force-close the app to recover.
 final tarotCatalogProvider = FutureProvider<TarotCatalog>((ref) async {
-  ref.keepAlive();
   final repo = await ref.watch(tarotCatalogRepositoryProvider.future);
   return repo.load();
 });

@@ -82,6 +82,17 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     _revealCtrl = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1100),
     );
+    // Self-heal the web card-art catalog: if it loaded empty earlier (e.g. the
+    // app was first opened while the จันทรา.online catalog endpoint was briefly
+    // unreachable), force a fresh fetch now so real card faces appear this game
+    // — no manual app restart needed.
+    Future.microtask(() {
+      if (!mounted) return;
+      final empty = ref
+          .read(tarotCatalogProvider)
+          .maybeWhen(data: (c) => c.isEmpty, orElse: () => false);
+      if (empty) ref.invalidate(tarotCatalogProvider);
+    });
   }
 
   @override

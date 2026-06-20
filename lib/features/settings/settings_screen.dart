@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/tarot_catalog_repository.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/xman_studio_footer.dart';
 import '../update/check_for_update.dart';
@@ -96,6 +97,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onTap: () => runManualUpdateCheck(context, ref),
                 ),
                 const _VersionTile(),
+                const _CardArtTile(),
                 const SizedBox(height: 20),
                 const Center(child: XmanStudioFooter(showVersion: false)),
               ],
@@ -321,6 +323,44 @@ class _VersionTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Diagnostic — whether this device pulled the real card art from
+/// จันทรา.online. "NN/78 ใบ" = showing real faces; "ใช้ภาพวาดในแอพ" = couldn't
+/// reach the web, so the built-in drawing is in use. Tap to retry the fetch.
+class _CardArtTile extends ConsumerWidget {
+  const _CardArtTile();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(tarotCatalogProvider);
+    final (String label, Color color) = switch (async) {
+      AsyncData(:final value) when value.bySlug.isNotEmpty => (
+          '${value.bySlug.values.where((a) => a.imageUrl != null).length}/${value.bySlug.length} ใบ',
+          JuntraColors.mintGreen,
+        ),
+      AsyncLoading() => ('กำลังโหลด...', JuntraColors.textMuted),
+      _ => ('ใช้ภาพวาดในแอพ', JuntraColors.gold),
+    };
+    return InkWell(
+      onTap: () => ref.invalidate(tarotCatalogProvider),
+      borderRadius: BorderRadius.circular(JuntraRadius.card),
+      child: _TileShell(
+        child: Row(
+          children: [
+            const _LeadingIcon(icon: Icons.style_outlined, color: JuntraColors.cyan),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('ภาพไพ่จากเว็บ', style: TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w600,
+                color: JuntraColors.textCream,
+              )),
+            ),
+            Text(label, style: baiJamjuree(size: 13, color: color)),
+          ],
+        ),
+      ),
     );
   }
 }
