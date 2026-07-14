@@ -1,7 +1,11 @@
+import 'dart:ui' as ui show TextDirection;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/router.dart';
@@ -13,12 +17,44 @@ import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 
+/// Depth accent colors — must match the web dashboard legend so both
+/// surfaces read the same (root/direct = gold, then blue/violet/rose/mint).
+const List<Color> _levelColors = [
+  JuntraColors.gold,   // 0 — root (คุณ)
+  JuntraColors.gold,   // 1 — สายตรง
+  Color(0xFF9EC6F5),   // 2
+  Color(0xFFB07CFF),   // 3
+  Color(0xFFFF8FD4),   // 4
+  Color(0xFF7EE0C3),   // 5+
+];
+
+Color _levelColor(int level) =>
+    _levelColors[level.clamp(0, _levelColors.length - 1)];
+
+/// Hard refresh = bust juntraweb's per-user MLM cache first (so the refetch
+/// hits Thaiprompt live and totals are guaranteed current), THEN invalidate
+/// the bundle to refetch. Used by the toolbar button and pull-to-refresh.
+Future<void> _hardRefresh(WidgetRef ref) async {
+  try {
+    final repo = await ref.read(affiliateRepositoryProvider.future);
+    await repo.refreshUpstream(); // swallows its own network errors
+  } catch (_) {
+    // Repo unavailable (e.g. mid-logout) — plain refetch below still runs.
+  }
+  try {
+    ref.invalidate(affiliateBundleProvider);
+  } catch (_) {
+    // Screen disposed during the awaits above — nothing left to refresh.
+  }
+}
+
 /// Screen 11 — Affiliate Network / MLM dashboard.
 ///
 /// Three states:
-///   1. **Authenticated + thaiprompt-linked** → KPI strip, downline
-///      list (flat, no graph viz on mobile), recent commissions table,
-///      referral link.
+///   1. **Authenticated + thaiprompt-linked** → KPI strip, expandable
+///      network tree (ผังสายงาน — matches the web chart), monthly
+///      earnings chart, recent commissions table, referral link with
+///      QR + copy + LINE share.
 ///   2. **Authenticated, NOT thaiprompt-linked** → CTA to complete the
 ///      Thaiprompt OAuth on the web (mobile OAuth flow is a separate
 ///      future task). The /v1/mlm/* endpoints return 403 with
@@ -73,8 +109,8 @@ class AffiliateScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh,
                 color: JuntraColors.textFaint, size: 22),
-            tooltip: 'รีเฟรช',
-            onPressed: () => ref.invalidate(affiliateBundleProvider),
+            tooltip: 'ดึงยอดสดจาก Thaiprompt',
+            onPressed: () => _hardRefresh(ref),
           ),
         ],
       ),
@@ -234,19 +270,27 @@ class _LinkedDashboardState extends ConsumerState<_LinkedDashboard>
       color: JuntraColors.gold,
       backgroundColor: JuntraColors.bgPurpleDeep,
       onRefresh: () async {
-        ref.invalidate(affiliateBundleProvider);
+        // Bust the server cache first so this pull returns LIVE Thaiprompt
+        // totals — the same figures the web dashboard shows.
+        await _hardRefresh(ref);
         await Future<void>.delayed(const Duration(milliseconds: 300));
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
+          _SyncStamp(fetchedAt: linked.fetchedAt),
+          const SizedBox(height: 8),
           _EarningsHero(stats: stats),
           const SizedBox(height: 12),
           _LevelStats(stats: stats),
           const SizedBox(height: 16),
-          Text('สายงานของลูก', style: baiJamjuree(size: 16)),
+          Text('รายได้ 12 เดือนล่าสุด', style: baiJamjuree(size: 16)),
           const SizedBox(height: 8),
-          _DownlineList(tree: tree),
+          _MonthlyChart(stats: stats),
+          const SizedBox(height: 16),
+          Text('ผังสายงาน', style: baiJamjuree(size: 16)),
+          const SizedBox(height: 8),
+          _NetworkSection(tree: tree),
           const SizedBox(height: 16),
           Text('คอมมิชชั่นล่าสุด', style: baiJamjuree(size: 16)),
           const SizedBox(height: 8),
@@ -587,183 +631,597 @@ class _BoxStat extends StatelessWidget {
   }
 }
 
-// ─── Downline list (flat — no graph viz on mobile) ───────────────
+// ─── Sync stamp — "ยอดเดียวกับ Thaiprompt" + data freshness ──────
 
-class _DownlineList extends StatelessWidget {
-  const _DownlineList({required this.tree});
-  final Map<String, dynamic> tree;
+class _SyncStamp extends StatelessWidget {
+  const _SyncStamp({required this.fetchedAt});
+  final String? fetchedAt;
 
   @override
   Widget build(BuildContext context) {
-    // Upstream tree shape (best-effort — vis-network nodes/edges):
-    //   { nodes: [{id, label, level, total_pv?, ...}, ...], edges: [...] }
-    // OR for some endpoints a recursive `children: []`. We flatten
-    // either into a depth-indented list for mobile rendering.
-    final flat = _flatten(tree);
-    if (flat.isEmpty) {
+    final dt = DateTime.tryParse(fetchedAt ?? '')?.toLocal();
+    String when = '';
+    if (dt != null) {
+      try {
+        when = DateFormat('d MMM · HH:mm', 'th').format(dt);
+      } catch (_) {
+        when = DateFormat('d MMM · HH:mm').format(dt);
+      }
+    }
+    return Row(
+      children: [
+        Container(
+          width: 8, height: 8,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle, color: JuntraColors.mintGreen,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            dt == null
+                ? 'ยอดตรงกับ Thaiprompt · ดึงลงมาเพื่อรีเฟรชยอดสด'
+                : 'ยอดตรงกับ Thaiprompt · ข้อมูล ณ $when น.',
+            style: const TextStyle(
+              fontSize: 11, color: JuntraColors.textFaint,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Monthly earnings chart (matches the web line chart data) ─────
+
+class _MonthlyChart extends StatelessWidget {
+  const _MonthlyChart({required this.stats});
+  final Map<String, dynamic> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final series = <({String label, double amount})>[];
+    final raw = stats['monthly_series'];
+    if (raw is List) {
+      for (final m in raw.whereType<Map>()) {
+        series.add((
+          label: (m['label'] ?? '').toString(),
+          amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        ));
+      }
+    }
+    final points = series.length > 12
+        ? series.sublist(series.length - 12)
+        : series;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 10),
+      decoration: BoxDecoration(
+        color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.2)),
+      ),
+      child: points.isEmpty || points.every((p) => p.amount == 0)
+          ? const SizedBox(
+              height: 90,
+              child: Center(
+                child: Text(
+                  'ยังไม่มีรายได้ · กราฟจะแสดงเมื่อมีคอมมิชชั่นเข้า',
+                  style: TextStyle(fontSize: 12, color: JuntraColors.textFaint),
+                ),
+              ),
+            )
+          : SizedBox(
+              height: 150,
+              width: double.infinity,
+              child: CustomPaint(painter: _BarsPainter(points)),
+            ),
+    );
+  }
+}
+
+class _BarsPainter extends CustomPainter {
+  _BarsPainter(this.points);
+  final List<({String label, double amount})> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+    const labelH = 22.0;
+    const valueH = 16.0;
+    final chartH = size.height - labelH - valueH;
+    final maxV = points.fold<double>(0, (m, p) => p.amount > m ? p.amount : m);
+    if (maxV <= 0) return;
+
+    final slot = size.width / points.length;
+    final barW = (slot * 0.52).clamp(6.0, 26.0);
+
+    for (var i = 0; i < points.length; i++) {
+      final p = points[i];
+      final h = (p.amount / maxV) * chartH;
+      final x = slot * i + (slot - barW) / 2;
+      final top = valueH + (chartH - h);
+      final isLast = i == points.length - 1;
+
+      final rect = RRect.fromRectAndCorners(
+        Rect.fromLTWH(x, top, barW, h),
+        topLeft: const Radius.circular(5),
+        topRight: const Radius.circular(5),
+      );
+      final paint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isLast
+              ? [JuntraColors.goldLight, JuntraColors.goldMid]
+              : [
+                  JuntraColors.gold.withValues(alpha: 0.55),
+                  JuntraColors.goldMid.withValues(alpha: 0.25),
+                ],
+        ).createShader(rect.outerRect);
+      canvas.drawRRect(rect, paint);
+
+      // Value above the current-month bar only (keeps the chart clean).
+      if (isLast && p.amount > 0) {
+        _text(canvas, '฿${_fmt(p.amount)}',
+            x + barW / 2, top - 3, anchorBottom: true,
+            color: JuntraColors.goldLight, fontSize: 10,
+            bold: true);
+      }
+      // Month labels — every other bar when tight, parity anchored so the
+      // latest month always carries its label.
+      if (points.length <= 6 || i % 2 == (points.length - 1) % 2) {
+        _text(canvas, p.label,
+            x + barW / 2, size.height - labelH + 4,
+            color: JuntraColors.textFaint, fontSize: 8.5);
+      }
+    }
+
+    // Baseline
+    final base = Paint()
+      ..color = JuntraColors.gold.withValues(alpha: 0.18)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(0, valueH + chartH),
+      Offset(size.width, valueH + chartH),
+      base,
+    );
+  }
+
+  void _text(Canvas canvas, String s, double cx, double y,
+      {required Color color, required double fontSize,
+      bool bold = false, bool anchorBottom = false}) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: s,
+        style: TextStyle(
+          color: color, fontSize: fontSize,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: 60);
+    tp.paint(canvas,
+        Offset(cx - tp.width / 2, anchorBottom ? y - tp.height : y));
+  }
+
+  @override
+  bool shouldRepaint(_BarsPainter old) => old.points != points;
+}
+
+// ─── Network tree (ผังสายงาน — expandable, matches web chart) ────
+
+class _TreeNodeData {
+  _TreeNodeData({
+    required this.key, required this.name, required this.level,
+    required this.earnings, required this.children,
+    this.directOverride, this.teamOverride,
+  });
+  final String key;
+  final String name;
+  final int level;
+  final double earnings;
+  final List<_TreeNodeData> children;
+
+  /// Upstream's true counts when present — the local walk undercounts when
+  /// the tree is depth-clipped at 5 levels server-side.
+  final int? directOverride;
+  final int? teamOverride;
+
+  int get direct => directOverride ?? children.length;
+  late final int team =
+      teamOverride ?? children.fold(0, (sum, c) => sum + 1 + c.team);
+}
+
+class _NetworkSection extends StatefulWidget {
+  const _NetworkSection({required this.tree});
+  final Map<String, dynamic> tree;
+
+  @override
+  State<_NetworkSection> createState() => _NetworkSectionState();
+}
+
+class _NetworkSectionState extends State<_NetworkSection> {
+  bool _chartView = true;
+  final Set<String> _collapsed = {};
+  _TreeNodeData? _root;
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _parse();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NetworkSection old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.tree, widget.tree)) {
+      _collapsed.clear();
+      _parse();
+    }
+  }
+
+  void _parse() {
+    var seq = 0;
+    _TreeNodeData? build(Map m, int level) {
+      final kids = <_TreeNodeData>[];
+      final rawKids = m['children'];
+      if (rawKids is List) {
+        for (final c in rawKids.whereType<Map>()) {
+          final k = build(c, level + 1);
+          if (k != null) kids.add(k);
+        }
+      }
+      return _TreeNodeData(
+        key: 'n${seq++}',
+        name: (m['name'] ?? m['label'] ?? 'ไม่ระบุชื่อ').toString(),
+        level: level,
+        earnings: (m['fortune_commission'] as num?)?.toDouble()
+            ?? (m['earnings'] as num?)?.toDouble()
+            ?? (m['total_pv'] as num?)?.toDouble() ?? 0,
+        children: kids,
+        directOverride: (m['direct_referrals'] as num?)?.toInt(),
+        teamOverride: (m['total_team_members'] as num?)?.toInt(),
+      );
+    }
+
+    final rawRoot = widget.tree['tree'];
+    _root = rawRoot is Map ? build(rawRoot, 0) : null;
+    _total = _root == null ? 0 : _root!.team + 1;
+
+    // Big trees start folded below level 1 so the first paint is readable —
+    // same behavior as the web chart.
+    if (_total > 40 && _root != null) {
+      void fold(_TreeNodeData n) {
+        if (n.level >= 1 && n.children.isNotEmpty) _collapsed.add(n.key);
+        for (final c in n.children) {
+          fold(c);
+        }
+      }
+      for (final c in _root!.children) {
+        fold(c);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final root = _root;
+    if (root == null || root.children.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(JuntraRadius.card),
           border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.2)),
         ),
-        child: const Row(
+        child: const Column(
           children: [
-            Icon(Icons.account_tree_outlined,
-                color: JuntraColors.textFaint, size: 18),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'ยังไม่มีคนในสายงาน · ชวนเพื่อนผ่านลิงก์ด้านล่างเพื่อเริ่มสร้างทีม',
+            Text('🌙', style: TextStyle(fontSize: 34)),
+            SizedBox(height: 8),
+            Text('ยังไม่มีคนในสายงาน',
                 style: TextStyle(
-                  fontSize: 12, color: JuntraColors.textMuted, height: 1.5,
-                ),
+                  fontSize: 13.5, color: JuntraColors.textCream,
+                  fontWeight: FontWeight.w600,
+                )),
+            SizedBox(height: 4),
+            Text(
+              'แชร์ลิงก์ชวนเพื่อนด้านล่าง — คนที่สมัครผ่านลิงก์จะปรากฏบนผังนี้ทันที',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5, color: JuntraColors.textMuted, height: 1.5,
               ),
             ),
           ],
         ),
       );
     }
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final n in flat.take(12)) _DownlineNode(node: n),
-        if (flat.length > 12)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '+ อีก ${flat.length - 12} คน · ดูทั้งหมดบนเว็บ',
-              style: const TextStyle(
-                fontSize: 11, color: JuntraColors.textFaint,
-              ),
-            ),
-          ),
+        // ── view toggle ──
+        Row(
+          children: [
+            _segButton('ผัง', _chartView, () => setState(() => _chartView = true)),
+            const SizedBox(width: 6),
+            _segButton('รายชื่อ', !_chartView, () => setState(() => _chartView = false)),
+            const Spacer(),
+            Text('$_total คนในสาย',
+                style: const TextStyle(
+                  fontSize: 11, color: JuntraColors.textFaint,
+                )),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_chartView) ...[
+          _RootCard(node: root),
+          const SizedBox(height: 2),
+          ..._emitTree(root),
+        ] else
+          ..._emitList(root),
       ],
     );
   }
 
-  /// Walk the tree (either `{nodes: [...]}` or `{children: [...]}`)
-  /// and produce `[{name, count, level}, ...]`. Best-effort; unknown
-  /// shapes return empty so the screen falls back to the empty state.
-  List<_FlatNode> _flatten(Map<String, dynamic> tree) {
-    final out = <_FlatNode>[];
-    final nodes = tree['nodes'];
-    if (nodes is List) {
-      for (final n in nodes.whereType<Map>()) {
-        out.add(_FlatNode(
-          name: (n['label'] ?? n['name'])?.toString() ?? 'ไม่ระบุชื่อ',
-          level: (n['level'] as num?)?.toInt() ?? 0,
-          count: (n['team_size'] as num?)?.toInt() ?? 0,
-          earnings: (n['total_pv'] as num?)?.toDouble()
-              ?? (n['earnings'] as num?)?.toDouble() ?? 0,
-        ));
+  Widget _segButton(String label, bool on, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+        decoration: BoxDecoration(
+          gradient: on ? JuntraColors.goldButtonGradient : null,
+          color: on ? null : JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: on
+                ? JuntraColors.gold
+                : JuntraColors.purple.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Text(label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+              color: on ? JuntraColors.bgPurpleDeep : JuntraColors.textMuted,
+            )),
+      ),
+    );
+  }
+
+  /// ผัง — indented rows with connector rails; each node with children can
+  /// fold its branch.
+  List<Widget> _emitTree(_TreeNodeData root) {
+    final out = <Widget>[];
+    void walk(_TreeNodeData n) {
+      out.add(_TreeRow(
+        node: n,
+        collapsed: _collapsed.contains(n.key),
+        onToggle: n.children.isEmpty
+            ? null
+            : () => setState(() {
+                  if (!_collapsed.remove(n.key)) _collapsed.add(n.key);
+                }),
+      ));
+      if (!_collapsed.contains(n.key)) {
+        n.children.forEach(walk);
       }
     }
-    final children = tree['children'];
-    if (children is List) {
-      _walkChildren(children, level: 1, out: out);
-    }
-    // Actual upstream shape: { tree: { name, children: [...], fortune_commission } }
-    // — a single root node. Descend its children (the web dashboard reads it
-    // this way). Kept additive so other shapes still degrade to empty.
-    final root = tree['tree'];
-    if (root is Map) {
-      final rootChildren = root['children'];
-      if (rootChildren is List) {
-        _walkChildren(rootChildren, level: 1, out: out);
-      }
-    }
+
+    root.children.forEach(walk);
     return out;
   }
 
-  void _walkChildren(List children, {required int level, required List<_FlatNode> out}) {
-    for (final c in children.whereType<Map>()) {
-      out.add(_FlatNode(
-        name: (c['name'] ?? c['label'])?.toString() ?? 'ไม่ระบุชื่อ',
-        level: level,
-        count: (c['team_size'] as num?)?.toInt() ?? 0,
-        earnings: (c['fortune_commission'] as num?)?.toDouble()
-            ?? (c['earnings'] as num?)?.toDouble()
-            ?? (c['total_pv'] as num?)?.toDouble() ?? 0,
-      ));
-      final inner = c['children'];
-      if (inner is List) {
-        _walkChildren(inner, level: level + 1, out: out);
+  /// รายชื่อ — flat, sorted by earnings (top earners first).
+  List<Widget> _emitList(_TreeNodeData root) {
+    final flat = <_TreeNodeData>[];
+    void collect(_TreeNodeData n) {
+      flat.add(n);
+      for (final c in n.children) {
+        collect(c);
       }
     }
+    for (final c in root.children) {
+      collect(c);
+    }
+    flat.sort((a, b) => b.earnings.compareTo(a.earnings));
+
+    return [
+      for (final n in flat.take(50))
+        _TreeRow(node: n, collapsed: false, onToggle: null, flatMode: true),
+      if (flat.length > 50)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            '+ อีก ${flat.length - 50} คน · ดูทั้งหมดบนเว็บ',
+            style: const TextStyle(
+              fontSize: 11, color: JuntraColors.textFaint,
+            ),
+          ),
+        ),
+    ];
   }
 }
 
-class _FlatNode {
-  const _FlatNode({
-    required this.name, required this.level,
-    required this.count, required this.earnings,
-  });
-  final String name;
-  final int level;
-  final int count;
-  final double earnings;
-}
-
-class _DownlineNode extends StatelessWidget {
-  const _DownlineNode({required this.node});
-  final _FlatNode node;
+/// Root (คุณ) hero card at the top of the ผัง view.
+class _RootCard extends StatelessWidget {
+  const _RootCard({required this.node});
+  final _TreeNodeData node;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(node.level * 16.0, 4, 0, 4),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(JuntraRadius.card),
-          border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.2)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 32, height: 32,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [JuntraColors.bgPurpleLight, JuntraColors.bgPurple],
-                ),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        gradient: JuntraColors.goldButtonGradient,
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        boxShadow: [
+          BoxShadow(
+            color: JuntraColors.gold.withValues(alpha: 0.35),
+            blurRadius: 18, offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42, height: 42,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle, color: JuntraColors.bgPurpleDeep,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              node.name.isNotEmpty ? String.fromCharCodes(node.name.runes.take(1)) : '?',
+              style: const TextStyle(
+                color: JuntraColors.gold, fontWeight: FontWeight.w700,
+                fontSize: 17,
               ),
-              alignment: Alignment.center,
-              child: Text(
-                node.name.isNotEmpty ? node.name.substring(0, 1) : '?',
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(node.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700,
+                      color: JuntraColors.bgPurpleDeep,
+                    )),
+                Text('คุณ (ต้นสาย) · ตรง ${node.direct} · ทีม ${node.team}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.75),
+                    )),
+              ],
+            ),
+          ),
+          if (node.earnings > 0)
+            Text('฿${_fmt(node.earnings)}',
                 style: const TextStyle(
-                  color: JuntraColors.gold, fontWeight: FontWeight.w700,
+                  fontSize: 15, fontWeight: FontWeight.w800,
+                  color: JuntraColors.bgPurpleDeep,
+                )),
+        ],
+      ),
+    );
+  }
+}
+
+/// One row of the ผัง/รายชื่อ — depth-tinted avatar, connector rail,
+/// fold toggle when the node has a branch.
+class _TreeRow extends StatelessWidget {
+  const _TreeRow({
+    required this.node, required this.collapsed, required this.onToggle,
+    this.flatMode = false,
+  });
+  final _TreeNodeData node;
+  final bool collapsed;
+  final VoidCallback? onToggle;
+  final bool flatMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _levelColor(node.level);
+    final indent = flatMode ? 0.0 : (node.level - 1).clamp(0, 6) * 18.0;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(indent, 3, 0, 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (!flatMode && node.level > 1) ...[
+            Container(
+              width: 12, height: 2,
+              color: color.withValues(alpha: 0.35),
+            ),
+          ],
+          Expanded(
+            child: GestureDetector(
+              onTap: onToggle,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                decoration: BoxDecoration(
+                  color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(JuntraRadius.card),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34, height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            color.withValues(alpha: 0.9),
+                            color.withValues(alpha: 0.45),
+                          ],
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        node.name.isNotEmpty
+                            ? String.fromCharCodes(node.name.runes.take(1))
+                            : '?',
+                        style: const TextStyle(
+                          color: JuntraColors.bgPurpleDeep,
+                          fontWeight: FontWeight.w700, fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(node.name,
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600,
+                                color: JuntraColors.textCream,
+                              )),
+                          Text(
+                            node.level == 1
+                                ? 'สายตรง · ตรง ${node.direct} · ทีม ${node.team}'
+                                : 'ชั้น ${node.level} · ตรง ${node.direct} · ทีม ${node.team}',
+                            style: const TextStyle(
+                              fontSize: 10, color: JuntraColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (node.earnings > 0) ...[
+                      const SizedBox(width: 6),
+                      Text('฿${_fmt(node.earnings)}',
+                          style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700,
+                            color: JuntraColors.mintGreen,
+                          )),
+                    ],
+                    if (onToggle != null && !flatMode) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        collapsed
+                            ? Icons.keyboard_arrow_right
+                            : Icons.keyboard_arrow_down,
+                        size: 18,
+                        color: collapsed ? JuntraColors.gold : JuntraColors.textFaint,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(node.name,
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600,
-                        color: JuntraColors.textCream,
-                      )),
-                  Text('ระดับ ${node.level} · ${node.count} คน',
-                      style: const TextStyle(
-                        fontSize: 10, color: JuntraColors.textMuted,
-                      )),
-                ],
-              ),
-            ),
-            if (node.earnings > 0)
-              Text('฿${_fmt(node.earnings)}',
-                  style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w700,
-                    color: JuntraColors.mintGreen,
-                  )),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -882,7 +1340,7 @@ class _ReferralBox extends StatelessWidget {
         : 'https://จันทรา.online/r/$code';
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: JuntraColors.mysticHeroGradient,
         borderRadius: BorderRadius.circular(JuntraRadius.card),
@@ -891,48 +1349,168 @@ class _ReferralBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ลิงก์เชิญเพื่อน', style: baiJamjuree(size: 14)),
-          const SizedBox(height: 8),
-          InkWell(
-            onTap: () async {
-              final uri = Uri.parse(url);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: JuntraColors.bgDeepest.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(10),
+          Text('ชวนเพื่อน · ต่อสายงาน', style: baiJamjuree(size: 14)),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // QR — scan face-to-face; same URL as the copy button.
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDF8EC),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: QrImageView(
+                  data: url,
+                  size: 92,
+                  padding: EdgeInsets.zero,
+                  backgroundColor: const Color(0xFFFDF8EC),
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: JuntraColors.bgPurpleDeep,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: JuntraColors.bgPurpleDeep,
+                  ),
+                ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      url,
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13, color: JuntraColors.textCream,
-                        fontFamily: 'monospace',
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (code.isNotEmpty) ...[
+                      const Text('รหัสของลูก',
+                          style: TextStyle(
+                            fontSize: 10, color: JuntraColors.textFaint,
+                          )),
+                      Text(code,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: baiJamjuree(
+                            size: 18, color: JuntraColors.gold,
+                          )),
+                      const SizedBox(height: 8),
+                    ],
+                    InkWell(
+                      onTap: () async {
+                        final uri = Uri.parse(url);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: JuntraColors.bgDeepest.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                url,
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: JuntraColors.textCream,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                            const Icon(Icons.open_in_new,
+                                size: 14, color: JuntraColors.gold),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const Icon(Icons.open_in_new,
-                      size: 16, color: JuntraColors.gold),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _actionButton(
+                  context,
+                  icon: Icons.copy_rounded,
+                  label: 'คัดลอกลิงก์',
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    await Clipboard.setData(ClipboardData(text: url));
+                    messenger.showSnackBar(const SnackBar(
+                      content: Text('คัดลอกลิงก์ชวนเพื่อนแล้ว ✓'),
+                      backgroundColor: JuntraColors.bgPurpleDeep,
+                      duration: Duration(seconds: 2),
+                    ));
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _actionButton(
+                  context,
+                  icon: Icons.chat_bubble_rounded,
+                  label: 'แชร์ LINE',
+                  onTap: () async {
+                    final share = Uri.parse(
+                      'https://line.me/R/share?text=${Uri.encodeComponent('มาดูดวงกับฉันที่ จันทราพยากรณ์ ✨ $url')}',
+                    );
+                    if (await canLaunchUrl(share)) {
+                      await launchUrl(share,
+                          mode: LaunchMode.externalApplication);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           const Text(
-            'แตะเพื่อเปิดในเบราว์เซอร์ · เพื่อนสมัครผ่านลิงก์นี้จะอยู่ในสายงานของลูก',
+            'เพื่อนสมัครผ่านลิงก์นี้จะอยู่ในสายงานของลูก · ทุกบิลดูดวงของทีมสร้างคอมมิชชั่นอัตโนมัติ',
             style: TextStyle(
               fontSize: 11, color: JuntraColors.textFaint, height: 1.5,
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _actionButton(BuildContext context,
+      {required IconData icon,
+      required String label,
+      required Future<void> Function() onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: JuntraColors.bgDeepest.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: JuntraColors.gold.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 15, color: JuntraColors.gold),
+            const SizedBox(width: 7),
+            Text(label,
+                style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600,
+                  color: JuntraColors.textCream,
+                )),
+          ],
+        ),
       ),
     );
   }

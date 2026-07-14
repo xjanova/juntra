@@ -37,6 +37,20 @@ class AffiliateRepository {
         ));
   }
 
+  /// Bust the server-side MLM cache so the GETs that follow return LIVE
+  /// Thaiprompt numbers — used by pull-to-refresh so the app shows the
+  /// exact same totals as Thaiprompt/web. Best-effort: any failure is
+  /// swallowed because the refetch below still works (just possibly
+  /// against the short cache).
+  Future<void> refreshUpstream() async {
+    try {
+      await _api.post<Map<String, dynamic>>(Api.mlmRefresh);
+    } catch (_) {
+      // Throttled (429), unlinked (403), or offline — the caller's
+      // invalidate still refetches; only the cache-bust is skipped.
+    }
+  }
+
   /// Unwrap the `{linked, data, meta?, reason_code?}` envelope. Note:
   /// the `data` field is heterogeneous — stats/tree are Maps while
   /// commissions is a List — so we keep it as `dynamic` and let the
@@ -61,6 +75,7 @@ class AffiliateRepository {
       return MlmLinked(
         payload: res['data'],
         meta: (res['meta'] as Map?)?.cast<String, dynamic>(),
+        fetchedAt: res['fetched_at']?.toString(),
       );
     }
     return MlmNotLinked(
@@ -78,7 +93,11 @@ sealed class MlmResult {
 }
 
 class MlmLinked extends MlmResult {
-  const MlmLinked({required this.payload, this.meta});
+  const MlmLinked({required this.payload, this.meta, this.fetchedAt});
+
+  /// ISO timestamp of when juntraweb actually pulled this payload from
+  /// Thaiprompt — surfaced as "ข้อมูล ณ เวลา" on the dashboard.
+  final String? fetchedAt;
 
   /// Raw `data` field from the envelope. Stats/tree are JSON objects;
   /// commissions is a JSON array. Callers cast appropriately:
@@ -147,5 +166,6 @@ final affiliateBundleProvider = FutureProvider<MlmResult>((ref) async {
       'commissions': commissionsLinked.asList,
     },
     meta: commissionsLinked.meta,
+    fetchedAt: statsLinked.fetchedAt ?? treeLinked.fetchedAt,
   );
 });

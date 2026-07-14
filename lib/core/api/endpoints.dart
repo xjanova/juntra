@@ -65,6 +65,9 @@ class Api {
   static const mlmStats       = '/v1/mlm/stats';
   static const mlmTree        = '/v1/mlm/tree';
   static const mlmCommissions = '/v1/mlm/commissions';
+  /// POST — busts juntraweb's per-user MLM cache so the next GETs return
+  /// live Thaiprompt numbers (same totals the web dashboard shows).
+  static const mlmRefresh     = '/v1/mlm/refresh';
 
   // ─── Auto-update (internal — never shown to user) ───────────
   /// GitHub Releases API. Called directly from [UpdateService].
