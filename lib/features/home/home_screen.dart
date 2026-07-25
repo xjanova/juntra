@@ -477,6 +477,8 @@ class _MaeMorOnlineCard extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/maehmor.png',
                   width: 48, height: 48, fit: BoxFit.cover,
+                  // ต้นฉบับ 1536×2752 (~6.7MB) — จำกัดขนาด decode ให้เท่าที่วาดจริง
+                  cacheWidth: (48 * MediaQuery.devicePixelRatioOf(context)).round(),
                   errorBuilder: (_, _, _) => Container(
                     width: 48, height: 48,
                     color: JuntraColors.bgPurple,

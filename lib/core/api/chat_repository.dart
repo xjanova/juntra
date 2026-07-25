@@ -38,16 +38,24 @@ class ChatRepository {
   }
 
   /// Send a user message. Returns:
-  ///   { message: {id, role, content, created_at}, reply, balance, cost }
-  /// On 402 (insufficient funds) the [ApiException] is rethrown — the chat
-  /// screen catches statusCode==402 to deep-link the user to the wallet.
+  ///   { message: {...}, reply, balance, cost, daily_limit, daily_left,
+  ///     awaiting, suggestions:[{label,prompt,icon}] }
+  ///
+  /// On 402 (insufficient funds) / 429 (daily_limit หรือส่งถี่เกินไป) /
+  /// 409 (ข้อความเดิมกำลังส่งอยู่) จะโยน [ApiException] พร้อม reasonCode
+  /// ให้หน้าจอแยกเคสได้
+  ///
+  /// [idempotencyKey] ต้องส่งเสมอสำหรับ endpoint นี้เพราะมันตัดเงิน และ
+  /// ต้องใช้ค่าเดิมเมื่อผู้ใช้กด "ลองใหม่" ข้อความเดิม (ดู ApiClient.post)
   Future<Map<String, dynamic>> send({
     required int conversationId,
     required String text,
+    required String idempotencyKey,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.chatSend(conversationId),
       data: {'message': text},
+      idempotencyKey: idempotencyKey,
     );
     return _data(res);
   }

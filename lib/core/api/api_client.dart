@@ -117,9 +117,28 @@ class ApiClient {
     }
   }
 
-  Future<T> post<T>(String path, {dynamic data, Map<String, dynamic>? query}) async {
+  /// POST helper.
+  ///
+  /// [idempotencyKey] สำคัญมากกับ endpoint ที่ตัดเงิน: RetryInterceptor
+  /// ด้านล่างจะ retry POST อัตโนมัติเมื่อ timeout/5xx ถ้าคำขอแรกถึงเซิร์ฟเวอร์
+  /// และถูกประมวลผลไปแล้วแต่คำตอบหายกลางทาง การ retry จะกลายเป็นข้อความซ้ำ
+  /// และถูกคิดเงินสองรอบ ส่ง header นี้ไปด้วยเพื่อให้ backend (guardCharge)
+  /// กันซ้ำได้จริง — ค่าเดิมต้องถูกใช้ซ้ำเมื่อผู้ใช้กด "ลองใหม่" ข้อความเดิม
+  Future<T> post<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? query,
+    String? idempotencyKey,
+  }) async {
     try {
-      final res = await dio.post(path, data: data, queryParameters: query);
+      final res = await dio.post(
+        path,
+        data: data,
+        queryParameters: query,
+        options: idempotencyKey == null
+            ? null
+            : Options(headers: {'Idempotency-Key': idempotencyKey}),
+      );
       return _decode<T>(res);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);

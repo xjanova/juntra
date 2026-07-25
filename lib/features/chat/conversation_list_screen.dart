@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/api_exceptions.dart';
 import '../../core/api/chat_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
@@ -147,8 +148,10 @@ class ConversationListScreen extends ConsumerWidget {
                   fontWeight: FontWeight.w600,
                 )),
             const SizedBox(height: 6),
+            // เดิมโชว์ e.toString() ซึ่งเป็นข้อความ exception ดิบ (มี URL /
+            // ชื่อคลาสภายใน) ให้ผู้ใช้ทั่วไปเห็น — เผยโครงสร้างระบบและอ่านไม่รู้เรื่อง
             Text(
-              e.toString(),
+              e is ApiException ? e.message : 'ตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่อีกครั้งนะคะ',
               maxLines: 2, overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -265,7 +268,10 @@ class _ConversationTile extends StatelessWidget {
                   child: Image.asset(
                     'assets/images/maehmor.png',
                     width: 40, height: 40, fit: BoxFit.cover,
-                    errorBuilder: (_, ex, st) => Container(
+                    // ไฟล์ต้นฉบับ 1536×2752 (~6.7MB) — ถ้าไม่จำกัดขนาด decode
+                    // ทุกแถวในลิสต์จะกิน RAM เต็มความละเอียดเพื่อวาดรูป 40px
+                    cacheWidth: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    errorBuilder: (_, _, _) => Container(
                       width: 40, height: 40,
                       color: JuntraColors.bgPurple,
                       alignment: Alignment.center,
