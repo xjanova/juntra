@@ -6,6 +6,7 @@ import '../features/affiliate/affiliate_screen.dart';
 import '../features/auspicious/auspicious_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/chat/chat_screen.dart';
+import '../features/deep/deep_screen.dart';
 import '../features/horoscope/horoscope_screen.dart';
 import '../features/chat/conversation_list_screen.dart';
 import '../features/history/history_screen.dart';
@@ -41,6 +42,9 @@ class Routes {
   static const auspicious = '/auspicious';
   static const palmistry = '/palmistry';
   static const horoscope = '/horoscope';
+
+  /// ดูดวงเชิงลึก 39฿ — แพ็กเดียวกับเว็บและบอท FB/LINE
+  static const deep = '/deep';
   static const chat = '/chat';
   static const chatConversations = '/chat-conversations';
   static const history = '/history';
@@ -115,6 +119,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           initialSlug: s.uri.queryParameters['sign'],
         ),
       ),
+      GoRoute(path: Routes.deep, builder: (c, s) => const DeepScreen()),
       GoRoute(path: Routes.history, builder: (c, s) => const HistoryScreen()),
       GoRoute(path: Routes.profile, builder: (c, s) => const ProfileScreen()),
       GoRoute(path: Routes.natal, builder: (c, s) => const NatalScreen()),

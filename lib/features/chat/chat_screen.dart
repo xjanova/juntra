@@ -14,6 +14,8 @@ import '../../core/api/api_exceptions.dart';
 import '../../core/api/chat_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/juntra_tab_bar.dart';
+import 'chat_topics_sheet.dart';
+import 'chat_topup_sheet.dart';
 import '../../shared/widgets/starry_background.dart';
 
 /// Screen 7 — Mae Mor AI chat.
@@ -519,6 +521,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   busy: _typing,
                   onOpen: () => setState(() => _suggestOpen = true),
                   onPick: (prompt) => _send(overrideText: prompt),
+                  onTopics: _showTopics,
+                  onTopUp: _showTopUpFlow,
                 ),
                 _InputBar(
                   controller: _controller,
@@ -532,6 +536,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  /// กางหมวดคำถาม 24 ข้อ — เลือกแล้วส่งเป็นข้อความทันที
+  Future<void> _showTopics() async {
+    final prompt = await ChatTopicsSheet.show(context);
+    if (prompt == null || !mounted) return;
+    await _send(overrideText: prompt);
+  }
+
+  /// เติมเครดิตจบในแชท — สำเร็จแล้วปลดล็อกช่องพิมพ์ทันทีไม่ต้องออกจากหน้า
+  Future<void> _showTopUpFlow() async {
+    final paid = await ChatTopUpSheet.show(context);
+    if (paid == true && mounted) {
+      setState(() {
+        _blocked = false;
+        _blockedReason = '';
+      });
+      ref.read(authControllerProvider.notifier).refresh();
+    }
   }
 
   Future<void> _copy(String text) async {
@@ -938,6 +961,8 @@ class _SuggestionStrip extends StatelessWidget {
     required this.busy,
     required this.onOpen,
     required this.onPick,
+    required this.onTopics,
+    required this.onTopUp,
   });
 
   final List<_Suggestion> suggestions;
@@ -948,19 +973,23 @@ class _SuggestionStrip extends StatelessWidget {
   final bool busy;
   final VoidCallback onOpen;
   final ValueChanged<String> onPick;
+  final VoidCallback onTopics;
+  final VoidCallback onTopUp;
 
   @override
   Widget build(BuildContext context) {
     if (blocked) {
-      return _wrap(context, const SingleChildScrollView(
+      return _wrap(context, SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(children: [
-          _ExitChip(icon: '🔮', label: 'เปิดไพ่ยิปซี', route: Routes.spreads, strong: true),
-          _ExitChip(icon: '🌙', label: 'ดวงรายวัน', route: Routes.horoscope),
-          _ExitChip(icon: '🔢', label: 'เลขศาสตร์', route: Routes.numerology),
-          _ExitChip(icon: '📿', label: 'ฤกษ์ยาม', route: Routes.auspicious),
-          _ExitChip(icon: '💳', label: 'เติมเครดิต', route: Routes.wallet, strong: true),
+          // เติมเครดิตจบในแชทเหมือนเว็บ ไม่พาลูกค้าออกไปหน้าอื่นแล้วหลงทาง
+          _Chip(icon: '💳', label: 'เติมเครดิตที่นี่', strong: true, onTap: onTopUp),
+          const _ExitChip(icon: '🔮', label: 'เปิดไพ่ยิปซี', route: Routes.spreads, strong: true),
+          const _ExitChip(icon: '🌟', label: 'ดูดวงเชิงลึก', route: Routes.deep, strong: true),
+          const _ExitChip(icon: '🌙', label: 'ดวงรายวัน', route: Routes.horoscope),
+          const _ExitChip(icon: '🔢', label: 'เลขศาสตร์', route: Routes.numerology),
+          const _ExitChip(icon: '📿', label: 'ฤกษ์ยาม', route: Routes.auspicious),
         ]),
       ), label: blockedReason.isEmpty ? 'ลองทางนี้ต่อได้เลยค่ะ' : blockedReason);
     }
@@ -997,7 +1026,9 @@ class _SuggestionStrip extends StatelessWidget {
                     // เลย์เอาต์จึงไม่กระโดดและผู้ใช้ไม่งงว่าปุ่มหายไปไหน
                     onTap: busy ? null : () => onPick(s.prompt),
                   ))
-              .toList(),
+              .toList()
+            // ปุ่มกางหมวดคำถาม 24 ข้อ — ชุดเดียวกับที่เว็บกางในแชท
+            ..add(_Chip(icon: '⋯', label: 'หมวดคำถาม', onTap: busy ? null : onTopics)),
         ),
       ),
     );
