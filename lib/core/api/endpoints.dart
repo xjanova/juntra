@@ -42,6 +42,14 @@ class Api {
   static String chatConversation(int id) => '/v1/chat/conversations/$id';
   static String chatSend(int id) => '/v1/chat/conversations/$id/send';
 
+  /// หมวดคำถามแบบเต็ม (5 หมวด 24 คำถาม) — ชุดเดียวกับที่เว็บกางในแชท
+  /// ข้อมูลคงที่ ดึงครั้งเดียวต่อรอบเปิดแอปแล้ว cache ไว้ได้
+  static const chatTopics = '/v1/chat/topics';
+
+  // ─── ดูดวงเชิงลึก 39฿ (แพ็กเดียวกับเว็บและบอท FB/LINE) ───────
+  /// GET = ราคา + ยอดคงเหลือ · POST = สั่งทำนาย (หักเครดิต)
+  static const deepReading = '/v1/deep';
+
   // ─── Reading history (tarot / numerology / palmistry / auspicious) ─
   static const historyReadings = '/v1/history/readings';
   static String historyReading(int id) => '/v1/history/readings/$id';
