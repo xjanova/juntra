@@ -242,7 +242,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // (จำเป็นมากเพราะ dio retry POST อัตโนมัติเมื่อ timeout/5xx)
     final idem = reuseIdem ?? _newIdempotencyKey();
 
-    final mine = replacing ?? _Msg.user(text)
+    // วงเล็บชัด ๆ ว่า cascade ทำงานกับผลของ ?? (ตัวเดิมตอน retry / ตัวใหม่ตอนส่งครั้งแรก)
+    final mine = (replacing ?? _Msg.user(text))
       ..idempotencyKey = idem
       ..failed = false;
 
@@ -416,9 +417,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.of(sheetCtx).pop();
-                    context.push(Routes.wallet);
+                    await context.push(Routes.wallet);
+                    // กลับจากหน้าเติมเงินแล้วต้องพิมพ์ต่อได้ทันที
+                    // (ถ้าเครดิตยังไม่พอจริง เซิร์ฟเวอร์จะตอบ 402 ให้เองอีกครั้ง)
+                    // เดิม _blocked ถูกตั้ง true แล้วไม่มีทางกลับเป็น false
+                    // ตลอดอายุหน้าจอ = เติมเงินเสร็จก็ยังคุยไม่ได้จนกว่าจะปิดแอพ
+                    if (mounted) {
+                      setState(() {
+                        _blocked = false;
+                        _blockedReason = '';
+                      });
+                    }
                   },
                   child: const Text('ไปหน้าเติมเครดิต',
                       style: TextStyle(fontWeight: FontWeight.w700)),
