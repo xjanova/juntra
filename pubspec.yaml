@@ -79,6 +79,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  # อ่าน pubspec.yaml ใน test/juntra_art_test.dart เพื่อยืนยันว่าโฟลเดอร์ภาพ
+  # ถูกประกาศครบ — ประกาศตรง ๆ ไม่พึ่ง transitive dep ของ flutter_test
+  yaml: ^3.1.2
   # flutter_native_splash removed — its CLI generates xml/drawables that are
   # already committed; the Flutter plugin runtime registration was failing
   # at compile time because the plugin emits a Java class that pulls extra
@@ -87,8 +90,20 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # NOTE: การประกาศโฟลเดอร์ใน Flutter **ไม่ลงลูก** — `assets/images/` เอาเฉพาะ
+  # ไฟล์ที่อยู่ในนั้นตรง ๆ ไม่รวม `assets/images/art/` ทุกโฟลเดอร์ย่อยจึงต้อง
+  # ประกาศเองทีละบรรทัด ไม่งั้นภาพจะหายเงียบ ๆ ตอน build (errorBuilder รับไว้
+  # จนไม่มี error ให้เห็น — จะรู้ตอนเปิดแอพแล้วเจอช่องว่างเท่านั้น)
+  # โฟลเดอร์ `assets/images/` **ไม่ประกาศทั้งก้อน** เพราะจะลาก PNG ต้นฉบับของ
+  # ไอคอนแอพ (logo-chantra*.png รวม ~2.5 MB) เข้า APK ไปด้วย ทั้งที่ไฟล์พวกนั้น
+  # ใช้ตอน `dart run flutter_launcher_icons` เท่านั้น ไม่เคยถูกวาดบนหน้าจอ
   assets:
-    - assets/images/
+    - assets/images/maehmor.webp
+    - assets/images/logo-chantra.webp
+    - assets/images/art/
+    - assets/images/state/
+    - assets/images/zodiac/
+    - assets/images/ornament/
     - assets/icons/
     - assets/tarot/
     - assets/sounds/

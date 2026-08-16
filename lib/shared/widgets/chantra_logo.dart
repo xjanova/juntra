@@ -11,7 +11,9 @@ class ChantraLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final dim = _sizes[size]!;
     return Image.asset(
-      'assets/images/logo-chantra.png',
+      // WebP 46 KB แทน PNG 1.2 MB — ไฟล์ PNG ยังต้องคงไว้ให้
+      // flutter_launcher_icons ใช้สร้างไอคอนแอพ (ตัวนั้นรับเฉพาะ PNG)
+      'assets/images/logo-chantra.webp',
       width: dim,
       height: dim,
       fit: BoxFit.contain,

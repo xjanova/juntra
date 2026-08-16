@@ -49,9 +49,16 @@ class WalletRepository {
   /// Initiates a PromptPay top-up. Returns:
   ///   {transaction:{id,...}, promptpay:{id,name},
   ///    slip_upload_url, instructions}
-  Future<Map<String, dynamic>> startPromptPayTopup({required double amount}) async {
+  /// [idempotencyKey] — RetryInterceptor ยิง POST ซ้ำเองเมื่อ timeout/5xx
+  /// ถ้าไม่ส่งคีย์ สัญญาณตกครั้งเดียวได้รายการ pending ซ้ำหลายใบ ยอดสตางค์
+  /// คนละค่า ลูกค้าไม่รู้ว่าต้องโอนใบไหน และไปกินเพดาน pending จนสร้างใหม่ไม่ได้
+  Future<Map<String, dynamic>> startPromptPayTopup({
+    required double amount,
+    String? idempotencyKey,
+  }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.walletTopupPromptpay,
+      idempotencyKey: idempotencyKey,
       data: {'amount': amount},
     );
     return _data(res);

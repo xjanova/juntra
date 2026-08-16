@@ -5,6 +5,9 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/fortune_repository.dart';
+import '../../shared/widgets/art_banner.dart';
+import '../../shared/data/juntra_art.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
@@ -88,6 +91,8 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
 
       _pendingKey = null;                       // สำเร็จแล้ว รอบหน้าใช้คีย์ใหม่
       ref.invalidate(deepInfoProvider);         // ยอดคงเหลือเปลี่ยน
+      // รายการใหม่ต้องโผล่ในหน้าประวัติทันที ไม่ต้องให้ผู้ใช้ลากรีเฟรชเอง
+      ref.invalidate(fortuneHistoryProvider);
       ref.read(authControllerProvider.notifier).refresh();
 
       await _showResult(res);
@@ -98,8 +103,10 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
         setState(() => _error = e.message);
         await _offerTopUp(e.message);
       } else {
-        // 503 = เซิร์ฟเวอร์คืนเครดิตให้แล้ว · 409 = รายการเดิมกำลังประมวลผล
-        if (e.statusCode == 503) _pendingKey = null;
+        // 5xx ทุกตัว = เซิร์ฟเวอร์คืนเครดิตให้แล้ว (500 persist_failed ก็คืน
+        // เหมือน 503) เก็บคีย์ไว้เฉพาะ 409 ไม่งั้นกดลองใหม่จะโดน
+        // "รายการก่อนหน้ากำลังประมวลผล" ค้างถึง 90 วินาที ทั้งที่ไม่มีอะไรค้าง
+        if (e.statusCode >= 500) _pendingKey = null;
         setState(() => _error = e.message);
       }
     } catch (_) {
@@ -279,6 +286,8 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
                     children: [
+                      const ArtBanner(asset: JuntraArt.deep, height: 138),
+                      const SizedBox(height: 14),
                       const Text(
                         'แม่หมออ่านดวงชะตาจากวันเกิดของคุณ แล้วตอบคำถามที่ค้างคาใจ '
                         'ทีละข้อ — แพ็กเดียวกับที่แม่หมอทำนายให้ลูกค้าในแชท Facebook / LINE',

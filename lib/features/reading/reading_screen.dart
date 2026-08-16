@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -141,9 +142,20 @@ class _ApiModeReading extends ConsumerWidget {
         ? (reading['cards'] as List).whereType<Map>().toList()
         : <Map>[];
 
+    final readingId = (reading['id'] as num?)?.toInt();
+
+    // 🔴 'คำทำนาย N ใบ' ใช้ได้เฉพาะไพ่ — เซิร์ฟเวอร์คืน cards = [] ให้ทุกหมวด
+    // ที่ไม่ขึ้นต้นด้วย tarot_ เลขศาสตร์/ลายมือ/ฤกษ์/เชิงลึกจึงขึ้น
+    // 'คำทำนาย 0 ใบ' เสมอ ดูเหมือนผลว่างเปล่าทั้งที่คำทำนายมาครบ
+    final subtitle = type.startsWith('tarot_')
+        ? 'คำทำนาย ${cards.length} ใบ'
+        : (question != null && question.trim().isNotEmpty
+            ? question.trim()
+            : _readingDateLabel(reading['created_at']?.toString()));
+
     return Column(
       children: [
-        _BackHeader(title: title, subtitle: 'คำทำนาย ${cards.length} ใบ'),
+        _BackHeader(title: title, subtitle: subtitle, readingId: readingId),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -151,13 +163,24 @@ class _ApiModeReading extends ConsumerWidget {
               if (question != null && question.trim().isNotEmpty)
                 _QuestionBubble(question: question),
               const SizedBox(height: 12),
+              // รูปฝ่ามือที่ลูกค้าอัปโหลด — ต้องเห็นเพื่อตรวจได้ว่าแม่หมออ่านจาก
+              // รูปที่ถูกต้อง (เซิร์ฟเวอร์ส่ง image_url เป็น absolute มาให้แล้ว)
+              if ((reading['image_url']?.toString() ?? '').isNotEmpty)
+                _PalmPhoto(url: reading['image_url'].toString()),
+              // เลขศาสตร์: เลขชีวิต/เลขนาม/เลขวันเกิด — เว็บโชว์เป็นตัวเลขใหญ่
+              // สามช่อง แอพเคยไม่แสดงเลยเพราะ payload ไม่มีเลขมาก่อน
+              if (type == 'numerology') _NumerologyNumbers(payload: reading['payload']),
+              // ฤกษ์ยาม: การ์ดวันมงคลพร้อมคะแนน/ฤกษ์บน/ดิถี/ช่วงเวลา —
+              // เว็บเขียนไว้เองว่า "เป็นเนื้อหาของสินค้า ไม่ใช่ของประดับ"
+              // แต่แอพไม่เคยอ่าน payload เลย ลูกค้าจ่ายเท่ากันได้ของน้อยกว่า
+              if (type == 'auspicious') _AuspiciousDays(payload: reading['payload']),
               if (cards.isNotEmpty) _CardsRow(cards: cards),
               const SizedBox(height: 18),
               ...cards.map((c) => _CardInterpretation(card: c)),
               const SizedBox(height: 16),
               _AiSummaryCard(result: result, reading: reading),
               const SizedBox(height: 16),
-              _ActionRow(),
+              _ActionRow(readingId: readingId),
             ],
           ),
         ),
@@ -187,7 +210,8 @@ class _ApiModeReading extends ConsumerWidget {
 }
 
 class _BackHeader extends StatelessWidget {
-  const _BackHeader({required this.title, this.subtitle});
+  const _BackHeader({required this.title, this.subtitle, this.readingId});
+  final int? readingId;
   final String title;
   final String? subtitle;
 
@@ -218,7 +242,8 @@ class _BackHeader extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.share_outlined,
                 color: JuntraColors.purpleBright),
-            onPressed: () => context.push(Routes.share),
+            onPressed: () => context.push(
+                '${Routes.share}${readingId == null ? '' : '?id=$readingId'}'),
           ),
         ],
       ),
@@ -457,9 +482,27 @@ class _AiSummaryCard extends StatelessWidget {
               ),
             )
           else
-            Text(result, style: const TextStyle(
-              fontSize: 13.5, color: JuntraColors.textLavender, height: 1.7,
-            )),
+            // เซิร์ฟเวอร์ส่ง markdown มา (เลขศาสตร์ใช้ **ตัวหนา** เป็นปกติ)
+            // ของเดิมเป็น Text ธรรมดา ผู้ใช้จึงเห็น `**คุณสมชาย**` ดอกจันค้าง
+            // ทั้งที่หน้าเชิงลึกในแอพเดียวกันใช้ MarkdownBody อยู่แล้ว
+            MarkdownBody(
+              data: result,
+              selectable: true,
+              styleSheet: MarkdownStyleSheet(
+                p: const TextStyle(
+                  fontSize: 13.5, color: JuntraColors.textLavender, height: 1.7,
+                ),
+                strong: const TextStyle(
+                  fontWeight: FontWeight.w700, color: JuntraColors.textCream,
+                ),
+                listBullet: const TextStyle(
+                  fontSize: 13.5, color: JuntraColors.textLavender, height: 1.7,
+                ),
+                h1: baiJamjuree(size: 17, color: JuntraColors.gold),
+                h2: baiJamjuree(size: 15.5, color: JuntraColors.gold),
+                h3: baiJamjuree(size: 14.5, color: JuntraColors.gold),
+              ),
+            ),
         ],
       ),
     );
@@ -478,6 +521,8 @@ class _AiSummaryCard extends StatelessWidget {
 }
 
 class _ActionRow extends StatelessWidget {
+  const _ActionRow({this.readingId});
+  final int? readingId;
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -486,7 +531,8 @@ class _ActionRow extends StatelessWidget {
           child: GhostButton(
             label: 'แชร์',
             icon: const Icon(Icons.share_outlined),
-            onPressed: () => context.push(Routes.share),
+            onPressed: () => context.push(
+                '${Routes.share}${readingId == null ? '' : '?id=$readingId'}'),
           ),
         ),
         const SizedBox(width: 8),
@@ -642,7 +688,7 @@ class _SampleModeReading extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _ActionRow(),
+                const _ActionRow(),
               ],
             ),
           ),
@@ -674,4 +720,192 @@ TarotCard? _localFor(String? slug) {
     if (card.slug == slug) return card;
   }
   return null;
+}
+
+/// วันที่ของคำทำนาย — ใช้เป็นบรรทัดรองของหมวดที่ไม่ใช่ไพ่
+String? _readingDateLabel(String? iso) {
+  if (iso == null || iso.isEmpty) return null;
+  final dt = DateTime.tryParse(iso)?.toLocal();
+  if (dt == null) return null;
+  try {
+    return DateFormat('d MMMM y', 'th').format(dt);
+  } catch (_) {
+    return DateFormat('d MMM y').format(dt);
+  }
+}
+
+/// รูปฝ่ามือที่ลูกค้าส่งมา
+class _PalmPhoto extends StatelessWidget {
+  const _PalmPhoto({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        child: Image.network(
+          url,
+          height: 220,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+}
+
+/// เลขศาสตร์ 3 ตัวหลัก — ชุดเดียวกับที่หน้าผลของเว็บโชว์
+class _NumerologyNumbers extends StatelessWidget {
+  const _NumerologyNumbers({required this.payload});
+  final dynamic payload;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = payload is Map ? Map<String, dynamic>.from(payload as Map) : const {};
+    final items = <(String, dynamic)>[
+      ('เลขชีวิต', p['life_path']),
+      ('เลขนาม', p['expression']),
+      ('เลขวันเกิด', p['birth_day_reduced'] ?? p['birth_day']),
+    ].where((e) => e.$2 != null).toList();
+
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        children: [
+          for (final (label, value) in items)
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: JuntraColors.purpleCardGradient,
+                  borderRadius: BorderRadius.circular(JuntraRadius.card),
+                  border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text('$value', style: baiJamjuree(size: 26, color: JuntraColors.gold)),
+                    const SizedBox(height: 2),
+                    Text(label, style: const TextStyle(
+                      fontSize: 10.5, color: JuntraColors.textMuted,
+                    )),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// วันมงคลที่แม่หมอเลือกให้ — อ่านจาก `payload.candidates` ที่เซิร์ฟเวอร์ส่งมาครบ
+class _AuspiciousDays extends StatelessWidget {
+  const _AuspiciousDays({required this.payload});
+  final dynamic payload;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = payload is Map ? Map<String, dynamic>.from(payload as Map) : const {};
+    final raw = p['candidates'];
+    if (raw is! List || raw.isEmpty) return const SizedBox.shrink();
+
+    // โชว์ 3 วันแรก — ที่เหลืออยู่ในเนื้อคำทำนายอยู่แล้ว
+    final days = raw.whereType<Map>().take(3).toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final d in days) _dayCard(Map<String, dynamic>.from(d)),
+        ],
+      ),
+    );
+  }
+
+  Widget _dayCard(Map<String, dynamic> d) {
+    final pct = (d['score_pct'] as num?)?.round();
+    final rows = <(String, String?)>[
+      ('ฤกษ์บน', _text(d['ruek'])),
+      ('ดิถี', _text(d['tithi'])),
+      ('นักษัตร', _text(d['nakshatra'])),
+      ('ยาม', _text(d['yam'])),
+    ].where((e) => e.$2 != null && e.$2!.isNotEmpty).toList();
+
+    final from = d['ruek_from']?.toString();
+    final to = d['ruek_to']?.toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: JuntraColors.purpleCardGradient,
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(d['label']?.toString() ?? d['date']?.toString() ?? '',
+                    style: baiJamjuree(size: 15)),
+              ),
+              if (pct != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: JuntraColors.gold.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('$pct%', style: const TextStyle(
+                    fontSize: 12, color: JuntraColors.gold, fontWeight: FontWeight.w700,
+                  )),
+                ),
+            ],
+          ),
+          if (from != null && to != null && from.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('ช่วงฤกษ์ $from–$to น.',
+                style: const TextStyle(fontSize: 11.5, color: JuntraColors.cyan)),
+          ],
+          const SizedBox(height: 8),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 62,
+                    child: Text(label, style: const TextStyle(
+                      fontSize: 11, color: JuntraColors.textFaint,
+                    )),
+                  ),
+                  Expanded(
+                    child: Text(value!, style: const TextStyle(
+                      fontSize: 12, color: JuntraColors.textLavender, height: 1.5,
+                    )),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// ค่าบางช่องเป็น map (เช่น tithi = {label, ...}) บางช่องเป็นสตริง
+  static String? _text(dynamic v) {
+    if (v == null) return null;
+    if (v is Map) return (v['label'] ?? v['name'] ?? '').toString();
+    return v.toString();
+  }
 }

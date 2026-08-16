@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -86,6 +87,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   iconColor: JuntraColors.purpleBright,
                   title: 'ธีม',
                   value: 'มืด',
+                ),
+                const SizedBox(height: 14),
+                const _SectionLabel('บัญชีของลูก'),
+                // 🔴 เว็บมีครบมานานแล้ว (routes/auth.php + ProfileController
+                // ที่ลบข้อมูลตาม PDPA และเพิกถอน Sanctum token ทุกตัว) แต่แอพ
+                // ไม่มีทางเข้าถึงเลย — ลืมรหัสผ่านแล้วติดตายในแอพ และสิทธิ์
+                // ลบข้อมูลตาม PDPA เข้าไม่ถึงจากแอพ
+                _ActionTile(
+                  icon: Icons.password_outlined,
+                  iconColor: JuntraColors.gold,
+                  title: 'เปลี่ยนรหัสผ่าน',
+                  subtitle: 'เปิดหน้าบัญชีบนเว็บ',
+                  onTap: () => launchUrl(
+                    Uri.parse('https://xn--82c4af5bzdj.online/profile'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                ),
+                _ActionTile(
+                  icon: Icons.link_outlined,
+                  iconColor: JuntraColors.purpleBright,
+                  title: 'เชื่อมต่อบัญชี Thaiprompt',
+                  subtitle: 'เพื่อใช้ระบบสายงานและคำทำนายเต็มรูปแบบ',
+                  onTap: () => launchUrl(
+                    Uri.parse('https://xn--82c4af5bzdj.online/auth/thaiprompt/redirect'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                ),
+                _ActionTile(
+                  icon: Icons.person_remove_outlined,
+                  iconColor: const Color(0xFFFF6B6B),
+                  title: 'ลบบัญชีและข้อมูล',
+                  subtitle: 'ตามสิทธิ์ PDPA · ทำบนเว็บเพื่อยืนยันตัวตน',
+                  onTap: () => launchUrl(
+                    Uri.parse('https://xn--82c4af5bzdj.online/profile'),
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 const _SectionLabel('เกี่ยวกับ'),

@@ -99,6 +99,10 @@ class CardBack extends StatelessWidget {
 
 /// Face-up tarot card — Roman numeral, Thai name, English subtitle,
 /// element glyph at center on a deep purple ground.
+/// หน้าไพ่ที่วาดด้วยโค้ด (fallback เมื่อไม่มีภาพจริง)
+///
+/// [nameTh] คือชื่อไทยจากฐานข้อมูลของเว็บ — ส่งมาเมื่อมี เพื่อไม่ให้ไพ่ใบเดียว
+/// ถูกเรียกสองชื่อระหว่างจอเผยไพ่ (ชื่อของแอพ) กับหน้าผลทำนาย (ชื่อของเซิร์ฟเวอร์)
 class CardFront extends StatelessWidget {
   const CardFront({
     super.key,
@@ -106,7 +110,11 @@ class CardFront extends StatelessWidget {
     this.width = 88,
     this.height = 145,
     this.reversed = false,
+    this.nameTh,
   });
+
+  /// ชื่อไทยจากเซิร์ฟเวอร์ (ถ้ามี) — ใช้ก่อนชื่อในสำรับของแอพเสมอ
+  final String? nameTh;
   final TarotCard card;
   final double width;
   final double height;
@@ -153,7 +161,7 @@ class CardFront extends StatelessWidget {
           Column(
             children: [
               Text(
-                card.thai,
+                nameTh ?? card.thai,
                 style: GoogleFonts.baiJamjuree(
                   textStyle: TextStyle(
                     fontSize: width * 0.13,
@@ -198,7 +206,11 @@ class CardFace extends StatelessWidget {
     this.width = 88,
     this.height = 145,
     this.reversed = false,
+    this.nameTh,
   });
+
+  /// ชื่อไทยจากเซิร์ฟเวอร์ (ถ้ามี)
+  final String? nameTh;
 
   final TarotCard card;
   final String? imageUrl;
@@ -210,7 +222,7 @@ class CardFace extends StatelessWidget {
   Widget build(BuildContext context) {
     // Built-in drawing (no internal rotation — CardFace rotates the whole
     // widget below so the image + fallback flip identically).
-    final fallback = CardFront(card: card, width: width, height: height);
+    final fallback = CardFront(card: card, width: width, height: height, nameTh: nameTh);
 
     final url = imageUrl;
     final Widget face;

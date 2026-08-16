@@ -61,16 +61,32 @@ class FortuneRepository {
   ///   - 402 → insufficient_funds (caller should route to /wallet)
   ///   - 422 → validation (bad slug, wrong pick count)
   ///   - 503 → reading_failed; wallet was refunded automatically
+  /// [idempotencyKey] — **บังคับ** เพราะเส้นนี้ตัดเงิน RetryInterceptor
+  /// ใน [ApiClient] retry POST เองเมื่อ timeout/5xx ถ้าคำขอแรกถึงเซิร์ฟเวอร์
+  /// แล้วแต่คำตอบหายกลางทาง การ retry จะกลายเป็นการทำนายรอบใหม่และถูกคิดเงิน
+  /// ซ้ำ ผู้เรียกต้องสร้างคีย์ครั้งเดียวต่อการเปิดไพ่หนึ่งครั้ง แล้วใช้ค่าเดิม
+  /// ทุกครั้งที่กด "ลองใหม่"
   Future<Map<String, dynamic>> createTarotReading({
     required String type,
     String? question,
     required List<TarotPick> picks,
+    required String idempotencyKey,
+    String? dealToken,
+    List<int>? slots,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.historyReadings,
+      idempotencyKey: idempotencyKey,
       data: {
         'type': type,
         if (question != null && question.trim().isNotEmpty) 'question': question.trim(),
+        // เส้นทางหลัก: กองที่เซิร์ฟเวอร์สับ + ตำแหน่งที่แตะ — เซิร์ฟเวอร์แปลง
+        // เป็นไพ่และทิศเอง ไคลเอนต์จึงบังคับผลไม่ได้
+        if (dealToken != null && slots != null) ...{
+          'deal_token': dealToken,
+          'slots': slots,
+        },
+        // ส่ง picks ไปด้วยเสมอเพื่อรองรับกรณีที่กองหมดอายุ/ขอกองไม่ได้
         'picks': picks.map((p) => {
           'slug': p.card.slug,
           'reversed': p.reversed,
@@ -91,25 +107,49 @@ class FortuneRepository {
   Future<int> createNumerology({
     required String name,
     required String birthDate,
+    required String idempotencyKey,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.fortuneNumerology,
+      idempotencyKey: idempotencyKey,
       data: {'name': name, 'birth_date': birthDate},
     );
     return _readingId(res);
+  }
+
+  /// หมวดงานมงคลทั้งหมด — `[{key, label}]`
+  Future<List<Map<String, dynamic>>> occasions() async {
+    final res = await _api.get<Map<String, dynamic>>(Api.fortuneOccasions);
+    final data = res['data'];
+    if (data is List) {
+      return data.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+    }
+    // เซิร์ฟเวอร์อาจคืนเป็น map {key: label} — รองรับทั้งสองรูป
+    if (data is Map) {
+      return data.entries
+          .map((e) => {'key': e.key.toString(), 'label': e.value.toString()})
+          .toList();
+    }
+    return const [];
   }
 
   /// Create an auspicious-dates reading. The backend returns 422
   /// (`no_auspicious_day`) when the window has no good day → [ApiException].
   Future<int> createAuspicious({
     required String occasion,
+    String? occasionType,
     String? fromDate,
     String? toDate,
+    required String idempotencyKey,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.fortuneAuspicious,
+      idempotencyKey: idempotencyKey,
       data: {
         'occasion': occasion,
+        // ส่งหมวดที่ผู้ใช้เลือกไปตรง ๆ — เซิร์ฟเวอร์ใช้ค่านี้ก่อน detect() เสมอ
+        // ปล่อยว่างได้ (จะกลับไปเดาจากข้อความเหมือนเดิม)
+        'occasion_type': ?occasionType,
         'from_date': ?fromDate,
         'to_date': ?toDate,
       },
@@ -123,6 +163,7 @@ class FortuneRepository {
     required String filePath,
     String? fileName,
     String? question,
+    required String idempotencyKey,
   }) async {
     final map = <String, dynamic>{
       'image': await MultipartFile.fromFile(filePath, filename: fileName ?? 'palm.jpg'),
@@ -132,6 +173,7 @@ class FortuneRepository {
 
     final res = await _api.postMultipart<Map<String, dynamic>>(
       Api.fortunePalmistry,
+      idempotencyKey: idempotencyKey,
       formData: FormData.fromMap(map),
     );
     return _readingId(res);
@@ -157,6 +199,13 @@ class TarotPick {
   final bool reversed;
 }
 
+/// หมวดงานมงคล — โหลดครั้งเดียวแล้วแคช (ข้อมูลคงที่)
+final auspiciousOccasionsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final repo = await ref.watch(fortuneRepositoryProvider.future);
+  return repo.occasions();
+});
+
 final fortuneRepositoryProvider = FutureProvider<FortuneRepository>((ref) async {
   final api = await ref.watch(apiClientProvider.future);
   return FortuneRepository(api);
@@ -168,6 +217,31 @@ final fortuneHistoryProvider = FutureProvider<List<dynamic>>((ref) async {
   final res = await repo.history();
   return (res['data'] is List) ? res['data'] as List : const [];
 });
+
+/// หน้าประวัติ — กรองหมวดที่ **เซิร์ฟเวอร์** ไม่ใช่กรองในเครื่อง
+///
+/// 🔴 ของเดิมโหลดหน้าแรก 20 รายการแล้วกรองด้วย `.where()` ในเครื่อง ผู้ใช้ที่
+/// คุยแชทบ่อย (แต่ละข้อความสร้างแถว type=chat) จะเห็นแต่แชทเต็ม 20 รายการ
+/// พอกดชิป "เซลติกครอส" ขึ้น "ยังไม่มีคำทำนายประเภทนี้" ทั้งที่จ่าย ฿99 ไปแล้ว
+/// และคำทำนายที่เก่ากว่า 20 รายการเข้าถึงไม่ได้เลยจากในแอพ
+///
+/// `type = null` = ทุกหมวด
+final historyPageProvider =
+    FutureProvider.family<HistoryPage, String?>((ref, type) async {
+  final repo = await ref.watch(fortuneRepositoryProvider.future);
+  final res = await repo.history(type: type);
+  return HistoryPage(
+    rows: (res['data'] is List) ? res['data'] as List : const [],
+    nextCursor: ((res['meta'] as Map?)?['next_cursor'])?.toString(),
+  );
+});
+
+/// หนึ่งหน้าของประวัติ + เคอร์เซอร์ของหน้าถัดไป (null = หมดแล้ว)
+class HistoryPage {
+  const HistoryPage({required this.rows, this.nextCursor});
+  final List<dynamic> rows;
+  final String? nextCursor;
+}
 
 /// Single reading detail — keyed by id so multiple opens don't collide.
 final readingDetailProvider = FutureProvider.family<Map<String, dynamic>, int>((ref, id) async {

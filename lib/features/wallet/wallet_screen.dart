@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/idempotency.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
@@ -42,6 +45,14 @@ class WalletScreen extends ConsumerStatefulWidget {
 class _WalletScreenState extends ConsumerState<WalletScreen> {
   Future<Map<String, dynamic>>? _overview;
 
+  /// กันกดปุ่มจำนวนเงินรัว ๆ — ระหว่างรอ POST ไม่มี feedback ใด ๆ ผู้ใช้จึงกด
+  /// ซ้ำเป็นเรื่องปกติ ได้รายการค้างหลายใบยอดคนละเศษสตางค์ จนไม่รู้ว่าต้องโอน
+  /// ใบไหน และครบเพดาน 5 ใบแล้วสร้างใหม่ไม่ได้ (ชีทเติมเงินในแชททำถูกมาตลอด)
+  bool _startingTopup = false;
+
+  /// คีย์กันสร้างรายการเติมเงินซ้ำ — ผูกกับยอดที่กด
+  final _topupAttempt = IdempotentAttempt('topup');
+
   @override
   void initState() {
     super.initState();
@@ -54,8 +65,13 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
   }
 
   Future<void> _refresh() async {
+    // ผู้ใช้กดยกเลิกรายการแล้วออกจากหน้านี้ระหว่างที่ยัง await อยู่ได้ —
+    // setState หลัง dispose = แครช เช็ค mounted คร่อมทุก await ให้ครบ
+    // (เมธอดนี้ถูกเรียกจาก 3 จุด การกันที่นี่จึงคุ้มกว่าไปกันทีละจุด)
+    if (!mounted) return;
     setState(() => _overview = _load());
     await _overview;
+    if (!mounted) return;
     // Update auth state's cached balance too so the home greeting matches.
     await ref.read(authControllerProvider.notifier).refresh();
   }
@@ -108,7 +124,10 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                         children: [
                           _BalanceCard(balance: balance, currency: currency),
                           const SizedBox(height: 14),
-                          _TopupRow(onPick: (amount) => _startTopup(amount)),
+                          _TopupRow(
+                            enabled: !_startingTopup,
+                            onPick: (amount) => _startTopup(amount),
+                          ),
                           const SizedBox(height: 18),
                           _PricingHint(pricing: pricing.cast<String, dynamic>()),
                           const SizedBox(height: 18),
@@ -146,15 +165,35 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
   }
 
   Future<void> _startTopup(double amount) async {
+    if (_startingTopup) return;
+    setState(() => _startingTopup = true);
+
     final Map<String, dynamic> initiated;
     try {
       final repo = await ref.read(walletRepositoryProvider.future);
-      initiated = await repo.startPromptPayTopup(amount: amount);
+      initiated = await repo.startPromptPayTopup(
+        amount: amount,
+        // ยอดเดียวกัน = รายการเดียวกัน ถึง dio จะ retry ให้เองก็ไม่เกิดใบซ้ำ
+        idempotencyKey: _topupAttempt.begin('topup-${amount.toStringAsFixed(2)}'),
+      );
     } on ApiException catch (e) {
-      if (mounted) _toast(e.message);
+      if (mounted) {
+        setState(() => _startingTopup = false);
+        _toast(e.message);
+      }
       return;
+    } catch (_) {
+      if (mounted) {
+        setState(() => _startingTopup = false);
+        _toast('สร้างรายการไม่สำเร็จ กรุณาลองใหม่');
+      }
+      return;
+    } finally {
+      // ปลดล็อกทันทีที่รู้ผล — ชีทที่เปิดต่อจากนี้มี guard ของตัวเองอยู่แล้ว
+      if (mounted && _startingTopup) setState(() => _startingTopup = false);
     }
     if (!mounted) return;
+    _topupAttempt.succeeded();   // สร้างสำเร็จแล้ว รอบหน้าเป็นรายการใหม่
     final txMap = (initiated['transaction'] as Map?)?.cast<String, dynamic>()
         ?? const {};
     final txId = (txMap['id'] as num?)?.toInt();
@@ -389,8 +428,9 @@ class _BalanceCard extends StatelessWidget {
 }
 
 class _TopupRow extends StatelessWidget {
-  const _TopupRow({required this.onPick});
+  const _TopupRow({required this.onPick, this.enabled = true});
   final ValueChanged<double> onPick;
+  final bool enabled;
   // Matches config/pricing.php `topup_bundles` on the backend.
   static const _options = <double>[50, 100, 200, 500, 1000, 2000];
 
@@ -416,8 +456,10 @@ class _TopupRow extends StatelessWidget {
                     width: tileW,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(JuntraRadius.card),
-                      onTap: () => onPick(amt),
-                      child: Container(
+                      onTap: enabled ? () => onPick(amt) : null,
+                      child: Opacity(
+                        opacity: enabled ? 1 : 0.45,
+                        child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
@@ -429,6 +471,7 @@ class _TopupRow extends StatelessWidget {
                         ),
                         child: Text('฿${amt.toInt()}',
                             style: baiJamjuree(size: 16, color: JuntraColors.gold)),
+                      ),
                       ),
                     ),
                   ),
@@ -487,6 +530,60 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
   bool _uploading = false;
   String? _errorMsg;
 
+  /// เช็คเงินเข้าเป็นระยะเมื่อเปิดโหมดเครดิตอัตโนมัติ
+  ///
+  /// 🔴 ชีทนี้เขียนป้ายไว้เองว่า "ระบบจะเติมเครดิตให้อัตโนมัติทันทีที่เงินเข้า"
+  /// แต่ไม่เคย poll เลย ลูกค้าโอนเสร็จนั่งมองชีทที่ไม่ขยับ ต้องเดาเองว่าปิดแล้ว
+  /// ลากรีเฟรช — ขณะที่ชีทเติมเงินในแชททำถูกมาตลอด ผู้ใช้จึงเจอสองพฤติกรรม
+  /// ในแอพเดียว
+  Timer? _poll;
+  int _waited = 0;
+  bool _paid = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoConfirm) _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    _waited = 0;
+    _poll = Timer.periodic(const Duration(seconds: 5), (t) async {
+      _waited += 5;
+      // หยุดเองที่ 10 นาที ไม่ปล่อยให้ยิงไม่จบถ้าผู้ใช้เปิดค้างไว้
+      if (_waited > 600) {
+        t.cancel();
+        return;
+      }
+      try {
+        final repo = await ref.read(walletRepositoryProvider.future);
+        final res = await repo.topupShow(widget.txId);
+        if (!mounted) return;
+        if (res['status'] == 'success') {
+          t.cancel();
+          setState(() => _paid = true);
+          // ignore: unawaited_futures
+          ref.read(authControllerProvider.notifier).refresh();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('เติมเครดิตสำเร็จแล้วค่ะ ✨'),
+            backgroundColor: JuntraColors.bgPurpleDeep,
+            behavior: SnackBarBehavior.floating,
+          ));
+          widget.onUploaded();
+        }
+      } catch (_) {
+        // เน็ตสะดุดชั่วคราว — รอบหน้าลองใหม่
+      }
+    });
+  }
+
   Future<void> _pickAndUpload(ImageSource source) async {
     if (_uploading) return;
     setState(() => _errorMsg = null);
@@ -514,26 +611,46 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
     setState(() => _uploading = true);
     try {
       final repo = await ref.read(walletRepositoryProvider.future);
-      await repo.uploadTopupSlip(
+      final res = await repo.uploadTopupSlip(
         transactionId: widget.txId,
         filePath: picked.path,
         fileName: picked.name,
       );
       // Surface success to the parent — it pops + refreshes.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('อัปโหลดสลิปสำเร็จ · แอดมินจะตรวจสอบและอนุมัติเร็วๆ นี้'),
+
+      // 🔴 ของเดิมทิ้งผลลัพธ์ทั้งก้อนแล้วโชว์ข้อความตายตัว 'รอแอดมินอนุมัติ'
+      // ทั้งที่ SlipOK ตรวจผ่านแล้วเครดิตเข้าทันทีก็มี → ลูกค้าไม่กล้าเปิดไพ่ต่อ
+      // และเคสที่ถูกปฏิเสธ ข้อความชี้ทางแก้ของเซิร์ฟเวอร์ก็หายไปด้วย
+      final paid = res['paid'] == true;
+      final msg = res['message']?.toString().trim();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg?.isNotEmpty == true
+            ? msg!
+            : 'ได้รับสลิปแล้วค่ะ ระบบกำลังตรวจสอบให้นะคะ'),
         backgroundColor: JuntraColors.bgPurpleDeep,
         behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: paid ? 4 : 3),
       ));
+      if (paid) {
+        // เครดิตเข้าแล้ว — อัปเดตยอดในหัวแอพทันที ไม่ต้องรอผู้ใช้ลากรีเฟรช
+        // ignore: unawaited_futures
+        ref.read(authControllerProvider.notifier).refresh();
+      }
       widget.onUploaded();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _errorMsg = e.statusCode == 409
-            ? 'รายการนี้ดำเนินการเสร็จแล้ว ไม่สามารถอัปโหลดสลิปใหม่ได้'
-            : e.message;
+        // 409 มาได้สามความหมาย (tx_not_pending / duplicate_slip /
+        // too_many_pending) แยกด้วย reason_code ไม่ใช่เหมาโดยรหัส HTTP
+        // — เดิมลูกค้าที่แนบสลิปซ้ำเห็น 'รายการนี้ดำเนินการเสร็จแล้ว'
+        // ซึ่งอ่านได้ว่าเงินเข้าแล้ว ทั้งที่ยัง pending อยู่ แล้วเดินจากไป
+        _errorMsg = switch (e.reasonCode) {
+          'duplicate_slip'  => 'สลิปใบนี้ถูกใช้ไปแล้วค่ะ กรุณาแนบสลิปของการโอนครั้งนี้',
+          'tx_not_pending'  => 'รายการนี้ดำเนินการเสร็จแล้ว ไม่สามารถอัปโหลดสลิปใหม่ได้',
+          _ => e.message,
+        };
       });
     } catch (e) {
       if (!mounted) return;
@@ -567,7 +684,10 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
             ),
             const SizedBox(height: 14),
             Center(
-              child: Text('เติมเครดิต ฿${widget.amount.toInt()}',
+              // ห้าม toInt() — SmsCheckerService ต่อท้ายสตางค์ 0.01–0.99 ให้ไม่ซ้ำ
+              // เพื่อแมป SMS ธนาคารกับบิลใบเดียว ตัดเศษทิ้ง = ลูกค้าพิมพ์ยอดผิด
+              // แล้วระบบจับคู่ไม่ได้ ต้องรอแอดมินตรวจมือ
+              child: Text('เติมเครดิต ฿${widget.amount.toStringAsFixed(2)}',
                   style: baiJamjuree(size: 18, color: JuntraColors.gold)),
             ),
             const SizedBox(height: 16),
@@ -578,6 +698,30 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
               qrPayload: widget.qrPayload,
             ),
             const SizedBox(height: 14),
+            if (widget.autoConfirm && _paid) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                const Icon(Icons.check_circle, color: JuntraColors.mintGreen, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text('เติมเครดิตสำเร็จแล้วค่ะ ✨',
+                    style: baiJamjuree(size: 14, color: JuntraColors.mintGreen))),
+              ]),
+            ],
+            if (widget.autoConfirm && !_paid) ...[
+              const SizedBox(height: 10),
+              const Row(children: [
+                SizedBox(
+                  width: 14, height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(child: Text('กำลังรอเงินเข้า · แม่หมอจะเติมเครดิตให้ทันทีที่ระบบเห็นยอด',
+                    style: TextStyle(fontSize: 11.5, color: JuntraColors.textMuted))),
+              ]),
+            ],
             if (widget.autoConfirm) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1054,6 +1198,9 @@ class _TxTile extends StatelessWidget {
         'success' => 'สำเร็จ',
         'failed' => 'ปฏิเสธ',
         'refunded' => 'คืนเงินแล้ว',
+      // ผู้ใช้สร้างสถานะนี้ได้เองจากปุ่มยกเลิกในหน้านี้ ถ้าไม่แปลจะขึ้นคำว่า
+      // 'cancelled' กลางหน้าจอภาษาไทย ดูเหมือนระบบพังทั้งที่ทำงานถูก
+      'cancelled' => 'ยกเลิกแล้ว',
         _ => s,
       };
   String _formatDate(String iso) {

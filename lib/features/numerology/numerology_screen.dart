@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/api/idempotency.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../shared/data/juntra_art.dart';
 import '../../shared/widgets/fortune_form_scaffold.dart';
 import '../../shared/widgets/gold_button.dart';
 
@@ -24,6 +26,8 @@ class _NumerologyScreenState extends ConsumerState<NumerologyScreen> {
   final _name = TextEditingController();
   DateTime? _dob;
   bool _busy = false;
+  /// กันคิดเงินซ้ำเมื่อ dio retry POST เอง — คีย์เดิมตลอดการกดหนึ่งครั้ง
+  final _attempt = IdempotentAttempt('numerology');
   String? _error;
 
   @override
@@ -59,7 +63,9 @@ class _NumerologyScreenState extends ConsumerState<NumerologyScreen> {
       final id = await repo.createNumerology(
         name: name,
         birthDate: DateFormat('yyyy-MM-dd').format(_dob!),
+        idempotencyKey: _attempt.begin('$name|${DateFormat('yyyy-MM-dd').format(_dob!)}'),
       );
+      _attempt.succeeded();
       // ignore: unawaited_futures
       ref.read(authControllerProvider.notifier).refresh();
       ref.invalidate(fortuneHistoryProvider);
@@ -67,7 +73,17 @@ class _NumerologyScreenState extends ConsumerState<NumerologyScreen> {
       context.pushReplacement('${Routes.reading}?id=$id');
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.statusCode == 402) { context.push(Routes.wallet); return; }
+      // 402 เงินไม่พอ · 503 เซิร์ฟเวอร์คืนเครดิตแล้ว — ทั้งคู่ยังไม่ถูกตัดเงิน
+      // เริ่มคีย์ใหม่ได้ ส่วนกรณีอื่นเก็บคีย์เดิมไว้ กดลองใหม่จะไม่โดนหักซ้ำ
+      if (e.statusCode == 402 || e.statusCode == 503) _attempt.notCharged();
+      if (e.statusCode == 402) {
+        // ปลด busy ก่อนออกจากฟังก์ชัน — context.push เป็น push จริง หน้านี้
+        // ยังอยู่ใน stack พร้อม State เดิม ผู้ใช้เติมเงินเสร็จกด back กลับมา
+        // จะเจอปุ่มค้าง 'กำลังคำนวณ...' ถาวร ต้องถอยออกแล้วเข้าใหม่
+        setState(() { _busy = false; _error = null; });
+        context.push(Routes.wallet);
+        return;
+      }
       setState(() { _busy = false; _error = e.message; });
     } catch (_) {
       if (!mounted) return;
@@ -79,6 +95,7 @@ class _NumerologyScreenState extends ConsumerState<NumerologyScreen> {
   Widget build(BuildContext context) {
     return FortuneFormScaffold(
       title: 'เลขศาสตร์',
+      art: JuntraArt.numerology,
       subtitle: 'วิเคราะห์เลขชีวิต เลขนาม และเลขวันเกิดของคุณ',
       error: _error,
       busy: _busy,

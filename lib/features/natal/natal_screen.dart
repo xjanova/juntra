@@ -237,7 +237,13 @@ class _NatalWheelPainter extends CustomPainter {
     }
 
     // House ring (R 0.55..0.78) — 12 dividers from ASC
-    final ascRad = -math.pi / 2 + (chart.ascendant.lon - 90) * math.pi / 180;
+    // เรือนเป็นแบบ whole-sign จากลัคนา (ดู NatalChart docblock) ขอบเรือน 1
+    // จึงอยู่ที่ "ต้นราศีของลัคนา" = signIdx * 30 ไม่ใช่ lon - 90
+    //
+    // ของเดิมลบ 90 อยู่ตัวเดียวในไฟล์ ขณะที่แถบราศีและดาวไม่ได้ลบ
+    // → เส้นแบ่งเรือนทั้ง 12 เส้นเลื่อนไป 3 ราศีจากระบบมุมของส่วนอื่น
+    // ดาวจึงตกอยู่ในช่องเรือนที่ผิดไป 3 เรือน
+    final ascRad = -math.pi / 2 + (chart.ascendant.signIdx * 30) * math.pi / 180;
     for (var i = 0; i < 12; i++) {
       final ang = ascRad + i * (math.pi / 6);
       final p1 = Offset(cx + math.cos(ang) * maxR * 0.55, cy + math.sin(ang) * maxR * 0.55);

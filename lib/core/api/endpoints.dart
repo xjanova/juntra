@@ -57,17 +57,31 @@ class Api {
   // ─── Non-tarot paid readings ─────────────────────────────────
   static const fortuneNumerology = '/v1/fortune/numerology';
   static const fortuneAuspicious = '/v1/fortune/auspicious';
+  /// หมวดงานมงคล 9 หมวด — ข้อมูลอ้างอิงคงที่ ให้ฟอร์มกาง dropdown ได้เหมือนเว็บ
+  /// แทนที่จะปล่อยให้เซิร์ฟเวอร์เดาหมวดจากข้อความที่ผู้ใช้พิมพ์
+  static const fortuneOccasions = '/v1/fortune/occasions';
   static const fortunePalmistry  = '/v1/fortune/palmistry';
+
+  // ─── ปฏิทินโหรวันนี้ (ฟรี ไม่ต้องล็อกอิน) ─────────────────────
+  /// ดิถี · ราศีที่จันทร์/อาทิตย์เสวย · ยามปัจจุบัน · ไพ่ประจำวัน
+  /// คำนวณจาก App\Support\ThaiAstro ตัวเดียวกับเว็บ — แอพห้ามคำนวณเอง
+  static const almanacToday = '/v1/almanac/today';
 
   // ─── Daily horoscope (free, read-only) ───────────────────────
   static const horoscopeIndex = '/v1/horoscope';
   static String horoscope(String slug) => '/v1/horoscope/$slug';
+  /// ปีนักษัตร 12 ปี + ปีนักษัตรของปีนี้ — ต้องมาจากเซิร์ฟเวอร์ ห้ามคำนวณในแอพ
+  static const horoscopeThaiZodiac = '/v1/horoscope/thai-zodiac';
 
   // ─── Tarot card catalog (public — real card face images) ─────
   /// Returns every card's resolved face-image URL (or null) + the global
   /// card-back, so the app renders จันทรา.online art and falls back to its
   /// own built-in drawing per card. No auth required.
   static const tarotCards = '/v1/tarot/cards';
+
+  /// POST — สับไพ่หนึ่งกองต่อหนึ่งเกม (เซิร์ฟเวอร์เป็นคนสับและตัดสินหัวกลับ)
+  /// ตอบกลับ `deal_token` + ลำดับไพ่ 78 ใบ ตอนบันทึกผลส่งแค่ "ตำแหน่งที่แตะ"
+  static const tarotDeal = '/v1/tarot/deal';
 
   // ─── MLM dashboard (requires thaiprompt_token; 403 unlinked) ────
   static const mlmStats       = '/v1/mlm/stats';

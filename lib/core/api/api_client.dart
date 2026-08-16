@@ -84,6 +84,20 @@ class ApiClient {
         Duration(milliseconds: 600),
         Duration(milliseconds: 1500),
       ],
+      // 🔴 ห้าม retry เส้นทางสมัคร/ล็อกอิน
+      //
+      // สมัครสมาชิกไม่ idempotent: ถ้าคำขอแรกถึงเซิร์ฟเวอร์และสร้างบัญชี
+      // สำเร็จแต่คำตอบหายกลางทาง การ retry จะได้ 422 'อีเมลนี้เคยสมัครไว้แล้ว'
+      // ผู้ใช้เห็น error คิดว่าสมัครไม่ผ่าน ไปสมัครใหม่ด้วยอีเมลอื่น เกิดบัญชีค้าง
+      // และ token ของรอบแรกไม่เคยถูกเก็บ (จึงเข้าใช้บัญชีนั้นไม่ได้อีกเลย)
+      //
+      // ล็อกอินก็ไม่ควร retry เงียบ ๆ เพราะแต่ละครั้งนับเป็นความพยายามที่
+      // ชน rate limit ฝั่งเซิร์ฟเวอร์ (throttle:auth-login) โดยผู้ใช้ไม่รู้ตัว
+      retryEvaluator: (error, attempt) {
+        final path = error.requestOptions.path;
+        if (path.startsWith('/v1/auth/')) return false;
+        return DefaultRetryEvaluator(defaultRetryableStatuses).evaluate(error, attempt);
+      },
     ));
 
     if (kDebugMode) {
@@ -157,12 +171,23 @@ class ApiClient {
   /// Multipart POST. Used by the native slip upload — `formData` is a
   /// Dio [FormData] including a [MultipartFile] under the field name
   /// the backend expects. Returns the decoded JSON body, same as [post].
-  Future<T> postMultipart<T>(String path, {required dynamic formData}) async {
+  ///
+  /// [idempotencyKey] จำเป็นเท่ากับใน [post] — เส้นทางที่หักเงิน (ลายมือ
+  /// อัปรูปฝ่ามือ) ก็วิ่งผ่านที่นี่ และ RetryInterceptor ก็ retry ให้เหมือนกัน
+  /// ก่อนหน้านี้เมธอดนี้ไม่รับคีย์เลย เน็ตสะดุดครั้งเดียวจึงถูกคิดเงินซ้ำได้
+  Future<T> postMultipart<T>(
+    String path, {
+    required dynamic formData,
+    String? idempotencyKey,
+  }) async {
     try {
       final res = await dio.post(
         path,
         data: formData,
         options: Options(
+          headers: idempotencyKey == null
+              ? null
+              : {'Idempotency-Key': idempotencyKey},
           // Let Dio set Content-Type with the multipart boundary —
           // overriding it strips the boundary parameter and the server
           // can't parse the form.
@@ -181,17 +206,48 @@ class ApiClient {
 
   T _decode<T>(Response res) {
     if (res.statusCode != null && res.statusCode! >= 400) {
+      // 🔴 `validateStatus: s < 500` ทำให้ 4xx ไม่ถูกโยนเป็น DioException
+      // เส้นทางนี้จึงเป็นตัวสร้าง ApiException เองสำหรับ 4xx **ทั้งหมด**
+      // ของเดิมส่งแค่ statusCode + message ทิ้ง reason_code และ body ไป
+      // ผลคือ `e.reasonCode` เป็น null เสมอสำหรับ 4xx และกิ่งที่แยกเคสด้วย
+      // reasonCode ตายหมด (เช่น 429 daily_limit ถูกแสดงเป็น "พิมพ์เร็วเกินไป"
+      // และ 409 สามความหมายขึ้นข้อความเดียวกัน)
+      final body = res.data is Map
+          ? Map<String, dynamic>.from(res.data as Map)
+          : null;
+
       throw ApiException(
         statusCode: res.statusCode ?? 0,
         message: _extractMessage(res.data),
+        reasonCode: body?['reason_code'] is String
+            ? body!['reason_code'] as String
+            : null,
+        body: body,
       );
     }
     return res.data as T;
   }
 
   String _extractMessage(dynamic body) {
-    if (body is Map && body['message'] is String) return body['message'] as String;
-    if (body is Map && body['error'] is String) return body['error'] as String;
+    if (body is Map) {
+      // ข้อความรายช่องจาก Laravel validator — เซิร์ฟเวอร์เขียนข้อความไทยดี ๆ
+      // ไว้ครบ (เช่น 'อีเมลนี้เคยสมัครไว้แล้ว — ลองเข้าสู่ระบบนะคะ') แต่ของเดิม
+      // อ่านแค่ `message` ผู้ใช้จึงเห็นแค่ 'ข้อมูลไม่ถูกต้อง' ลอย ๆ ตอนสมัคร
+      final errors = body['errors'];
+      if (errors is Map && errors.isNotEmpty) {
+        final lines = <String>[];
+        for (final v in errors.values) {
+          if (v is List && v.isNotEmpty) {
+            lines.add(v.first.toString());
+          } else if (v is String) {
+            lines.add(v);
+          }
+        }
+        if (lines.isNotEmpty) return lines.join('\n');
+      }
+      if (body['message'] is String) return body['message'] as String;
+      if (body['error'] is String) return body['error'] as String;
+    }
     return 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
   }
 }

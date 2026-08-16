@@ -37,6 +37,8 @@ class ProfileScreen extends ConsumerWidget {
                 const SizedBox(height: 20),
                 switch (auth) {
                   AuthUnknown() => const _LoadingBlock(),
+                  // เชื่อมต่อไม่ได้ ≠ เป็นแขก — token ยังอยู่ แค่ยืนยันไม่ได้
+                  AuthOffline() => const _OfflineBlock(),
                   AuthGuest() => const _GuestBlock(),
                   AuthAuthenticated(:final displayName, :final email,
                           :final walletBalance, :final walletCurrency,
@@ -389,6 +391,48 @@ class _VersionFooter extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ตอนเปิดแอพ — ยังไม่รู้ว่าใครล็อกอินอยู่
+///
+/// เดิมเคสนี้ถูกกลืนเป็น [AuthGuest] ผู้ใช้ที่ล็อกอินอยู่จึงเห็นตัวเองเป็น
+/// ผู้เยี่ยมชมและยอดเครดิตหายทั้งก้อน โดยไม่มีปุ่มลองใหม่ ต้องปิด-เปิดแอพเอง
+class _OfflineBlock extends ConsumerWidget {
+  const _OfflineBlock();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.cloud_off_outlined, color: JuntraColors.gold, size: 32),
+          const SizedBox(height: 12),
+          Text('เชื่อมต่อไม่ได้ชั่วคราว', style: baiJamjuree(size: 16)),
+          const SizedBox(height: 6),
+          const Text(
+            'ยังไม่ได้ออกจากระบบนะคะ · เครดิตของลูกยังอยู่ครบ '
+            'แค่ตอนนี้ยังคุยกับเซิร์ฟเวอร์ไม่ได้',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12.5, color: JuntraColors.textMuted, height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 16),
+          GoldButton(
+            label: 'ลองใหม่อีกครั้ง',
+            onPressed: () =>
+                ref.read(authControllerProvider.notifier).retryBootstrap(),
+          ),
+        ],
+      ),
     );
   }
 }

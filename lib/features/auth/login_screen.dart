@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,11 @@ import '../../shared/widgets/starry_background.dart';
 /// returned bearer token is persisted in flutter_secure_storage by
 /// [ApiClient.setToken] (same scheme as thaipromptapp), so a relaunch
 /// of the app picks up the existing session in [AuthController._bootstrap].
+///
+/// **อีเมลหรือเบอร์โทรก็ได้** — ต้องตรงกับเว็บทุกประการ เว็บยอมให้สมัครด้วย
+/// เบอร์อย่างเดียวแล้วสร้างอีเมลภายในให้เงียบ ๆ (`p08xxxxxxxx@phone.juntra.local`)
+/// ซึ่งเจ้าตัวไม่มีทางรู้ ตอนที่หน้านี้ยังบังคับอีเมล ลูกค้ากลุ่มนั้น
+/// (ผู้สูงอายุ = ลูกค้าหลักของแบรนด์) สมัครทางเว็บแล้วเข้าแอพไม่ได้เลย
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
   @override
@@ -30,35 +36,85 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
 
   final _name = TextEditingController();
+
+  /// โหมดเข้าสู่ระบบ: ช่องเดียว รับได้ทั้งอีเมลและเบอร์
+  final _login = TextEditingController();
+
+  /// โหมดสมัคร: แยกสองช่อง เพราะเซิร์ฟเวอร์เก็บคนละคอลัมน์
   final _email = TextEditingController();
+  final _phone = TextEditingController();
+
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+
+  /// โค้ดผู้แนะนำ (ถ้ามี) — ผูกสายงาน MLM ตั้งแต่ตอนสมัคร
+  final _referral = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
+    _login.dispose();
     _email.dispose();
+    _phone.dispose();
     _password.dispose();
     _confirm.dispose();
+    _referral.dispose();
     super.dispose();
+  }
+
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+  /// เบอร์ไทยที่ยอมรับ — ตรงกับ `PhoneNumber::normalise()` ฝั่งเซิร์ฟเวอร์
+  /// (เหลือเฉพาะตัวเลข, +66 → 0, ต้องยาว 9–32 หลัก) ถ้าเกณฑ์สองฝั่งไม่ตรงกัน
+  /// จะเกิดบัญชีที่ "สมัครผ่านแต่ล็อกอินไม่ได้" แบบที่เคยเกิดมาแล้ว
+  static String? _normalisePhone(String raw) {
+    if (raw.trim().isEmpty || raw.contains('@')) return null;
+    var digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('66') && digits.length >= 11) {
+      digits = '0${digits.substring(2)}';
+    }
+    if (digits.length < 9 || digits.length > 32) return null;
+    return digits;
   }
 
   /// Client-side pre-validation so blank/invalid fields never round-trip to
   /// the API and come back as a raw server error. Returns a Thai message or
   /// null when the form is good to submit.
   String? _validate() {
-    final email = _email.text.trim();
     final password = _password.text;
-    if (_signUp && _name.text.trim().isEmpty) {
+
+    if (!_signUp) {
+      final login = _login.text.trim();
+      if (login.isEmpty) return 'กรุณากรอกอีเมลหรือเบอร์โทรศัพท์';
+      final looksEmail = login.contains('@');
+      if (looksEmail && !_emailPattern.hasMatch(login)) {
+        return 'รูปแบบอีเมลไม่ถูกต้อง';
+      }
+      if (!looksEmail && _normalisePhone(login) == null) {
+        return 'เบอร์โทรศัพท์ไม่ถูกต้อง เช่น 0812345678';
+      }
+      if (password.isEmpty) return 'กรุณากรอกรหัสผ่าน';
+      return null;
+    }
+
+    if (_name.text.trim().isEmpty) {
       return 'กรุณากรอกชื่อที่จะให้แม่หมอเรียก';
     }
-    if (email.isEmpty) return 'กรุณากรอกอีเมล';
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+
+    final email = _email.text.trim();
+    final phone = _phone.text.trim();
+    if (email.isEmpty && phone.isEmpty) {
+      return 'กรุณากรอกอีเมล หรือเบอร์โทรศัพท์อย่างใดอย่างหนึ่ง';
+    }
+    if (email.isNotEmpty && !_emailPattern.hasMatch(email)) {
       return 'รูปแบบอีเมลไม่ถูกต้อง';
+    }
+    if (phone.isNotEmpty && _normalisePhone(phone) == null) {
+      return 'เบอร์โทรศัพท์ไม่ถูกต้อง เช่น 0812345678';
     }
     if (password.isEmpty) return 'กรุณากรอกรหัสผ่าน';
     if (password.length < 8) return 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร';
-    if (_signUp && password != _confirm.text) {
+    if (password != _confirm.text) {
       return 'รหัสผ่านและการยืนยันไม่ตรงกัน';
     }
     return null;
@@ -78,12 +134,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await auth.signUp(
           name: _name.text.trim(),
           email: _email.text.trim(),
+          phone: _normalisePhone(_phone.text.trim()),
           password: _password.text,
           passwordConfirmation: _confirm.text,
+          referralCode: _referral.text
+              .trim()
+              .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), ''),
         );
       } else {
         await auth.signIn(
-          email: _email.text.trim(),
+          login: _login.text.trim(),
           password: _password.text,
         );
       }
@@ -137,14 +197,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       icon: Icons.person_outline,
                     ),
                     const SizedBox(height: 12),
+                    _Field(
+                      label: 'อีเมล',
+                      controller: _email,
+                      icon: Icons.alternate_email,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 10),
+                    const _OrDivider(),
+                    const SizedBox(height: 10),
+                    _Field(
+                      label: 'เบอร์โทรศัพท์',
+                      controller: _phone,
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'กรอกอย่างใดอย่างหนึ่งก็พอ · ถ้าไม่มีอีเมล ใช้เบอร์โทรเข้าระบบได้เลย',
+                      style: TextStyle(
+                        fontSize: 11, color: JuntraColors.textFaint, height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ] else ...[
+                    _Field(
+                      label: 'อีเมล หรือ เบอร์โทรศัพท์',
+                      controller: _login,
+                      icon: Icons.person_outline,
+                      // ไม่ล็อกเป็นคีย์บอร์ดอีเมล เพราะช่องนี้พิมพ์เบอร์ก็ได้
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 12),
                   ],
-                  _Field(
-                    label: 'อีเมล',
-                    controller: _email,
-                    icon: Icons.alternate_email,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 12),
                   _Field(
                     label: 'รหัสผ่าน',
                     controller: _password,
@@ -158,6 +243,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       controller: _confirm,
                       icon: Icons.lock_outline,
                       obscure: true,
+                    ),
+                    const SizedBox(height: 12),
+                    _Field(
+                      label: 'โค้ดผู้แนะนำ (ถ้ามี)',
+                      controller: _referral,
+                      icon: Icons.card_giftcard_outlined,
                     ),
                   ],
                   if (_error != null) ...[
@@ -202,10 +293,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ? 'มีบัญชีอยู่แล้ว · เข้าสู่ระบบ'
                         : 'ยังไม่มีบัญชี · สมัครสมาชิก',
                     onPressed: () => setState(() {
+                      // ยกสิ่งที่พิมพ์ไว้ข้ามโหมดให้ ไม่ต้องพิมพ์ใหม่
+                      if (_signUp) {
+                        final typed = _email.text.trim().isNotEmpty
+                            ? _email.text.trim()
+                            : _phone.text.trim();
+                        if (typed.isNotEmpty) _login.text = typed;
+                      } else {
+                        final typed = _login.text.trim();
+                        if (typed.contains('@')) {
+                          _email.text = typed;
+                        } else if (typed.isNotEmpty) {
+                          _phone.text = typed;
+                        }
+                      }
                       _signUp = !_signUp;
                       _error = null;
                     }),
                   ),
+                  if (!_signUp) ...[
+                    const SizedBox(height: 10),
+                    TextButton(
+                      // ทางออกเดียวของสองกลุ่ม: คนที่ลืมรหัส และคนที่สมัคร
+                      // ทางเว็บด้วย Facebook/LINE (SSO ตั้งรหัสสุ่มให้ 40 ตัว
+                      // เจ้าตัวไม่มีทางรู้) — เดิมแอพไม่มีลิงก์พาไปเลย = ทางตัน
+                      onPressed: () => launchUrl(
+                        Uri.parse('https://xn--82c4af5bzdj.online/forgot-password'),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      child: const Text(
+                        'ลืมรหัสผ่าน? · เคยสมัครด้วย Facebook / LINE',
+                        style: TextStyle(fontSize: 12, color: JuntraColors.textMuted),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 18),
                   TextButton(
                     onPressed: () => context.go(Routes.home),
@@ -222,6 +343,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// เส้นคั่น "หรือ" ระหว่างช่องอีเมลกับช่องเบอร์ตอนสมัคร — บอกด้วยสายตาว่า
+/// สองช่องนี้เลือกกรอกอันเดียวก็ได้ ไม่ใช่ต้องกรอกทั้งคู่
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+  @override
+  Widget build(BuildContext context) {
+    final line = Expanded(
+      child: Container(
+        height: 1,
+        color: JuntraColors.purple.withValues(alpha: 0.25),
+      ),
+    );
+    return Row(
+      children: [
+        line,
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: Text('หรือ', style: TextStyle(
+            fontSize: 11, color: JuntraColors.textFaint,
+          )),
+        ),
+        line,
+      ],
     );
   }
 }

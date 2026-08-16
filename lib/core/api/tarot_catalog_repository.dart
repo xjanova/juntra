@@ -16,9 +16,17 @@ import 'endpoints.dart';
 /// the existing drawing otherwise).
 @immutable
 class CardArt {
-  const CardArt({required this.slug, this.imageUrl});
+  const CardArt({required this.slug, this.imageUrl, this.nameTh});
   final String slug;
   final String? imageUrl;
+
+  /// ชื่อไทยจากฐานข้อมูลของเว็บ — **แหล่งเดียวของความจริง**
+  ///
+  /// 🔴 สำรับในแอพเก็บชื่อไทยของตัวเองไว้ ซึ่งต่างจาก TarotCardSeeder ถึง
+  /// 63/78 ใบ (เมเจอร์ 7 ใบ + ไมเนอร์ทั้ง 56 ใบ เช่น 'ถ้วยสอง' vs 'สองถ้วย')
+  /// ผู้ใช้จึงเห็นไพ่ใบเดียวถูกเรียกสองชื่อในรอบเดียว — จอเผยไพ่ใช้ชื่อของแอพ
+  /// แล้วหน้าผลที่เพิ่งจ่ายเงินใช้ชื่อจากเซิร์ฟเวอร์
+  final String? nameTh;
 }
 
 /// The full card-art catalog pulled from จันทรา.online (`GET /v1/tarot/cards`),
@@ -53,6 +61,13 @@ class TarotCatalog {
     if (slug == null || slug.isEmpty) return null;
     return bySlug[slug]?.imageUrl;
   }
+
+  /// ชื่อไทยของไพ่ตามฐานข้อมูลเว็บ — ใช้ค่านี้ก่อนชื่อในสำรับของแอพเสมอ
+  /// เพื่อไม่ให้ไพ่ใบเดียวมีสองชื่อระหว่างจอเผยไพ่กับหน้าผลทำนาย
+  String? nameThFor(String? slug) {
+    if (slug == null || slug.isEmpty) return null;
+    return bySlug[slug]?.nameTh;
+  }
 }
 
 /// Loads + caches the tarot art catalog. Cached-first and never throws: the
@@ -61,6 +76,9 @@ class TarotCatalog {
 class TarotCatalogRepository {
   TarotCatalogRepository(this._api);
   final ApiClient _api;
+
+  /// เปิดให้ extension เรียกได้ (การแจกไพ่ใช้ client ตัวเดียวกัน)
+  ApiClient get api => _api;
 
   /// Bump the suffix if the cached envelope shape ever changes.
   static const _cacheKey = 'juntra_tarot_catalog_v1';
@@ -109,9 +127,11 @@ class TarotCatalogRepository {
       final slug = item['slug']?.toString();
       if (slug == null || slug.isEmpty) continue;
       final url = item['image_url']?.toString();
+      final nameTh = item['name_th']?.toString();
       bySlug[slug] = CardArt(
         slug: slug,
         imageUrl: (url != null && url.isNotEmpty) ? url : null,
+        nameTh: (nameTh != null && nameTh.isNotEmpty) ? nameTh : null,
       );
     }
     final back = json['card_back_url']?.toString();
@@ -138,3 +158,48 @@ final tarotCatalogProvider = FutureProvider<TarotCatalog>((ref) async {
   final repo = await ref.watch(tarotCatalogRepositoryProvider.future);
   return repo.load();
 });
+
+
+/// กองไพ่ที่เซิร์ฟเวอร์สับให้ต่อหนึ่งเกม
+///
+/// 🔴 ทำไมต้องมี: สำรับในแอพเป็น `const` เรียง id 0–77 ตายตัว และซีน "สับไพ่"
+/// เป็นแอนิเมชันล้วน ไม่เคยแตะโครงสร้างกอง → ช่องซ้ายบนสุดคือ The Fool
+/// ตลอดกาล ผู้ใช้ที่เปิดไพ่สองครั้งแล้วแตะตำแหน่งเดิมได้ไพ่ชุดเดิมเป๊ะ
+/// ขณะที่เว็บสับจริงทุกครั้งด้วย `inRandomOrder()`
+///
+/// หัวตั้ง/หัวกลับก็มาจากที่นี่ (เซิร์ฟเวอร์สุ่ม 50% เท่าเว็บ) แทนที่จะให้
+/// แอพสุ่มเอง 30% แล้วส่งขึ้นไปให้เชื่อ
+class TarotDeal {
+  const TarotDeal({required this.token, required this.cards});
+
+  final String token;
+
+  /// 78 ใบตามลำดับที่สับแล้ว — index = ช่องบนพัดไพ่
+  final List<DealCard> cards;
+}
+
+class DealCard {
+  const DealCard({required this.slug, required this.reversed, this.nameTh});
+  final String slug;
+  final bool reversed;
+  final String? nameTh;
+}
+
+extension TarotDealApi on TarotCatalogRepository {
+  Future<TarotDeal?> deal() async {
+    final res = await api.post<Map<String, dynamic>>(Api.tarotDeal);
+    final data = res['data'];
+    if (data is! Map) return null;
+    final token = data['deal_token']?.toString();
+    final raw = data['cards'];
+    if (token == null || raw is! List) return null;
+    return TarotDeal(
+      token: token,
+      cards: raw.whereType<Map>().map((c) => DealCard(
+            slug: c['slug']?.toString() ?? '',
+            reversed: c['reversed'] == true,
+            nameTh: c['name_th']?.toString(),
+          )).toList(),
+    );
+  }
+}

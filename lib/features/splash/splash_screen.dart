@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/data/juntra_art.dart';
 import '../../core/api/tarot_catalog_repository.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
@@ -153,7 +154,7 @@ class _MaeMorPortrait extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Image.asset(
-                'assets/images/maehmor.png',
+                JuntraArt.maeMor,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
                   color: JuntraColors.bgPurpleDeep,

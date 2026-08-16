@@ -8,6 +8,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/data/juntra_art.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
@@ -87,7 +88,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // AuthUnknown = ยังโหลด session ไม่เสร็จ ต้องรอ ไม่ใช่ปล่อยผ่านไปยิง API
     // แล้วไปเจอ 401 (ของเดิมเช็คเฉพาะ AuthGuest ผู้ใช้ที่เพิ่งเปิดแอพจึงเห็น
     // "session หมดอายุ" ทั้งที่ล็อกอินอยู่)
-    if (auth is AuthUnknown) {
+    if (auth is AuthUnknown || auth is AuthOffline) {
       await ref.read(authControllerProvider.notifier).refresh();
     }
 
@@ -222,10 +223,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           .toList();
     }
 
-    if (_dailyLimit > 0 && _dailyLeft <= 0) {
-      _blocked = true;
-      _blockedReason = 'วันนี้คุยครบแล้ว — พรุ่งนี้แม่หมอรอฟังต่อนะคะ';
+    // 🔴 เชื่อ `blocked` ของเซิร์ฟเวอร์เท่านั้น ห้ามเดาเองจาก daily_left
+    //
+    // ChatPolicy::exhausted() คืน false เสมอเมื่อแชทเป็นโหมดเสียเงิน
+    // (เพดานรายวันใช้กับโหมดฟรีอย่างเดียว) โค้ดเดิมปิดช่องพิมพ์ทันทีที่
+    // daily_left <= 0 ลูกค้าที่พร้อมจ่ายรายข้อความจึงถูกล็อกออกจากแชท
+    // ทั้งที่เซิร์ฟเวอร์อนุญาต — เสียรายได้โดยไม่มีใครเห็น error
+    if (data['blocked'] is bool) {
+      _blocked = data['blocked'] as bool;
+      _blockedReason = _blocked
+          ? 'วันนี้คุยครบแล้ว — พรุ่งนี้แม่หมอรอฟังต่อนะคะ'
+          : '';
     }
+
+    // ราคาข้อความถัดไปก็ต้องมาจากเซิร์ฟเวอร์ ไม่ใช่ค่าที่แอพจำไว้
+    final next = (data['next_cost'] as num?)?.toDouble();
+    if (next != null) _cost = next;
   }
 
   /* ══════════════════════ ส่งข้อความ ══════════════════════ */
@@ -305,7 +318,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           _messages.add(_Msg.system(e.message));
         });
         _scrollToEnd();
-        await _showTopUpSheet(e.message);
+        // ใช้ชีทที่เติมเงินจบในแชท (เลือกยอด → QR → poll → แนบสลิป) ซึ่งทำไว้
+        // ดีแล้วแต่เดิมโผล่เฉพาะตอนถูกบล็อก · เส้นทางที่ลูกค้าเจอบ่อยที่สุดคือ
+        // "ส่งข้อความแล้วเงินไม่พอ" กลับเป็นเส้นทางเก่าที่พาออกจากแชท
+        // ซึ่งทีมบันทึกไว้เองว่าลูกค้ากลุ่มผู้สูงอายุหลุดกลางทาง
+        await _showTopUpFlow();
         return;
 
       case 429:
@@ -376,79 +393,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _showTopUpSheet(String message) async {
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: JuntraColors.bgPurpleDeep,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: JuntraColors.gold.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text('เครดิตไม่พอ', style: baiJamjuree(size: 18, color: JuntraColors.gold)),
-              const SizedBox(height: 8),
-              Text(message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13, color: JuntraColors.textLavender, height: 1.5,
-                  )),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: JuntraColors.gold,
-                    foregroundColor: JuntraColors.bgPurpleDeep,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () async {
-                    Navigator.of(sheetCtx).pop();
-                    await context.push(Routes.wallet);
-                    // กลับจากหน้าเติมเงินแล้วต้องพิมพ์ต่อได้ทันที
-                    // (ถ้าเครดิตยังไม่พอจริง เซิร์ฟเวอร์จะตอบ 402 ให้เองอีกครั้ง)
-                    // เดิม _blocked ถูกตั้ง true แล้วไม่มีทางกลับเป็น false
-                    // ตลอดอายุหน้าจอ = เติมเงินเสร็จก็ยังคุยไม่ได้จนกว่าจะปิดแอพ
-                    if (mounted) {
-                      setState(() {
-                        _blocked = false;
-                        _blockedReason = '';
-                      });
-                    }
-                  },
-                  child: const Text('ไปหน้าเติมเครดิต',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ),
-              const SizedBox(height: 6),
-              TextButton(
-                onPressed: () => Navigator.of(sheetCtx).pop(),
-                child: const Text('ปิด',
-                    style: TextStyle(color: JuntraColors.textFaint)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -717,7 +661,7 @@ class _MorAvatar extends StatelessWidget {
     final px = (size * MediaQuery.devicePixelRatioOf(context)).round();
     return ClipOval(
       child: Image.asset(
-        'assets/images/maehmor.png',
+        JuntraArt.maeMor,
         width: size, height: size, fit: BoxFit.cover,
         alignment: Alignment.topCenter,
         cacheWidth: px,

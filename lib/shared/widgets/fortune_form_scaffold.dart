@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/wallet_repository.dart';
+import 'art_banner.dart';
 import 'starry_background.dart';
 
 /// Shared input decoration for the non-tarot fortune forms.
@@ -60,6 +61,7 @@ class FortuneFormScaffold extends ConsumerWidget {
     this.error,
     this.busy = false,
     this.featureKey,
+    this.art,
   });
   final String title;
   final String subtitle;
@@ -68,6 +70,10 @@ class FortuneFormScaffold extends ConsumerWidget {
   final bool busy;
   /// Pricing key (e.g. 'numerology') → shows a live ฿ badge.
   final String? featureKey;
+
+  /// ภาพประจำหมวดจาก [JuntraArt] — ถ้าไม่ส่งมา หน้าจะเป็นฟอร์มเปล่าแบบเดิม
+  /// (หน้าเลขศาสตร์/ลายมือ/ฤกษ์ยามเคยเป็นฟอร์มล้วนไม่มีภาพเลยสักใบ)
+  final String? art;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -108,6 +114,10 @@ class FortuneFormScaffold extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
+                if (art != null) ...[
+                  ArtBanner(asset: art!, height: 132),
+                  const SizedBox(height: 14),
+                ],
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(subtitle, style: const TextStyle(

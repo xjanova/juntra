@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/widgets/art_banner.dart';
+import '../../shared/data/juntra_art.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/wallet_repository.dart';
@@ -36,6 +38,10 @@ class SpreadsScreen extends ConsumerWidget {
             child: Column(
               children: [
                 _Header(category: cat),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: ArtBanner(asset: JuntraArt.tarot, height: 118),
+                ),
                 Expanded(
                   child: ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

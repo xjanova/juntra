@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/wallet_repository.dart';
+import '../../core/api/idempotency.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
@@ -54,6 +56,15 @@ enum _Phase { question, shuffle, fan, travel, reveal, grid, saving }
 class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     with TickerProviderStateMixin {
   _Phase _phase = _Phase.question;
+  /// กันคิดเงินซ้ำ: การเปิดไพ่หนึ่งครั้งใช้คีย์เดียวตลอด รวมถึงตอนกดลองใหม่
+  final _attempt = IdempotentAttempt('tarot');
+
+  /// กองที่เซิร์ฟเวอร์สับให้สำหรับเกมนี้ — null = ยังไม่ได้ขอ / ขอไม่สำเร็จ
+  ///
+  /// 🔴 ก่อนหน้านี้ไม่มีสิ่งนี้เลย: ช่องที่ k บนพัดคือ `tarotDeck[k]` เสมอ
+  /// ช่องซ้ายบนสุดจึงเป็น The Fool ตลอดกาล และหัวกลับถูกสุ่มในเครื่องที่ 30%
+  /// (เว็บใช้ 50%) แล้วส่งขึ้นไปให้เซิร์ฟเวอร์เชื่อทั้งดุ้น
+  TarotDeal? _deal;
   /// Web card-art catalog (faces + back) resolved in [build]; empty until the
   /// จันทรา.online catalog loads, at which point cards swap to their real art.
   TarotCatalog _catalog = TarotCatalog.empty;
@@ -106,7 +117,29 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     // Idempotent: rapid double-tap on "เริ่มสับไพ่" must NOT spawn a second
     // shuffle controller or queue a second phase transition.
     if (_phase != _Phase.question) return;
+
+    // เช็คสิทธิ์ก่อนให้เล่นซีน 1–2 นาที — ของเดิมเช็คตอนจบ แขกจึงต้องสับไพ่
+    // จนครบ (เซลติก 10 ใบ) แล้วค่อยโดนเด้ง แล้วต้องเริ่มใหม่ทั้งหมด
+    if (ref.read(authControllerProvider) is! AuthAuthenticated) {
+      _showLoginNeededSheet();
+      return;
+    }
+
     setState(() => _phase = _Phase.shuffle);
+
+    // ขอกองที่เซิร์ฟเวอร์สับให้ — ทำระหว่างแอนิเมชันสับ ผู้ใช้จึงไม่รู้สึกว่ารอ
+    // ถ้าขอไม่ได้ (ออฟไลน์) ตกไปสับในเครื่องแทน ดีกว่าปล่อยให้เรียงเดิมตลอดกาล
+    () async {
+      try {
+        final repo = await ref.read(tarotCatalogRepositoryProvider.future);
+        final deal = await repo.deal();
+        if (mounted && deal != null && deal.cards.isNotEmpty) {
+          setState(() => _deal = deal);
+        }
+      } catch (_) {
+        // เงียบไว้ — มี fallback ในเครื่องอยู่แล้ว
+      }
+    }();
     HapticFeedback.mediumImpact();
     SoundService.instance.shuffle();
     _shuffleCtrl.forward(from: 0);
@@ -115,23 +148,54 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     setState(() => _phase = _Phase.fan);
   }
 
-  void _onPickCard(int deckIndex) {
-    if (_picked.contains(deckIndex) || _picked.length >= _spread.cards) return;
+  void _onPickCard(int slotIndex) {
+    // แตะใบที่เลือกไว้แล้ว = ถอดออก — ของเดิมเงียบเฉย แตะพลาดใบสุดท้ายแล้ว
+    // เข้าซีนหักเงินทันที ย้อนไม่ได้
+    final existing = _picked.indexOf(slotIndex);
+    if (existing >= 0) {
+      HapticFeedback.selectionClick();
+      setState(() {
+        _picked.removeAt(existing);
+        _reversed.removeAt(existing);
+      });
+      return;
+    }
+    if (_picked.length >= _spread.cards) return;
+
     HapticFeedback.lightImpact();
     SoundService.instance.cardPick();
-    // Roll reversed orientation now so the reveal flip animation already
-    // knows which way to land. ~30% chance reversed mirrors the rate the
-    // web tarot reading produces (random_int(0,1) on a 0/1 split with a
-    // bias against reversed for kinder readings).
-    final rng = math.Random();
+
+    // หัวตั้ง/หัวกลับมาจากกองที่เซิร์ฟเวอร์สับ (50% เท่าเว็บ) ไม่ใช่สุ่มในเครื่อง
+    // — ค่าที่ใช้แสดงตอนพลิกต้องเป็นค่าเดียวกับที่จะถูกบันทึกจริง
+    final deal = _deal;
+    final reversed = deal != null && slotIndex < deal.cards.length
+        ? deal.cards[slotIndex].reversed
+        : math.Random.secure().nextBool();
+
     setState(() {
-      _picked.add(deckIndex);
-      _reversed.add(rng.nextInt(10) < 3);
+      _picked.add(slotIndex);
+      _reversed.add(reversed);
     });
-    if (_picked.length == _spread.cards) {
-      _enterTravel();
-    }
+    // ครบจำนวนแล้ว **ไม่** เข้าซีนต่อเอง — รอให้ผู้ใช้กดปุ่มยืนยันที่บอกราคา
+    // (ดู _ConfirmBar) เพราะเงินจะถูกตัดหลังจากนั้นโดยย้อนไม่ได้
   }
+
+  /// ไพ่ที่อยู่ในช่อง [slotIndex] — จากกองของเซิร์ฟเวอร์ ถ้าไม่มีใช้สำรับในเครื่อง
+  ///
+  /// สำรับในเครื่องถูกสับด้วย [_localOrder] ต่อหนึ่งเกม จึงไม่ใช่ลำดับ id เดิม
+  TarotCard _cardAt(int slotIndex) {
+    final deal = _deal;
+    if (deal != null && slotIndex < deal.cards.length) {
+      final slug = deal.cards[slotIndex].slug;
+      final match = tarotDeck.where((c) => c.slug == slug);
+      if (match.isNotEmpty) return match.first;
+    }
+    return tarotDeck[_localOrder[slotIndex % _localOrder.length]];
+  }
+
+  /// ลำดับสับในเครื่อง — สร้างครั้งเดียวต่อหนึ่งเกม (ห้ามสร้างใน build)
+  late final List<int> _localOrder =
+      List<int>.generate(tarotDeck.length, (i) => i)..shuffle(math.Random.secure());
 
   Future<void> _enterTravel() async {
     setState(() => _phase = _Phase.travel);
@@ -151,6 +215,9 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     // Guard rapid double-taps + late callbacks from a previous flip
     // animation that is still running.
     if (_revealCtrl.isAnimating) return;
+    // กันแตะรัว ๆ ตอนไพ่ใบสุดท้ายพลิกจบ — controller หยุดแล้ว guard ด้านบน
+    // เป็น false ทันที สองแตะติดกันจึงเข้ากิ่งเดิมทั้งคู่และยิง POST สองรอบ
+    if (_phase != _Phase.reveal) return;
     if (_revealIdx + 1 >= _picked.length) {
       SoundService.instance.complete();
       setState(() => _phase = _Phase.grid);
@@ -194,15 +261,31 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
       final picks = <TarotPick>[
         for (var i = 0; i < _picked.length; i++)
           TarotPick(
-            card: tarotDeck[_picked[i]],
+            card: _cardAt(_picked[i]),
             reversed: i < _reversed.length ? _reversed[i] : false,
           ),
       ];
+      if (!mounted) return;
       final reading = await repo.createTarotReading(
         type: backendType,
         question: _question.trim().isEmpty ? null : _question.trim(),
         picks: picks,
+        // เมื่อมีกองของเซิร์ฟเวอร์ ให้ส่ง "ตำแหน่งที่แตะ" ไปแทน แล้วเซิร์ฟเวอร์
+        // แปลงเป็นไพ่+ทิศเอง — ไคลเอนต์จึงเลือกไพ่ที่อยากได้เองไม่ได้
+        dealToken: _deal?.token,
+        slots: _deal == null ? null : List<int>.from(_picked),
+        // ไพ่ชุดเดิม + คำถามเดิม = รายการเดียวกันเสมอ ถึง dio จะ retry
+        // ให้อัตโนมัติตอนสัญญาณตก ก็ต้องถูกคิดเงินครั้งเดียว
+        idempotencyKey: _attempt.begin(
+            '$backendType|${_question.trim()}|'
+            '${picks.map((p) => '${p.card.slug}:${p.reversed}').join(',')}'),
       );
+      _attempt.succeeded();
+
+      // ต้องเช็ค mounted ก่อนแตะ ref — ผู้ใช้กด back ระหว่างรอ 8–12 วิ ได้
+      // (ref.read/invalidate หลัง dispose โยน StateError แล้วถูกกลืนเงียบ ๆ
+      //  ผลคือเงินถูกหักแต่ยอดเครดิตหน้าแรกกับประวัติไม่รีเฟรช = "จ่ายแล้วไม่ได้อะไร")
+      if (!mounted) return;
 
       // Backend echoes new wallet balance — refresh auth state so the
       // home screen pill + chat header stay in sync without a /me hit.
@@ -225,6 +308,8 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
       }
     } on ApiException catch (e) {
       if (!mounted) return;
+      // 402/503 = ยังไม่ถูกตัดเงิน (หรือคืนให้แล้ว) เริ่มคีย์ใหม่ได้
+      if (e.statusCode == 402 || e.statusCode == 503) _attempt.notCharged();
       if (e.statusCode == 402) {
         _showInsufficientFundsSheet(e.message);
         return;
@@ -610,6 +695,17 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
             },
           ),
         ),
+        // ปุ่มยืนยันที่ **บอกราคาก่อนตัดเงิน** — ของเดิมพอแตะครบจำนวนจะเข้าซีน
+        // travel → reveal → หักเงินทันทีโดยไม่เคยบอกว่าจะหักเท่าไร และแตะพลาด
+        // ก็ย้อนไม่ได้ (ชนกฎ "Destructive without confirm")
+        _ConfirmBar(
+          picked: _picked.length,
+          needed: _spread.cards,
+          price: ref.watch(walletPricingProvider)
+              .valueOrNull?[_spread.backendType]
+              ?.toDouble(),
+          onConfirm: _enterTravel,
+        ),
       ],
     );
   }
@@ -715,7 +811,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
 
   // ─── Phase 5: Reveal ────────────────────────────────────────
   Widget _buildRevealPhase() {
-    final card = tarotDeck[_picked[_revealIdx]];
+    final card = _cardAt(_picked[_revealIdx]);
     final positionLabel = _revealIdx < _spread.positions.length
         ? _spread.positions[_revealIdx] : '';
 
@@ -770,7 +866,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
             shaderCallback: (rect) => const LinearGradient(
               colors: [Color(0xFFFFE7A0), Color(0xFFF0C75E), Color(0xFFB8881F)],
             ).createShader(rect),
-            child: Text(card.thai,
+            child: Text(_catalog.nameThFor(card.slug) ?? card.thai,
                 style: baiJamjuree(size: 28, color: Colors.white)),
           ),
           const SizedBox(height: 4),
@@ -798,10 +894,11 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
         spacing: 8, runSpacing: 8,
         alignment: WrapAlignment.center,
         children: _picked.map((i) {
-          final c = tarotDeck[i];
+          final c = _cardAt(i);
           return CardFace(
             card: c,
             imageUrl: _catalog.faceUrlFor(c.slug),
+            nameTh: _catalog.nameThFor(c.slug),
             width: 72, height: 118,
           );
         }).toList(),
@@ -902,4 +999,49 @@ class _RaysPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RaysPainter old) => false;
+}
+
+/// แถบยืนยันก่อนเปิดไพ่ — บอกจำนวนที่เลือกและราคาที่จะถูกหัก
+class _ConfirmBar extends StatelessWidget {
+  const _ConfirmBar({
+    required this.picked,
+    required this.needed,
+    required this.onConfirm,
+    this.price,
+  });
+
+  final int picked;
+  final int needed;
+  final double? price;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = picked >= needed;
+    final priceText = price == null
+        ? ''
+        : (price == 0 ? ' · ฟรี' : ' · ฿${price!.round()}');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            ready
+                ? 'เลือกครบแล้ว · แตะไพ่ที่เลือกอีกครั้งเพื่อเปลี่ยนใจได้'
+                : 'เลือกแล้ว $picked / $needed ใบ',
+            style: const TextStyle(fontSize: 11.5, color: JuntraColors.textMuted),
+          ),
+          const SizedBox(height: 8),
+          GoldButton(
+            label: ready ? 'เปิดไพ่$priceText' : 'เลือกให้ครบ $needed ใบ',
+            size: GoldButtonSize.lg,
+            disabled: !ready,
+            onPressed: onConfirm,
+          ),
+        ],
+      ),
+    );
+  }
 }

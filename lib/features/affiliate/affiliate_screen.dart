@@ -1330,14 +1330,45 @@ class _ReferralBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = (stats['user'] as Map?)?.cast<String, dynamic>() ?? const {};
+    // กรองให้เหลือชุดอักขระที่ route /r/{code} รับจริง (`[A-Za-z0-9_-]+`)
+    // ไม่งั้น username ที่เป็นอีเมล/เบอร์ (ซึ่งเป็น fallback ตัวสุดท้าย)
+    // จะได้ลิงก์และ QR ที่ 404 ทั้งชุด — เหมือนที่หน้า MLM ของเว็บทำไว้แล้ว
     final code = (user['referral_code']
             ?? user['code']
             ?? user['username']
             ?? '')
-        .toString();
-    final url = code.isEmpty
-        ? 'https://จันทรา.online'
-        : 'https://จันทรา.online/r/$code';
+        .toString()
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+
+    // ยังไม่มีรหัส (Thaiprompt ยังไม่ส่งกลับมา / เพิ่งลิงก์บัญชี) — ห้ามแจก
+    // QR กับลิงก์เปล่าแล้วบอกว่า "เพื่อนที่สมัครผ่านลิงก์นี้จะเข้าสายงาน"
+    // เพราะเพื่อนจะสมัครจริงแต่ไม่มีรหัสให้ผูก = เสียคอมมิชชั่นเงียบ ๆ
+    if (code.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: JuntraColors.mysticHeroGradient,
+          borderRadius: BorderRadius.circular(JuntraRadius.card),
+          border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ลิงก์ชวนเพื่อน', style: baiJamjuree(size: 15)),
+            const SizedBox(height: 8),
+            const Text(
+              'ยังไม่พบรหัสชวนเพื่อนจาก Thaiprompt — ลองกด "ดึงยอดสด" '
+              'หรือเชื่อมต่อบัญชีอีกครั้งนะคะ',
+              style: TextStyle(
+                fontSize: 12.5, color: JuntraColors.textMuted, height: 1.6,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final url = 'https://จันทรา.online/r/$code';
 
     return Container(
       padding: const EdgeInsets.all(16),

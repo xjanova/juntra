@@ -17,6 +17,7 @@ import '../features/palmistry/palmistry_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/horoscope/thai_zodiac_screen.dart';
 import '../features/share/share_screen.dart';
 import '../features/shuffle/shuffle_screen.dart';
 import '../features/splash/splash_screen.dart';
@@ -52,6 +53,7 @@ class Routes {
   static const natal = '/natal';
   static const affiliate = '/affiliate';
   static const share = '/share';
+  static const thaiZodiac = '/thai-zodiac';
   static const login = '/login';
   static const wallet = '/wallet';
   static const transactions = '/transactions';
@@ -124,7 +126,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.profile, builder: (c, s) => const ProfileScreen()),
       GoRoute(path: Routes.natal, builder: (c, s) => const NatalScreen()),
       GoRoute(path: Routes.affiliate, builder: (c, s) => const AffiliateScreen()),
-      GoRoute(path: Routes.share, builder: (c, s) => const ShareScreen()),
+      GoRoute(path: Routes.thaiZodiac, builder: (c, s) => const ThaiZodiacScreen()),
+      GoRoute(
+        path: Routes.share,
+        // ส่ง id ของคำทำนายไปด้วย ลิงก์ที่แชร์จะได้พาไปหน้าผลจริง
+        // ไม่ใช่หน้าแรกของเว็บเฉย ๆ
+        builder: (c, s) => ShareScreen(
+          readingId: int.tryParse(s.uri.queryParameters['id'] ?? ''),
+        ),
+      ),
       GoRoute(path: Routes.login, builder: (c, s) => const LoginScreen()),
       GoRoute(path: Routes.wallet, builder: (c, s) => const WalletScreen()),
       GoRoute(path: Routes.transactions, builder: (c, s) => const TransactionsScreen()),

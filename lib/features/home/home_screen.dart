@@ -6,10 +6,14 @@ import 'package:intl/intl.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/almanac_repository.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/data/fortune_categories.dart';
+import '../../shared/data/juntra_art.dart';
 import '../../shared/data/tarot_deck.dart';
+import '../../shared/widgets/art_banner.dart';
+import '../../shared/widgets/crescent_moon.dart';
 import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/pill.dart';
 import '../../shared/widgets/starry_background.dart';
@@ -23,7 +27,6 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final card = tarotDeck[18]; // The Moon — daily default
     // Defensive: even with locale data initialized in main(), fall back
     // to a hand-rolled Thai weekday array if anything goes sideways here
     // — never let a single date format throw and black-out the screen.
@@ -46,12 +49,14 @@ class HomeScreen extends ConsumerWidget {
               children: [
                 _Greeting(weekday: weekday),
                 const SizedBox(height: 16),
-                _DailyCardHero(card: card),
+                _DailyCardHero(),
                 const SizedBox(height: 14),
                 _DailyTransitCard(),
                 const SizedBox(height: 14),
                 _QuickStatsRow(),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
+                const ThaiDivider(),
+                const SizedBox(height: 12),
                 const _SectionLabel('หมวดดูดวง'),
                 const SizedBox(height: 10),
                 _CategoriesGrid(),
@@ -59,7 +64,9 @@ class HomeScreen extends ConsumerWidget {
                 const _SectionLabel('บริการดูดวงอื่น ๆ'),
                 const SizedBox(height: 10),
                 _OtherServices(),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
+                const ThaiDivider(),
+                const SizedBox(height: 12),
                 _MaeMorOnlineCard(),
                 const SizedBox(height: 18),
                 _RecentReadingsSection(),
@@ -123,12 +130,32 @@ class _Greeting extends ConsumerWidget {
   }
 }
 
-class _DailyCardHero extends StatelessWidget {
-  const _DailyCardHero({required this.card});
-  final TarotCard card;
+/// ไพ่ประจำวัน — ใบเดียวกันทั้งวัน เปลี่ยนเมื่อขึ้นวันใหม่
+///
+/// เดิมตรึงไว้ที่ `tarotDeck[18]` (The Moon) ทุกคนจึงเห็นไพ่ใบเดียวกัน
+/// ตลอดกาล ตอนนี้เซิร์ฟเวอร์เป็นคนเลือก (`/v1/almanac/today`) แอพกับเว็บ
+/// จึงพูดตรงกัน และได้ภาพหน้าไพ่จริงของ จันทรา.online มาแสดงด้วย
+class _DailyCardHero extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
-    return Container(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final almanac = ref.watch(almanacTodayProvider).valueOrNull;
+
+    // ระหว่างรอเน็ต (หรือออฟไลน์) ใช้สำรับในเครื่องเลือกด้วยวันที่เดียวกัน
+    // เพื่อไม่ให้หน้าแรกว่างเป็นรู — ค่าจะตรงกับเซิร์ฟเวอร์เมื่อโหลดเสร็จ
+    final slug = almanac?.dailyCardSlug;
+    final card = slug == null
+        ? tarotDeck[DateTime.now().difference(DateTime(2026)).inDays % tarotDeck.length]
+        : tarotDeck.firstWhere(
+            (c) => c.slug == slug,
+            orElse: () => tarotDeck.first,
+          );
+
+    // การ์ดทั้งใบกดได้ — เดิมวาดข้อความ 'อ่านเต็ม →' สีทองเหมือนปุ่ม
+    // แต่ไม่มี InkWell/GestureDetector เลยสักตัว กดแล้วไม่มีอะไรเกิดขึ้น
+    return InkWell(
+      onTap: () => context.push(Routes.spreads),
+      borderRadius: BorderRadius.circular(JuntraRadius.hero),
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: JuntraColors.purpleCardGradient,
@@ -140,7 +167,13 @@ class _DailyCardHero extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CardFront(card: card, width: 88, height: 145),
+          // ภาพหน้าไพ่จริงจากเว็บ ถ้าไม่มีค่อยตกไปเป็นไพ่ที่วาดด้วยโค้ด
+          CardFace(
+            card: card,
+            imageUrl: almanac?.dailyCardImageUrl,
+            width: 88,
+            height: 145,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -148,10 +181,10 @@ class _DailyCardHero extends StatelessWidget {
               children: [
                 const Pill(label: 'ไพ่ประจำวัน', icon: Icon(Icons.auto_awesome)),
                 const SizedBox(height: 8),
-                Text(card.thai, style: baiJamjuree(size: 19)),
+                Text(almanac?.dailyCardNameTh ?? card.thai, style: baiJamjuree(size: 19)),
                 const SizedBox(height: 2),
                 Text(
-                  card.name,
+                  almanac?.dailyCardNameEn ?? card.name,
                   style: const TextStyle(
                     fontSize: 11,
                     color: JuntraColors.textFaint,
@@ -167,7 +200,7 @@ class _DailyCardHero extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text('อ่านเต็ม →', style: TextStyle(
+                const Text('เปิดไพ่ของลูก →', style: TextStyle(
                   fontSize: 12, color: JuntraColors.gold,
                   fontWeight: FontWeight.w600,
                 )),
@@ -176,13 +209,28 @@ class _DailyCardHero extends StatelessWidget {
           ),
         ],
       ),
+      ),
     ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1);
   }
 }
 
-class _DailyTransitCard extends StatelessWidget {
+/// ดิถีและราศีที่จันทร์เสวย ณ วันนี้
+///
+/// 🔴 เดิมบรรทัดนี้เป็นข้อความคงที่ "พระจันทร์ขึ้นกุมราศีกรกฎ — ลูกจะรู้สึก
+/// อ่อนไหว…" พิมพ์ไว้ในโค้ด ทุกคนเห็นเหมือนกันทุกวัน ทั้งที่จันทร์ย้ายราศี
+/// ทุก ~2.3 วัน จึงผิดราว 11 วันใน 12 วัน — ขัดกฎเหล็กข้อ 1 ของโปรเจกต์
+/// (ค่าดาราศาสตร์ต้องคำนวณ ห้ามแต่ง) ตอนนี้ดึงจาก ThaiAstro ผ่าน API
+class _DailyTransitCard extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(almanacTodayProvider);
+    final a = async.valueOrNull;
+
+    // ยังไม่รู้ค่าจริง = ไม่พูด ดีกว่าพูดผิด
+    if (a == null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -202,24 +250,49 @@ class _DailyTransitCard extends StatelessWidget {
               ]),
             ),
             alignment: Alignment.center,
-            child: const Text('☾', style: TextStyle(
-              fontSize: 26, color: JuntraColors.gold,
-            )),
+            // เสี้ยวจันทร์วาดตามค่าส่องสว่างจริงของวันนั้น ไม่ใช่ไอคอนตายตัว
+            child: MoonPhaseGlyph(
+              illumination: a.illumination,
+              waxing: a.waxing,
+              size: 30,
+            ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('ดาวดวงนี้บอกว่า', style: TextStyle(
-                  fontSize: 9, letterSpacing: 2.0,
-                  color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
-                )),
-                SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Text('ดาวดวงนี้บอกว่า', style: TextStyle(
+                      fontSize: 9, letterSpacing: 2.0,
+                      color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
+                    )),
+                    if (a.isHolyDay) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: JuntraColors.gold.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('วันพระ', style: TextStyle(
+                          fontSize: 9, color: JuntraColors.gold, fontWeight: FontWeight.w700,
+                        )),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
                 Text(
-                  'พระจันทร์ขึ้นกุมราศีกรกฎ — ลูกจะรู้สึกอ่อนไหว เปิดใจฟังเสียงในหัวใจ',
-                  style: TextStyle(
-                    fontSize: 12.5, color: JuntraColors.textLavender, height: 1.5,
+                  a.headline,
+                  style: baiJamjuree(size: 14),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  a.note,
+                  style: const TextStyle(
+                    fontSize: 12, color: JuntraColors.textLavender, height: 1.5,
                   ),
                 ),
               ],
@@ -327,16 +400,25 @@ class _QuickStatsRow extends ConsumerWidget {
 class _OtherServices extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    // 🔴 'ดูดวงเชิงลึก' (39฿) เคยไม่มีทางเข้าจากหน้าแรกเลย — grep เจอแค่
+    // นิยาม route กับกิ่งที่โผล่ตอนถูกบล็อกในแชท สินค้าที่ทำเงินจึงถูกซ่อน
     const items = [
       ('ดวงรายวัน', '☀', Routes.horoscope, JuntraColors.gold),
+      ('เชิงลึก', '✧', Routes.deep, JuntraColors.goldLight),
       ('เลขศาสตร์', '⊛', Routes.numerology, JuntraColors.mintGreen),
       ('ฤกษ์ยาม', '☼', Routes.auspicious, JuntraColors.cyan),
       ('ลายมือ', '✋', Routes.palmistry, JuntraColors.purpleBright),
+      ('ปีนักษัตร', '☯', Routes.thaiZodiac, JuntraColors.cyan),
     ];
-    return Row(
+    // 6 หมวดใน Row เดียวจะบีบจนตัวอักษรถูกตัด — ใช้ตาราง 3 คอลัมน์แทน
+    return LayoutBuilder(builder: (context, c) {
+      final tileW = (c.maxWidth - 12) / 3;
+      return Wrap(
+      spacing: 6, runSpacing: 6,
       children: [
         for (final (label, icon, route, color) in items)
-          Expanded(
+          SizedBox(
+            width: tileW,
             child: InkWell(
               onTap: () => context.push(route),
               borderRadius: BorderRadius.circular(JuntraRadius.card),
@@ -364,6 +446,7 @@ class _OtherServices extends StatelessWidget {
           ),
       ],
     );
+    });
   }
 }
 
@@ -475,7 +558,7 @@ class _MaeMorOnlineCard extends StatelessWidget {
             children: [
               ClipOval(
                 child: Image.asset(
-                  'assets/images/maehmor.png',
+                  JuntraArt.maeMor,
                   width: 48, height: 48, fit: BoxFit.cover,
                   // ต้นฉบับ 1536×2752 (~6.7MB) — จำกัดขนาด decode ให้เท่าที่วาดจริง
                   cacheWidth: (48 * MediaQuery.devicePixelRatioOf(context)).round(),

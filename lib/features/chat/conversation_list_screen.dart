@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../shared/data/juntra_art.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
@@ -203,7 +204,14 @@ class ConversationListScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('🔮', style: TextStyle(fontSize: 56)),
+                // ภาพแทน emoji — 🔮 ถูกวาดด้วยฟอนต์ของเครื่องผู้ใช้
+                // คนละรูปคนละสีทุกยี่ห้อ คุมโทนทอง-ม่วงไม่ได้เลย
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(90),
+                  child: Image.asset(JuntraArt.chat,
+                      width: 180, height: 112, fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                ),
                 const SizedBox(height: 16),
                 Text('ยังไม่มีบทสนทนา',
                     style: baiJamjuree(size: 16, color: JuntraColors.gold)),
@@ -266,7 +274,7 @@ class _ConversationTile extends StatelessWidget {
               children: [
                 ClipOval(
                   child: Image.asset(
-                    'assets/images/maehmor.png',
+                    JuntraArt.maeMor,
                     width: 40, height: 40, fit: BoxFit.cover,
                     // ไฟล์ต้นฉบับ 1536×2752 (~6.7MB) — ถ้าไม่จำกัดขนาด decode
                     // ทุกแถวในลิสต์จะกิน RAM เต็มความละเอียดเพื่อวาดรูป 40px

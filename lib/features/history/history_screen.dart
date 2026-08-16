@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../shared/data/juntra_art.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/fortune_repository.dart';
@@ -36,6 +37,10 @@ const Map<String, _TypeMeta> _typeMeta = {
   'numerology':     _TypeMeta('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
   'palmistry':      _TypeMeta('ดูลายมือ',     '✋', JuntraColors.gold),
   'auspicious':     _TypeMeta('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
+  // backend รองรับสองหมวดนี้มานานแล้ว (HistoryController::index) แต่แอพไม่รู้จัก
+  // รายการจึงตกไปใช้ชื่อกลาง ๆ ว่า 'คำทำนาย' ทั้งที่จ่าย 39฿ ไปแล้ว
+  'deep':           _TypeMeta('ดูดวงเชิงลึก', '✧', JuntraColors.goldLight),
+  'chat':           _TypeMeta('คุยกับแม่หมอ', '✦', JuntraColors.purpleBright),
 };
 
 class _TypeMeta {
@@ -48,10 +53,61 @@ class _TypeMeta {
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   String? _filter; // null = all
 
+  /// รายการที่โหลดเพิ่มจากหน้าถัดไป ๆ (หน้าแรกมาจาก provider)
+  final _more = <dynamic>[];
+  String? _cursor;
+  bool _loadingMore = false;
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (!_scroll.hasClients) return;
+      final nearEnd = _scroll.position.pixels >=
+          _scroll.position.maxScrollExtent - 320;
+      if (nearEnd) _loadMore();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// เปลี่ยนหมวด = ยิงใหม่ที่เซิร์ฟเวอร์ ไม่ใช่กรองจาก 20 แถวที่โหลดมาแล้ว
+  void _selectFilter(String? type) {
+    if (_filter == type) return;
+    setState(() {
+      _filter = type;
+      _more.clear();
+      _cursor = null;
+    });
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _cursor == null) return;
+    setState(() => _loadingMore = true);
+    try {
+      final repo = await ref.read(fortuneRepositoryProvider.future);
+      final res = await repo.history(type: _filter, cursor: _cursor);
+      if (!mounted) return;
+      setState(() {
+        _more.addAll((res['data'] as List?) ?? const []);
+        _cursor = ((res['meta'] as Map?)?['next_cursor'])?.toString();
+      });
+    } catch (_) {
+      // เลื่อนต่อไม่ได้ชั่วคราว — ลองใหม่ตอนเลื่อนอีกครั้ง
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
-    final history = ref.watch(fortuneHistoryProvider);
+    final history = ref.watch(historyPageProvider(_filter));
 
     return Scaffold(
       bottomNavigationBar: const JuntraTabBar(currentIndex: 1),
@@ -76,7 +132,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         icon: const Icon(Icons.refresh,
                             color: JuntraColors.textFaint, size: 22),
                         tooltip: 'รีเฟรช',
-                        onPressed: () => ref.invalidate(fortuneHistoryProvider),
+                        onPressed: () => ref.invalidate(historyPageProvider(_filter)),
                       ),
                     ],
                   ),
@@ -189,13 +245,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     );
   }
 
-  Widget _renderList(List<dynamic> all) {
-    // Client-side type filter — the GET endpoint accepts `?type=` but
-    // for the chip switcher we already have the full first-page set
-    // cached, so filtering locally avoids a refetch per chip tap.
-    final rows = _filter == null
-        ? all
-        : all.where((r) => (r is Map && r['type'] == _filter)).toList();
+  Widget _renderList(HistoryPage page) {
+    // หน้าแรกมาจากเซิร์ฟเวอร์ (กรองหมวดมาแล้ว) ต่อด้วยหน้าถัดไปที่โหลดเพิ่ม
+    final rows = [...page.rows, ..._more];
+    _cursor ??= page.nextCursor;
 
     if (rows.isEmpty) {
       return _emptyState();
@@ -205,14 +258,31 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       color: JuntraColors.gold,
       backgroundColor: JuntraColors.bgPurpleDeep,
       onRefresh: () async {
-        ref.invalidate(fortuneHistoryProvider);
+        setState(() {
+          _more.clear();
+          _cursor = null;
+        });
+        ref.invalidate(historyPageProvider(_filter));
         // Wait one frame so the indicator dismisses cleanly.
         await Future<void>.delayed(const Duration(milliseconds: 300));
       },
       child: ListView.builder(
+        controller: _scroll,
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        itemCount: rows.length,
+        itemCount: rows.length + (_cursor != null ? 1 : 0),
         itemBuilder: (_, i) {
+          if (i >= rows.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(child: SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+                ),
+              )),
+            );
+          }
           final r = rows[i];
           if (r is! Map) return const SizedBox.shrink();
           return _ReadingTile(reading: r);
@@ -233,7 +303,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('🔮', style: TextStyle(fontSize: 56)),
+                ClipOval(
+                  child: Image.asset(JuntraArt.stateNoReading,
+                      width: 150, height: 150, fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                ),
                 const SizedBox(height: 16),
                 Text(
                   _filter == null ? 'ยังไม่มีคำทำนาย' : 'ยังไม่มีคำทำนายประเภทนี้',
@@ -279,6 +353,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       ('tarot_decision', 'ทางแยก'),
       ('tarot_celtic', 'เซลติกครอส'),
       ('tarot_year', 'ดวง 12 เดือน'),
+      // เดิมมีแต่ไพ่ 7 แบบ คนที่ซื้อเลขศาสตร์/ลายมือ/ฤกษ์/เชิงลึก จึงกรองหาไม่เจอ
+      ('numerology', 'เลขศาสตร์'),
+      ('palmistry', 'ดูลายมือ'),
+      ('auspicious', 'ฤกษ์ยาม'),
+      ('deep', 'ดูดวงเชิงลึก'),
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -289,7 +368,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: InkWell(
-              onTap: () => setState(() => _filter = f.$1),
+              onTap: () => _selectFilter(f.$1),
               borderRadius: BorderRadius.circular(999),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
