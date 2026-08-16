@@ -117,7 +117,7 @@ jobs:
             echo '## สิ่งที่เปลี่ยนในรุ่นนี้'
             if [ -n "$PREV" ]; then
               # เอาเฉพาะหัวข้อคอมมิต ตัด URL/@mention ทุกชนิดทิ้ง
-              git log --no-merges --pretty=format:'* %s' "$PREV"..HEAD                 | sed -E 's#https?://[^[:space:]]+##g; s/[[:space:]]+by[[:space:]]+@[A-Za-z0-9_-]+//g'                 | grep -v -i 'github'                 | head -20
+              git log --no-merges --pretty=format:'* %s' "$PREV"..HEAD                 | sed -E 's#https?://[^[:space:]]+##g; s/[[:space:]]+by[[:space:]]+@[A-Za-z0-9_-]+//g'                 | grep -v -i 'github'                 | grep -v -E '^\* (chore|ci|build|test|refactor|style)(\(|:)'                 | grep -v -F '[skip ci]'                 | head -20
             else
               echo '* ปรับปรุงประสบการณ์โดยรวมและแก้บั๊กเล็กน้อย'
             fi
