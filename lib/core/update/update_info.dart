@@ -71,7 +71,15 @@ class UpdateInfo extends Equatable {
     return UpdateInfo(
       latestVersion: version,
       latestBuild: build,
-      releaseNotesMd: (j['body'] as String? ?? '').trim(),
+      // 🔴 ห้ามส่ง body ดิบเข้า UI เด็ดขาด
+      //
+      // GitHub เขียนบันทึกรุ่นให้อัตโนมัติ และมี URL ของตัวเองติดมาเสมอ:
+      //   * <หัวข้อ> by @user in https://github.com/xjanova/juntra/pull/10
+      //   **Full Changelog**: https://github.com/.../compare/v0.3.4+15...v0.3.5+16
+      // ของเดิมส่งตรงเข้า MarkdownBody ผู้ใช้จึงเห็น github.com เต็ม ๆ สองบรรทัด
+      // ผิดสัญญาที่ทั้งไฟล์นี้และ update_service.dart เขียนไว้เองว่าจะไม่เปิดเผย
+      // ผู้ให้บริการเบื้องหลัง (ผู้ใช้ต้องเห็นแค่คำว่า "เซิร์ฟเวอร์อัปเดต")
+      releaseNotesMd: sanitizeReleaseNotes(j['body'] as String? ?? ''),
       apkUrl: (asset?['browser_download_url'] as String? ?? ''),
       apkSizeBytes:
           (asset?['size'] is num) ? (asset!['size'] as num).toInt() : 0,
@@ -91,6 +99,65 @@ class UpdateInfo extends Equatable {
 
   @override
   String toString() => 'UpdateInfo($latestVersion+$latestBuild)';
+}
+
+/// ล้างบันทึกรุ่นให้ไม่มีร่องรอยของผู้ให้บริการเบื้องหลัง
+///
+/// สัญญาของระบบอัปเดต: ผู้ใช้ต้องเห็นแค่ "เซิร์ฟเวอร์อัปเดต" — ห้ามเห็นชื่อ
+/// หรือ URL ของที่เก็บไฟล์เด็ดขาด แต่ GitHub ใส่ลิงก์ของตัวเองมาในบันทึกรุ่น
+/// อัตโนมัติทุกครั้ง (`by @user in https://github.com/...`,
+/// `**Full Changelog**: https://github.com/...`) ถ้าไม่ล้างก่อน ข้อความพวกนี้
+/// จะไปโผล่กลางหน้าต่างอัปเดตทั้งดุ้น
+///
+/// ล้างแบบ "ตัดทุก URL ทิ้ง" ไม่ใช่ตัดเฉพาะที่มีคำว่า github เพราะ
+/// 1) ลิงก์ในบันทึกรุ่นกดไม่ได้อยู่แล้ว (`onTapLink` ถูกปิดไว้) โชว์ไปก็ไร้ค่า
+/// 2) โดเมนอื่นในอนาคต (เช่น มิเรอร์) ก็ไม่ควรหลุดออกไปเหมือนกัน
+String sanitizeReleaseNotes(String raw) {
+  var text = raw.trim();
+  if (text.isEmpty) return '';
+
+  // 1) ลิงก์แบบ markdown [ป้าย](url) → เหลือแค่ป้าย
+  text = text.replaceAllMapped(
+    RegExp(r'\[([^\]]*)\]\(\s*<?https?://[^)\s]+>?\s*\)'),
+    (m) => m[1] ?? '',
+  );
+
+  // 2) หาง " by @user in <url>" ที่ GitHub ต่อท้ายทุกบรรทัดของ What's Changed
+  text = text.replaceAll(
+    RegExp(r'\s+by\s+@[\w-]+\s+in\s+\S*', caseSensitive: false),
+    '',
+  );
+
+  // 3) URL เปลือย ๆ ที่เหลือ
+  text = text.replaceAll(RegExp(r'<?https?://\S+>?'), '');
+
+  // 4) ตัดบรรทัดที่เหลือแต่หัวข้อว่าง ๆ หลังลบลิงก์ออก
+  //    (เช่น "**Full Changelog**:" ที่เนื้อหาคือ URL ล้วน)
+  final kept = <String>[];
+  for (final line in text.split('\n')) {
+    final t = line.trim();
+    // บรรทัดที่เหลือแต่เครื่องหมายวรรคตอน/มาร์กอัป = ขยะจากการลบ URL
+    final stripped = t.replaceAll(RegExp(r'[*_`#>\-•:\s]'), '');
+
+    // ป้ายกำกับที่เนื้อหาเป็น URL ล้วน — พอลบ URL แล้วเหลือแต่ "หัวข้อ:"
+    // ลอย ๆ (เช่น `**Full Changelog**:`) ต้องตัดทั้งบรรทัด ไม่ใช่ปล่อยค้าง
+    final danglingLabel = t.endsWith(':');
+
+    if (t.isEmpty || stripped.isEmpty || danglingLabel) {
+      // เก็บบรรทัดว่างไว้คั่นย่อหน้า แต่ไม่ให้ซ้อนกันเกินหนึ่ง
+      if (kept.isNotEmpty && kept.last.isNotEmpty) kept.add('');
+      continue;
+    }
+    // กันคำว่า github/gh หลุดในเนื้อความ (บางคนพิมพ์เอง)
+    if (RegExp(r'github', caseSensitive: false).hasMatch(t)) continue;
+    kept.add(line.trimRight());
+  }
+
+  while (kept.isNotEmpty && kept.last.isEmpty) {
+    kept.removeLast();
+  }
+
+  return kept.join('\n').trim();
 }
 
 /// Compare two semver strings. Returns:

@@ -18,6 +18,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          # ต้องได้ประวัติ + tag ครบ ไม่งั้นขั้นตอน "Build release notes"
+          # ด้านล่างมองไม่เห็นแท็กก่อนหน้า แล้วบันทึกรุ่นจะว่างเปล่า
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -96,11 +99,38 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk               "dist/juntra-$V-universal.apk"     || true
           ls -la dist/
 
+      # บันทึกรุ่นที่แอพเอาไปแสดงในหน้าต่างอัปเดต — ห้ามมีลิงก์หรือชื่อของ
+      # ที่เก็บไฟล์เด็ดขาด ผู้ใช้ต้องเห็นแค่คำว่า "เซิร์ฟเวอร์อัปเดต"
+      #
+      # `generate_release_notes: true` ของ GitHub ใส่ลิงก์ตัวเองมาเสมอ:
+      #   * <หัวข้อ> by @user in https://github.com/.../pull/10
+      #   **Full Changelog**: https://github.com/.../compare/vA...vB
+      # ฝั่งแอพมี sanitizeReleaseNotes() กรองให้อีกชั้นแล้ว แต่แอพที่ติดตั้ง
+      # ไปแล้วก่อนหน้านี้ใช้ตัวอ่านเดิม จึงต้องไม่ให้ลิงก์เกิดขึ้นตั้งแต่ต้นทาง
+      - name: Build release notes (ห้ามมีลิงก์ที่เก็บไฟล์)
+        id: notes
+        run: |
+          CURRENT="${{ github.event.inputs.tag || github.ref_name }}"
+          PREV=$(git tag --sort=-creatordate | grep -v "^${CURRENT}$" | head -1)
+          {
+            echo 'NOTES<<JUNTRA_EOF'
+            echo '## สิ่งที่เปลี่ยนในรุ่นนี้'
+            if [ -n "$PREV" ]; then
+              # เอาเฉพาะหัวข้อคอมมิต ตัด URL/@mention ทุกชนิดทิ้ง
+              git log --no-merges --pretty=format:'* %s' "$PREV"..HEAD                 | sed -E 's#https?://[^[:space:]]+##g; s/[[:space:]]+by[[:space:]]+@[A-Za-z0-9_-]+//g'                 | grep -v -i 'github'                 | head -20
+            else
+              echo '* ปรับปรุงประสบการณ์โดยรวมและแก้บั๊กเล็กน้อย'
+            fi
+            echo 'JUNTRA_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          # ห้ามเปิด generate_release_notes — ดูเหตุผลในขั้นตอนด้านบน
+          generate_release_notes: false
+          body: ${{ steps.notes.outputs.NOTES }}
           name: "จันทราพยากรณ์ ${{ steps.ver.outputs.version }}"
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
         env:
