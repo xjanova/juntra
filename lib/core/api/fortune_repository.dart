@@ -5,6 +5,7 @@ import '../../shared/data/tarot_deck.dart';
 import 'api_client.dart';
 import 'api_exceptions.dart';
 import 'endpoints.dart';
+import '../auth/session.dart';
 
 /// Reading history — wraps `/v1/history/readings*`.
 ///
@@ -43,6 +44,13 @@ class FortuneRepository {
     return inner is Map<String, dynamic> ? inner : res;
   }
 
+  /// แม่หมออ่านเสร็จหรือยัง → `pending` | `working` | `failed` | `done`
+  Future<String> readingStatus(int id) async {
+    final res = await _api.get<Map<String, dynamic>>(Api.historyReadingStatus(id));
+    final data = res['data'];
+    return (data is Map ? data['status']?.toString() : null) ?? 'done';
+  }
+
   /// Persist a freshly-completed mobile tarot reading. The Flutter
   /// shuffle screen calls this once the user has revealed all picked
   /// cards; on success it routes to `/reading?id=<returned id>`.
@@ -73,13 +81,19 @@ class FortuneRepository {
     required String idempotencyKey,
     String? dealToken,
     List<int>? slots,
+    String? birthDate,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.historyReadings,
       idempotencyKey: idempotencyKey,
       data: {
         'type': type,
+        // 🔮 แม่หมออ่านหลังส่งคำตอบ (แบบเดียวกับเว็บ) — เซิร์ฟเวอร์ตอบ 202 + status pending
+        // ทันทีหลังตัดเงิน แล้วหน้าผลถาม [readingStatus] จนเสร็จ ใช้โปรไฟล์ของแพ็กเกจ
+        // (อ่านแบบเฉพาะของแต่ละแพ็กเกจ) และซื้อแพ็กเกจยาว 36-55 วิได้โดยไม่ชนเพดานคำขอ
+        'mode': 'async',
         if (question != null && question.trim().isNotEmpty) 'question': question.trim(),
+        'birth_date': ?birthDate,
         // เส้นทางหลัก: กองที่เซิร์ฟเวอร์สับ + ตำแหน่งที่แตะ — เซิร์ฟเวอร์แปลง
         // เป็นไพ่และทิศเอง ไคลเอนต์จึงบังคับผลไม่ได้
         if (dealToken != null && slots != null) ...{
@@ -213,6 +227,8 @@ final fortuneRepositoryProvider = FutureProvider<FortuneRepository>((ref) async 
 
 /// History list provider — used by the home screen "ดูดวงล่าสุดของลูก" section.
 final fortuneHistoryProvider = FutureProvider<List<dynamic>>((ref) async {
+  // ข้อมูลส่วนตัว — ล้างทิ้งเมื่อสลับผู้ใช้ (เดิมอีกคนที่ล็อกอินต่อเห็นคำทำนายของคนก่อน)
+  if (ref.watch(sessionUserIdProvider) == null) return const [];
   final repo = await ref.watch(fortuneRepositoryProvider.future);
   final res = await repo.history();
   return (res['data'] is List) ? res['data'] as List : const [];
@@ -228,6 +244,7 @@ final fortuneHistoryProvider = FutureProvider<List<dynamic>>((ref) async {
 /// `type = null` = ทุกหมวด
 final historyPageProvider =
     FutureProvider.family<HistoryPage, String?>((ref, type) async {
+  ref.watch(sessionUserIdProvider);
   final repo = await ref.watch(fortuneRepositoryProvider.future);
   final res = await repo.history(type: type);
   return HistoryPage(
@@ -245,6 +262,7 @@ class HistoryPage {
 
 /// Single reading detail — keyed by id so multiple opens don't collide.
 final readingDetailProvider = FutureProvider.family<Map<String, dynamic>, int>((ref, id) async {
+  ref.watch(sessionUserIdProvider);
   final repo = await ref.watch(fortuneRepositoryProvider.future);
   return repo.reading(id);
 });

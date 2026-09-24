@@ -146,7 +146,7 @@ class _HoroscopeScreenState extends ConsumerState<HoroscopeScreen> {
                 child: Text(
                   'ดวงประจำวันที่ ${_thaiDate(h['date'].toString())}',
                   style: const TextStyle(
-                    fontSize: 10, letterSpacing: 1.6,
+                    fontSize: 10,
                     color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -246,7 +246,7 @@ class _HoroscopeScreenState extends ConsumerState<HoroscopeScreen> {
             Text(icon, style: const TextStyle(fontSize: 13, color: JuntraColors.gold)),
             const SizedBox(width: 6),
             Text(label, style: const TextStyle(
-              fontSize: 11, letterSpacing: 1.5, color: JuntraColors.gold, fontWeight: FontWeight.w600,
+              fontSize: 11, color: JuntraColors.gold, fontWeight: FontWeight.w600,
             )),
           ]),
           const SizedBox(height: 4),

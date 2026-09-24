@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
 import 'endpoints.dart';
+import '../auth/session.dart';
 
 /// ดูดวงเชิงลึก 39฿ — แพ็กเดียวกับที่ขายในเว็บ จันทรา.online และบอท FB/LINE
 ///
@@ -54,6 +55,7 @@ final deepRepositoryProvider = FutureProvider<DeepRepository>((ref) async {
 
 /// ราคา/ยอดคงเหลือของแพ็กเชิงลึก — invalidate หลังสั่งทำนายเพื่อให้ยอดอัปเดต
 final deepInfoProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(sessionUserIdProvider);
   final repo = await ref.watch(deepRepositoryProvider.future);
   return repo.info();
 });

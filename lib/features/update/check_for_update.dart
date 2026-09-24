@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
+import '../../core/app_channel.dart';
+import '../../core/update/play_update_service.dart';
 import '../../core/update/update_service.dart';
+import 'play_update_sheet.dart';
 import 'update_dialog.dart';
 
 /// User-initiated ("ตรวจสอบอัปเดต") update check that reports its outcome
@@ -36,6 +39,25 @@ Future<void> runManualUpdateCheck(BuildContext context, WidgetRef ref) async {
 
   try {
     toast('กำลังตรวจสอบอัปเดต...');
+
+    // แอพบน Google Play: ถาม Play เท่านั้น (ห้ามใช้ตัวอัปเดต APK) — Play ไม่พร้อม
+    // (เช่น build ของนักพัฒนา) ก็พาไปหน้าแอพบน Play Store แทน
+    if (isPlayChannel) {
+      final play = ref.read(playUpdateServiceProvider);
+      final status = await play.check(isManual: true);
+      if (!context.mounted) return;
+      switch (status) {
+        case final PlayUpdateAvailable s:
+          messenger.hideCurrentSnackBar();
+          await PlayUpdateSheet.show(context, s);
+        case PlayUpdateUpToDate():
+          toast('เป็นเวอร์ชันล่าสุดแล้ว ✨');
+        case PlayUpdateUnavailable():
+          messenger.hideCurrentSnackBar();
+          await play.openStoreListing();
+      }
+      return;
+    }
 
     // checkForUpdate is contractually non-throwing (returns
     // UpdateCheckFailed), but guard anyway so a future change can't crash

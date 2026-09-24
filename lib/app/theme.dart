@@ -130,6 +130,18 @@ class JuntraTheme {
         onSurface: JuntraColors.textPrimary,
         error: Color(0xFFFF6B6B),
       ),
+      // SnackBar ของ M3 ใช้สีตัวอักษร onInverseSurface ซึ่ง ColorScheme.dark ตั้งเป็น
+      // surface (ม่วงเข้ม) — ตรงกับพื้น bgPurpleDeep ที่ทุกจุดใช้ ข้อความจึงหายทั้งแอพ
+      // ("เติมเครดิตสำเร็จ", "เปลี่ยนรหัสผ่านแล้ว" ขึ้นเป็นกล่องว่าง) → กำหนดสีที่อ่านได้ไว้ที่นี่
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: JuntraColors.bgPurpleDeep,
+        contentTextStyle: GoogleFonts.notoSansThai(
+          textStyle: const TextStyle(
+            fontSize: 14, color: JuntraColors.textCream, height: 1.4,
+          ),
+        ),
+        actionTextColor: JuntraColors.gold,
+      ),
       // Headlines use Bai Jamjuree (Thai display serif). Body keeps
       // Noto Sans Thai (set above via baseTextTheme).
       textTheme: baseTextTheme.copyWith(
@@ -171,7 +183,7 @@ class JuntraTheme {
         ),
         labelMedium: const TextStyle(
           fontSize: 10, fontWeight: FontWeight.w500,
-          color: JuntraColors.textFaint, letterSpacing: 1.6,
+          color: JuntraColors.textFaint,
         ),
       ),
       iconTheme: const IconThemeData(color: JuntraColors.gold),

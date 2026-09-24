@@ -15,6 +15,10 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// App Bundle (Google Play) builds must not carry the per-ABI APK splits below —
+// Play cuts its own per-device APKs from the bundle.
+val isBundleBuild = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+
 android {
     namespace = "com.xjanova.juntra"
     compileSdk = flutter.compileSdkVersion
@@ -31,12 +35,33 @@ android {
 
     defaultConfig {
         applicationId = "com.xjanova.juntra"
-        // SDK 26+ — same minimum as Tping. open_filex install-apk path
-        // requires API 24+; we go further to keep modern UI features safe.
         minSdk = 26
+        // Google Play requires the latest target API for new apps and updates —
+        // Flutter's default tracks it (36 on Flutter 3.41).
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Two distribution channels built from the same code, same applicationId
+    // and same signing key (so a phone can move from one to the other):
+    //
+    //   play   — Google Play (App Bundle). Updates come from Play, credits are
+    //            bought through Google Play Billing. No self-update, no
+    //            REQUEST_INSTALL_PACKAGES, no link to pay outside Google Play.
+    //   direct — the APK on GitHub Releases for phones outside Play. Keeps the
+    //            in-app self-updater and the PromptPay top-up.
+    //
+    // Dart reads the channel from `appFlavor` (lib/core/app_channel.dart).
+    // `flutter run` without --flavor uses `default-flavor: play` in pubspec.yaml.
+    flavorDimensions += "channel"
+    productFlavors {
+        create("play") {
+            dimension = "channel"
+        }
+        create("direct") {
+            dimension = "channel"
+        }
     }
 
     signingConfigs {
@@ -68,11 +93,11 @@ android {
         }
     }
 
-    // Split per ABI for smaller APKs on user devices. Universal APK is
-    // also produced for sideload convenience.
+    // Split per ABI for smaller sideload APKs. Universal APK is also produced
+    // for the in-app updater. Off for App Bundles (see isBundleBuild).
     splits {
         abi {
-            isEnable = true
+            isEnable = !isBundleBuild
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true

@@ -18,6 +18,12 @@ import '../../shared/widgets/juntra_tab_bar.dart';
 import 'chat_topics_sheet.dart';
 import 'chat_topup_sheet.dart';
 import '../../shared/widgets/starry_background.dart';
+import '../../shared/format/credits.dart';
+import '../../core/app_channel.dart';
+import '../wallet/play_credits_panel.dart';
+import '../../core/api/report_repository.dart';
+import '../../shared/widgets/report_content_sheet.dart';
+import '../../core/api/app_config_repository.dart';
 
 /// Screen 7 — Mae Mor AI chat.
 ///
@@ -39,10 +45,13 @@ import '../../shared/widgets/starry_background.dart';
 ///   - `/chat`        → คุยต่อจากบทสนทนาล่าสุด (สร้างใหม่เมื่อยังไม่มี)
 ///   - `/chat?id=N`   → resume บทสนทนาที่ระบุ
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, this.resumeConversationId});
+  const ChatScreen({super.key, this.resumeConversationId, this.fromReadingId});
 
   /// If provided, load that conversation instead of the most recent one.
   final int? resumeConversationId;
+
+  /// เปิดห้องคุยต่อจากคำทำนายไพ่ใบนี้ ("คุยต่อกับแม่หมอ" ในหน้าผล)
+  final int? fromReadingId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -101,6 +110,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return;
     }
 
+    final readingId = widget.fromReadingId;
+    if (readingId != null) {
+      await _startSession(readingId: readingId);
+      return;
+    }
     final resumeId = widget.resumeConversationId;
     if (resumeId != null) {
       await _resumeSession(resumeId);
@@ -133,10 +147,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     await _startSession();
   }
 
-  Future<void> _startSession() async {
+  Future<void> _startSession({int? readingId}) async {
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final res = await repo.startConversation();
+      final res = await repo.startConversation(readingId: readingId);
       if (!mounted) return;
 
       final convo = (res['conversation'] as Map?) ?? const {};
@@ -199,7 +213,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final list = (raw as List?) ?? const [];
     return list.cast<Map>().map((m) {
       final text = m['content']?.toString() ?? '';
-      return m['role'] == 'assistant' ? _Msg.bot(text) : _Msg.user(text);
+      if (m['role'] != 'assistant') return _Msg.user(text);
+      return _Msg.bot(text,
+          id: (m['id'] as num?)?.toInt(), offers: _ChatOffer.listFrom(m['offers']));
     }).toList();
   }
 
@@ -285,7 +301,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         _typing = false;
         _suggestOpen = false;
         _applyState(res);
-        _messages.add(_Msg.bot(res['reply']?.toString().trim() ?? _gracefulFallback()));
+        // ข้อความของแม่หมอ + แพ็กเกจที่ยื่น (การ์ดกดเปิดไพ่ได้ในแอพ) — `reply` ที่ต่อรายการเป็น
+        // ข้อความไว้ท้ายคำตอบมีไว้ให้แอพรุ่นเก่า รุ่นนี้ใช้ `message` + `offers` แทน
+        final msg = res['message'] is Map ? Map<String, dynamic>.from(res['message'] as Map) : null;
+        final offers = _ChatOffer.listFrom(res['offers']);
+        final String? content = msg == null ? null : msg['content']?.toString();
+        final body = (offers.isNotEmpty ? content : null) ?? res['reply']?.toString();
+        final int? msgId = msg == null ? null : (msg['id'] as num?)?.toInt();
+        _messages.add(_Msg.bot(
+          (body ?? '').trim().isEmpty ? _gracefulFallback() : body!.trim(),
+          id: msgId,
+          offers: offers,
+          question: res['question']?.toString(),
+        ));
       });
       _scrollToEnd();
       ref.invalidate(chatConversationsProvider);
@@ -444,6 +472,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       final m = _messages[i];
                       return _Bubble(
                         msg: m,
+                        onOffer: _openOffer,
+                        onReport: m.id == null
+                            ? null
+                            : () => ReportContentSheet.show(context,
+                                subject: ReportSubject.chatMessage, subjectId: m.id!),
                         onRetry: m.failed
                             ? () => _send(
                                   overrideText: m.text,
@@ -491,6 +524,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// เติมเครดิตจบในแชท — สำเร็จแล้วปลดล็อกช่องพิมพ์ทันทีไม่ต้องออกจากหน้า
   Future<void> _showTopUpFlow() async {
+    // แอพบน Google Play เติมเครดิตผ่าน Google Play Billing เท่านั้น (ห้ามพร้อมเพย์ในแอพ Play)
+    if (isPlayChannel) {
+      var credited = false;
+      await showPlayCreditsSheet(context, onCredited: () => credited = true);
+      if (credited && mounted) {
+        setState(() {
+          _blocked = false;
+          _blockedReason = '';
+        });
+        ref.read(authControllerProvider.notifier).refresh();
+      }
+      return;
+    }
     final paid = await ChatTopUpSheet.show(context);
     if (paid == true && mounted) {
       setState(() {
@@ -499,6 +545,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       });
       ref.read(authControllerProvider.notifier).refresh();
     }
+  }
+
+  /// แพ็กเกจที่แม่หมอยื่นในแชท → เข้าซีนสับไพ่ในแอพ (เดิมเป็นแค่ข้อความ/ลิงก์เว็บ กดไม่ได้)
+  void _openOffer(_ChatOffer o, String? question) {
+    if (o.kind == 'deep') {
+      if (ref.read(appConfigValueProvider).isOpen('deep')) context.push(Routes.deep);
+      return;
+    }
+    final spread = o.spread;
+    if (spread == null || spread.isEmpty) return;
+    final q = question == null || question.trim().isEmpty ? '' : '&q=${Uri.encodeQueryComponent(question.trim())}';
+    context.push('${Routes.shuffle}?spread=$spread$q');
   }
 
   Future<void> _copy(String text) async {
@@ -552,10 +610,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 /* ══════════════════════ models ══════════════════════ */
 
 class _Msg {
-  _Msg({required this.text, required this.fromUser, this.isSystem = false});
+  _Msg({
+    required this.text,
+    required this.fromUser,
+    this.isSystem = false,
+    this.id,
+    this.offers = const [],
+    this.question,
+  });
 
   final String text;
   final bool fromUser;
+
+  /// id ของข้อความแม่หมอบนเซิร์ฟเวอร์ — ใช้รายงานเนื้อหา (null = ข้อความในเครื่อง)
+  final int? id;
+
+  /// แพ็กเกจไพ่ที่แม่หมอยื่นในข้อความนี้ (กดแล้วเข้าซีนสับไพ่ในแอพ)
+  final List<_ChatOffer> offers;
+
+  /// คำถามที่ลูกค้าพิมพ์ตอนแม่หมอยื่นแพ็กเกจ — เติมให้ในหน้าสับไพ่
+  final String? question;
 
   /// ข้อความจาก "ระบบ" (โควตาหมด / เน็ตล่ม) — ต้องหน้าตาไม่เหมือนคำพูดแม่หมอ
   /// ไม่งั้นผู้ใช้เข้าใจว่าแม่หมอพูดเรื่องระบบเอง
@@ -565,7 +639,8 @@ class _Msg {
   String? idempotencyKey;
 
   factory _Msg.user(String t) => _Msg(text: t, fromUser: true);
-  factory _Msg.bot(String t) => _Msg(text: t, fromUser: false);
+  factory _Msg.bot(String t, {int? id, List<_ChatOffer> offers = const [], String? question}) =>
+      _Msg(text: t, fromUser: false, id: id, offers: offers, question: question);
   factory _Msg.system(String t) => _Msg(text: t, fromUser: false, isSystem: true);
 }
 
@@ -710,7 +785,7 @@ class _QuotaBar extends StatelessWidget {
             child: Text(
               free
                   ? 'คุยฟรีวันนี้ $dailyLeft / $dailyLimit ข้อความ · รีเซ็ตทุกเที่ยงคืน'
-                  : 'หักครั้งละ ฿${cost.toStringAsFixed(cost == cost.roundToDouble() ? 0 : 2)} ต่อข้อความ',
+                  : 'หักครั้งละ ${formatCredits(cost)} ต่อข้อความ',
               style: const TextStyle(fontSize: 11.5, color: JuntraColors.textLavender),
               overflow: TextOverflow.ellipsis,
             ),
@@ -722,11 +797,15 @@ class _QuotaBar extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.msg, this.onRetry, this.onCopy});
+  const _Bubble({required this.msg, this.onRetry, this.onCopy, this.onReport, this.onOffer});
 
   final _Msg msg;
   final VoidCallback? onRetry;
   final VoidCallback? onCopy;
+
+  /// รายงานข้อความนี้ของแม่หมอ (Google Play: AI-Generated Content policy)
+  final VoidCallback? onReport;
+  final void Function(_ChatOffer offer, String? question)? onOffer;
 
   @override
   Widget build(BuildContext context) {
@@ -791,7 +870,18 @@ class _Bubble extends StatelessWidget {
               ),
             ],
           ),
-          if (onRetry != null || onCopy != null)
+          if (msg.offers.isNotEmpty && onOffer != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 34, top: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final o in msg.offers)
+                    _OfferCard(offer: o, onTap: () => onOffer!(o, msg.question)),
+                ],
+              ),
+            ),
+          if (onRetry != null || onCopy != null || onReport != null)
             Padding(
               padding: EdgeInsets.only(
                 top: 2,
@@ -819,6 +909,15 @@ class _Bubble extends StatelessWidget {
                       icon: const Icon(Icons.copy_rounded, size: 14),
                       color: JuntraColors.textFaint,
                       tooltip: 'คัดลอก',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
+                    ),
+                  if (onReport != null)
+                    IconButton(
+                      onPressed: onReport,
+                      icon: const Icon(Icons.flag_outlined, size: 14),
+                      color: JuntraColors.textFaint,
+                      tooltip: 'รายงานข้อความนี้',
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
                     ),
@@ -895,7 +994,7 @@ class _TypingBubble extends StatelessWidget {
 ///  2. แม่หมอกำลังถามกลับ → ยุบเหลือปุ่มเดียว เพราะถ้าผู้ใช้กดคำถามทั่วไป
 ///     ตอนนี้ บอทจะตีความเป็นคำตอบของคำถามที่ค้างอยู่ แล้วโฟลว์ทำนายพัง
 ///  3. ปกติ → แถวชิปเลื่อนแนวนอน
-class _SuggestionStrip extends StatelessWidget {
+class _SuggestionStrip extends ConsumerWidget {
   const _SuggestionStrip({
     required this.suggestions,
     required this.awaiting,
@@ -921,7 +1020,9 @@ class _SuggestionStrip extends StatelessWidget {
   final VoidCallback onTopUp;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // ปุ่มทางออกไปบริการอื่น — เฉพาะที่หลังบ้านยังเปิดขาย (ปิดแล้วกดไปก็เจอหน้าปิดปรับปรุง)
+    final cfg = ref.watch(appConfigValueProvider);
     if (blocked) {
       return _wrap(context, SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -930,10 +1031,14 @@ class _SuggestionStrip extends StatelessWidget {
           // เติมเครดิตจบในแชทเหมือนเว็บ ไม่พาลูกค้าออกไปหน้าอื่นแล้วหลงทาง
           _Chip(icon: '💳', label: 'เติมเครดิตที่นี่', strong: true, onTap: onTopUp),
           const _ExitChip(icon: '🔮', label: 'เปิดไพ่ยิปซี', route: Routes.spreads, strong: true),
-          const _ExitChip(icon: '🌟', label: 'ดูดวงเชิงลึก', route: Routes.deep, strong: true),
-          const _ExitChip(icon: '🌙', label: 'ดวงรายวัน', route: Routes.horoscope),
-          const _ExitChip(icon: '🔢', label: 'เลขศาสตร์', route: Routes.numerology),
-          const _ExitChip(icon: '📿', label: 'ฤกษ์ยาม', route: Routes.auspicious),
+          if (cfg.isOpen('deep'))
+            const _ExitChip(icon: '🌟', label: 'ดูดวงเชิงลึก', route: Routes.deep, strong: true),
+          if (cfg.isOpen('horoscope'))
+            const _ExitChip(icon: '🌙', label: 'ดวงรายวัน', route: Routes.horoscope),
+          if (cfg.isOpen('numerology'))
+            const _ExitChip(icon: '🔢', label: 'เลขศาสตร์', route: Routes.numerology),
+          if (cfg.isOpen('auspicious'))
+            const _ExitChip(icon: '📿', label: 'ฤกษ์ยาม', route: Routes.auspicious),
         ]),
       ), label: blockedReason.isEmpty ? 'ลองทางนี้ต่อได้เลยค่ะ' : blockedReason);
     }
@@ -1163,3 +1268,89 @@ class _InputBar extends StatelessWidget {
     );
   }
 }
+
+/// แพ็กเกจที่แม่หมอยื่นในแชท (`offers` จาก /send หรือประวัติห้อง)
+class _ChatOffer {
+  const _ChatOffer({
+    required this.kind,
+    required this.label,
+    this.spread,
+    this.cards,
+    this.price,
+    this.blurb,
+  });
+
+  final String kind; // tarot | deep
+  final String label;
+  final String? spread;
+  final int? cards;
+  final num? price;
+  final String? blurb;
+
+  static List<_ChatOffer> listFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final m in raw.whereType<Map>())
+        if ((m['label']?.toString() ?? '').isNotEmpty)
+          _ChatOffer(
+            kind: m['kind']?.toString() ?? 'tarot',
+            label: m['label'].toString(),
+            spread: m['spread']?.toString(),
+            cards: (m['cards'] as num?)?.toInt(),
+            price: m['price'] as num?,
+            blurb: m['blurb']?.toString(),
+          ),
+    ];
+  }
+}
+
+class _OfferCard extends StatelessWidget {
+  const _OfferCard({required this.offer, required this.onTap});
+  final _ChatOffer offer;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final price = offer.price;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.74),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: JuntraColors.purpleCardGradient,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.45)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.style_outlined, color: JuntraColors.gold, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(offer.label, style: const TextStyle(fontSize: 13, color: JuntraColors.textCream, fontWeight: FontWeight.w600)),
+                    if (offer.blurb != null && offer.blurb!.isNotEmpty)
+                      Text(offer.blurb!, maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: JuntraColors.textMuted, height: 1.4)),
+                  ],
+                ),
+              ),
+              if (price != null) ...[
+                const SizedBox(width: 8),
+                Text(price <= 0 ? 'ฟรี' : formatCredits(price),
+                    style: const TextStyle(fontSize: 12, color: JuntraColors.gold, fontWeight: FontWeight.w700)),
+              ],
+              const Icon(Icons.chevron_right, color: JuntraColors.gold, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

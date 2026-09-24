@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../shared/data/juntra_art.dart';
 import '../../core/api/tarot_catalog_repository.dart';
+import '../../core/auth/auth_state.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../shared/widgets/chantra_logo.dart';
@@ -38,6 +39,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ลูกค้าที่ล็อกอินอยู่แล้วไม่ต้องเห็นปุ่มลงชื่อเข้าใช้ · ระหว่างเช็กสถานะก็ยังไม่โชว์
+    // (กันปุ่มโผล่แล้วหายไปต่อหน้า) — แขกจริงค่อยเห็นปุ่มค่อย ๆ ปรากฏ
+    final isGuest = ref.watch(authControllerProvider) is AuthGuest;
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -96,11 +100,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                               .animate()
                               .fadeIn(duration: 600.ms, delay: 800.ms)
                               .slideY(begin: 0.3),
-                          const SizedBox(height: 10),
-                          GhostButton(
-                            label: 'ลงชื่อเข้าใช้',
-                            onPressed: () => context.go(Routes.login),
-                          ).animate().fadeIn(duration: 600.ms, delay: 950.ms),
+                          if (isGuest) ...[
+                            const SizedBox(height: 10),
+                            GhostButton(
+                              label: 'ลงชื่อเข้าใช้',
+                              onPressed: () => context.go(Routes.login),
+                            ).animate().fadeIn(duration: 600.ms, delay: 950.ms),
+                          ],
                           const SizedBox(height: 28),
                           const XmanStudioFooter(showVersion: true),
                           const SizedBox(height: 16),

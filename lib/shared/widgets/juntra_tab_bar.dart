@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -17,6 +19,9 @@ class JuntraTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Android 15+ บังคับ edge-to-edge — แถบปุ่มระบบ (3 ปุ่ม/แถบท่าทาง) วาดทับแอพ
+    // แถบนี้ไม่ใช่ BottomNavigationBar ของ Material จึงต้องเว้นที่ให้เอง ไม่งั้นปุ่มแท็บถูกทับ
+    final systemInset = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       decoration: BoxDecoration(
         color: JuntraColors.bgDeepest.withValues(alpha: 0.85),
@@ -24,7 +29,7 @@ class JuntraTabBar extends StatelessWidget {
           color: JuntraColors.gold.withValues(alpha: 0.2),
         )),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 6, 16, math.max(16, systemInset + 8)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
 import 'endpoints.dart';
+import '../auth/session.dart';
 
 /// Mae Mor Chantra AI chat — wraps /v1/chat/conversations*.
 ///
@@ -19,8 +20,13 @@ class ChatRepository {
   /// Start a new conversation. Returns:
   ///   { conversation: {id, title, messages:[{role, content, ...}]},
   ///     balance: float, cost: float }
-  Future<Map<String, dynamic>> startConversation() async {
-    final res = await _api.post<Map<String, dynamic>>(Api.chatConversations);
+  Future<Map<String, dynamic>> startConversation({int? readingId}) async {
+    // [readingId] = คุยต่อจากคำทำนายไพ่ที่จ่ายแล้ว — แม่หมอเห็นไพ่และคำพยากรณ์ชุดนั้นทุกข้อความ
+    // (เซิร์ฟเวอร์คืนห้องเดิมของคำทำนายนั้นถ้าเคยเปิดไว้แล้ว ไม่สร้างห้องซ้ำ)
+    final res = await _api.post<Map<String, dynamic>>(
+      Api.chatConversations,
+      data: readingId == null ? null : {'reading_id': readingId},
+    );
     return _data(res);
   }
 
@@ -76,6 +82,7 @@ final chatRepositoryProvider = FutureProvider<ChatRepository>((ref) async {
 /// startConversation()/send() so a new convo appears at the top.
 final chatConversationsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(sessionUserIdProvider); // ข้อมูลส่วนตัว — ล้างทิ้งเมื่อสลับผู้ใช้
   final repo = await ref.watch(chatRepositoryProvider.future);
   return repo.listConversations();
 });
@@ -84,6 +91,7 @@ final chatConversationsProvider =
 /// resuming an existing conversation via `/chat?id=N`.
 final chatConversationProvider =
     FutureProvider.family<Map<String, dynamic>, int>((ref, id) async {
+  ref.watch(sessionUserIdProvider);
   final repo = await ref.watch(chatRepositoryProvider.future);
   return repo.getConversation(id);
 });

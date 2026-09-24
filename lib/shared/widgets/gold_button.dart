@@ -78,30 +78,34 @@ class _GoldButtonState extends State<GoldButton> {
         transform: _pressed && !disabled
             ? (Matrix4.identity()..translateByDouble(0.0, 1.0, 0.0, 1.0))
             : Matrix4.identity(),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.icon != null) ...[
-              IconTheme(
-                data: IconThemeData(
-                  color: disabled ? const Color(0xFF7A6A4A) : JuntraColors.bgPurpleDeep,
-                  size: _fontSize + 2,
+        // ป้ายยาว (ปุ่มครึ่งจอ) หรือผู้ใช้ตั้งตัวอักษรใหญ่ = ย่อทั้งแถวลงพอดีปุ่ม
+        // แทนที่จะล้นขอบ/ถูกตัดกลางคำ
+        child: _FitLabel(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.icon != null) ...[
+                IconTheme(
+                  data: IconThemeData(
+                    color: disabled ? const Color(0xFF7A6A4A) : JuntraColors.bgPurpleDeep,
+                    size: _fontSize + 2,
+                  ),
+                  child: widget.icon!,
                 ),
-                child: widget.icon!,
+                const SizedBox(width: 8),
+              ],
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: _fontSize,
+                  fontWeight: FontWeight.w600,
+                  color: disabled ? const Color(0xFF7A6A4A) : JuntraColors.bgPurpleDeep,
+                  letterSpacing: 0.3,
+                ),
               ),
-              const SizedBox(width: 8),
             ],
-            Text(
-              widget.label,
-              style: TextStyle(
-                fontSize: _fontSize,
-                fontWeight: FontWeight.w600,
-                color: disabled ? const Color(0xFF7A6A4A) : JuntraColors.bgPurpleDeep,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -137,29 +141,42 @@ class GhostButton extends StatelessWidget {
           border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.4)),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              IconTheme(
-                data: const IconThemeData(color: JuntraColors.textLavender, size: 16),
-                child: icon!,
+        child: _FitLabel(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                IconTheme(
+                  data: const IconThemeData(color: JuntraColors.textLavender, size: 16),
+                  child: icon!,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: JuntraColors.textLavender,
+                  letterSpacing: 0.3,
+                ),
               ),
-              const SizedBox(width: 8),
             ],
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: JuntraColors.textLavender,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// ไอคอน+ป้ายของปุ่ม: ขนาดจริงเมื่อพอดี ย่อลงทั้งแถวเมื่อกว้างเกินปุ่ม
+/// (Center ให้ปุ่มเต็มความกว้างยังจัดกลางเหมือนเดิม และใช้ในแถวที่ไม่จำกัดกว้างได้)
+class _FitLabel extends StatelessWidget {
+  const _FitLabel({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      Center(child: FittedBox(fit: BoxFit.scaleDown, child: child));
 }

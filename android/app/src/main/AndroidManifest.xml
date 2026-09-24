@@ -1,30 +1,48 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Internet for AI chat, fortune API, auto-update download -->
+    <!-- Internet for AI chat, fortune API and the web card art. That is the
+         only permission the app itself asks for: haptics go through Flutter's
+         HapticFeedback (no VIBRATE needed) and nothing checks connectivity. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Auto-update install path -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- No storage/media permissions at all. Picking a slip photo goes
+         through image_picker, which uses the system Photo Picker (Android 13+)
+         or GET_CONTENT and needs no permission; taking a photo goes through
+         the camera app (ACTION_IMAGE_CAPTURE), which also needs none as long
+         as CAMERA is NOT declared here — declaring it would make the camera
+         intent require a runtime grant.
 
-    <!-- Optional haptic feedback during cinematic shuffle reveal -->
-    <uses-permission android:name="android.permission.VIBRATE"/>
+         Google Play only allows READ_MEDIA_IMAGES/VIDEO to apps whose core
+         feature is broad media access, so the ones a plugin merges in
+         (open_filex declares all four) are stripped here for every build. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
 
-    <!-- Camera + photo gallery for native PromptPay slip upload.
-         On Android 13+ image_picker uses the system Photo Picker
-         which needs no permission — these declarations are for
-         older devices + camera capture which always needs CAMERA. -->
-    <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
+    <!-- REQUEST_INSTALL_PACKAGES (the self-updater) lives only in
+         src/direct/AndroidManifest.xml — a Google Play build must never ask
+         for it, because Play apps may only be updated by Play. -->
 
     <application
         android:label="จันทราพยากรณ์"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:requestLegacyExternalStorage="false">
+
+        <!-- Android 16 (target 36) ignores the portrait lock on screens >= 600dp
+             (tablets, foldables). Every screen here is portrait-tuned, so opt out
+             while the opt-out exists; it goes away with target 37 (Aug 2027),
+             by which time layouts must adapt. -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"
@@ -46,17 +64,6 @@
             </intent-filter>
         </activity>
 
-        <!-- FileProvider for opening downloaded APK via OpenFilex -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
@@ -67,15 +74,10 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- For url_launcher (sharing referral link out to LINE/Messenger) -->
+        <!-- For url_launcher (privacy policy, sharing referral link out to LINE/Messenger) -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
-        </intent>
-        <!-- Required so OpenFilex can ask the OS to open APK files -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
     </queries>
 </manifest>

@@ -2,16 +2,29 @@
 
 > **แอพดูดวงทาโรต์ AI โดยแม่หมอจันทรา · POWERED BY XMAN STUDIO**
 
-แอพมือถือสำหรับดูดวงไพ่ทาโรต์, ผังดวงดาวเจ้าชะตา, และคุยกับแม่หมอจันทราด้วย AI — เชื่อมต่อข้อมูลกับระบบ Thaiprompt-Affiliate (Laravel) สำหรับการประมวลผล AI, การชำระเงิน, และระบบสายงาน Affiliate
+แอพมือถือของเว็บ **จันทรา.online** (`xjanova/juntraweb`) — บัญชี เครดิต ประวัติคำทำนาย และแชทกับแม่หมอ
+ชุดเดียวกับเว็บ แอพคุยกับ juntraweb เท่านั้น (AI อยู่ฝั่งเซิร์ฟเวอร์ทั้งหมด)
 
 ## ✨ ฟีเจอร์หลัก
 
-- 🎴 **Cinematic Tarot Game** — เลือกไพ่จาก 22 Major Arcana ด้วยอนิเมชั่น 5 phase: สับ → กางพัด → เลือก → เดินทาง → เปิดเผย (3D flip + spotlight + gold rays)
-- 🌟 **Real Natal Chart** — ผังดวงดาวคำนวณจากวัน เวลา สถานที่เกิดจริง (Meeus simplified + server fallback ใช้ Swiss Ephemeris)
-- 💬 **AI Chat with แม่หมอจันทรา** — คุยปรึกษาความรัก/การงาน/การเงิน ผ่าน AI provider pool ของ Thaiprompt
-- 💸 **PromptPay/TrueMoney/Wallet** — ชำระเงินไพ่พรีเมียม
-- 🌐 **MLM Affiliate Network** — ระบบสายงาน 5 ระดับ + downline tree + commission tracking
-- 🔄 **Auto-Update** — เช็คเวอร์ชันใหม่อัตโนมัติทุก 6 ชม. ดาวน์โหลด APK + ติดตั้งทับได้เลย
+- 🎴 **Cinematic Tarot** — สับไพ่ 78 ใบที่เซิร์ฟเวอร์ · กางพัด · เลือกไพ่ · เปิดทีละใบ (3D flip + spotlight + gold rays)
+- 📦 **แพ็กเกจไพ่ชุดเดียวกับเว็บ** — รายการ ราคา ภาพประกอบ ข้อห้ามเปิดซ้ำ ช่องวันเกิด มาจากเซิร์ฟเวอร์ (`/v1/tarot/packages`)
+- 🔮 **แม่หมออ่านเบื้องหลัง** — ซื้อแล้วตอบทันที หน้าผลถามสถานะจนคำทำนายขึ้น แสดงเป็นการ์ด/ตารางแบบเว็บ
+- 💬 **แชทกับแม่หมอ** — คุยฟรี แม่หมอยื่นแพ็กเกจไพ่เป็นการ์ดกดเปิดได้ · คุยต่อจากไพ่ที่เปิดแล้วได้
+- 💳 **เครดิต** — ช่อง Google Play: ซื้อแพ็กผ่าน Google Play Billing · ช่อง APK: พร้อมเพย์ + สลิป
+- 🌐 **สายงานแนะนำ** — ผังแม่หมอ + ค่าแนะนำ + ลิงก์เชิญ/QR
+- 🔐 **บัญชี** — สมัคร/ล็อกอินด้วยอีเมลหรือเบอร์ · เปลี่ยนรหัสผ่าน · ลบบัญชีในแอพ · รายงานเนื้อหา AI
+- 🔄 **อัปเดต** — ช่อง Play: In-App Updates ของ Google · ช่อง APK: ตัวอัปเดตในแอพ
+
+## 📦 สองช่องทางแจกจ่าย
+
+| ช่อง | build | ใช้กับ |
+|---|---|---|
+| `play` (ค่าเริ่มต้น) | `flutter build appbundle --release --flavor play` | Google Play |
+| `direct` | `flutter build apk --release --flavor direct` | APK บน GitHub Releases |
+
+รายละเอียด: [`docs/GOOGLE_PLAY.md`](docs/GOOGLE_PLAY.md) (ขั้นตอนใน Play Console ทั้งหมด) ·
+[`docs/RELEASING.md`](docs/RELEASING.md) (ออกเวอร์ชัน/keystore)
 
 ## 🏗️ Tech Stack
 
@@ -20,86 +33,60 @@
 | UI | Flutter 3.41 · Material 3 · Bai Jamjuree + Noto Sans Thai (Google Fonts) |
 | State | Riverpod 2.6 |
 | Routing | go_router 14 |
-| HTTP | Dio 5.7 + smart_retry + pretty_dio_logger |
+| HTTP | Dio 5.7 + smart_retry |
 | Storage | flutter_secure_storage + shared_preferences |
-| Animations | flutter_animate + Custom AnimationControllers |
-| Auto-update | Direct release-API + open_filex |
-
-## 🎨 Design System
-
-ดู `lib/app/theme.dart` — โทนหลักคือ **gold-on-deep-purple-on-near-black** พร้อม mystic accents:
-
-```
-gold:           #F0C75E (primary)
-purple:         #9B59B6 (secondary)
-bg-purple-deep: #1A0F2E (surface)
-bg-deepest:     #000000 (canvas)
-cyan:           #7FFFD4 (ASC marker)
-mint-green:     #00E5A0 (online indicator)
-```
+| Billing | in_app_purchase 3.3 (Play Billing Library 8) — เซิร์ฟเวอร์ตรวจทุกการซื้อ |
+| Updates | in_app_update (Play) · GitHub release-API + open_filex (direct) |
 
 ## 🔧 Development
 
 ```bash
 flutter pub get
-flutter run
+flutter run                     # ช่อง play
+flutter run --flavor direct     # ช่อง APK (ทดสอบตัวอัปเดต/พร้อมเพย์)
+flutter analyze && flutter test
 
-# Release build with custom backend
-flutter run --release --dart-define=JUNTRA_API_BASE=https://staging.thaiprompt.online/api
+# ชี้ไปเซิร์ฟเวอร์อื่น (เช่น Laragon ในเครื่อง)
+flutter run --dart-define=JUNTRA_API_BASE=http://10.0.2.2:8000/api
 ```
 
 ## 🚀 Releasing
 
-ดู [`docs/RELEASING.md`](docs/RELEASING.md) — สรุปสั้นๆ:
-
-1. Merge PR ที่มี label `release:patch` (หรือ `:minor` / `:major`)
-2. `auto-bump-on-merge.yml` workflow จะ bump pubspec + push tag → trigger `release.yml`
-3. Workflow build APK 4 variants + AAB → publish พร้อม changelog
-4. ผู้ใช้ได้รับการแจ้งเตือนอัปเดตในแอพภายใน 6 ชม.
-
-> ⚠️ **ก่อน production:** ต้องตั้ง keystore secrets ใน repo Settings → Secrets:
-> `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+1. Merge PR ที่มี label `release:patch` / `:minor` / `:major`
+2. `auto-bump-on-merge.yml` bump pubspec + tag → `release.yml`
+3. `release.yml`: analyze + test → APK ช่อง direct ขึ้น GitHub Releases · AAB ช่อง play เป็น artifact
+   (+ อัปขึ้น Internal testing แบบ draft ถ้าตั้ง `PLAY_SERVICE_ACCOUNT_JSON`)
 
 ## 📁 Structure
 
 ```
 lib/
-├── main.dart                       # entry + system chrome
-├── app/
-│   ├── app.dart                    # MaterialApp.router + UpdateObserver
-│   ├── router.dart                 # go_router 12 routes
-│   └── theme.dart                  # JuntraColors, JuntraTheme, fonts
+├── main.dart                       # entry + system chrome (edge-to-edge)
+├── app/                            # MaterialApp.router, go_router, theme
 ├── core/
-│   ├── api/                        # ApiClient (Dio + Sanctum), endpoints
-│   ├── update/                     # UpdateService, UpdateInfo, UpdateObserver
-│   ├── astronomy/                  # natal_chart.dart (Meeus simplified)
-│   └── auth/                       # AuthState (guest/authenticated)
-├── shared/
-│   ├── data/                       # tarot_deck, fortune_categories, spreads
-│   └── widgets/                    # StarryBackground, ChantraLogo, GoldButton, CardBack/Front
-└── features/                       # 12 screens
-    ├── splash/   home/   spreads/  shuffle/   reading/   payment/
-    ├── chat/     history/ profile/ natal/     affiliate/ share/
-    └── update/   ← UpdateDialog
+│   ├── app_channel.dart            # play | direct (appFlavor)
+│   ├── api/                        # ApiClient, endpoints, repositories (config, packages, wallet, chat, …)
+│   ├── auth/                       # AuthState, session scope, Thaiprompt link
+│   ├── billing/                    # PlayBilling (Google Play Billing) + bootstrap
+│   ├── update/                     # PlayUpdateService (play) · UpdateService (direct)
+│   └── astronomy/ payments/ sound/
+├── shared/                         # widgets (ServiceGate, ReportContentSheet, …), data, format
+└── features/                       # splash, home, spreads, shuffle, reading, chat, wallet,
+                                    # history, profile, settings (+ delete account), affiliate, …
 ```
 
 ## 🔌 Backend integration
 
-The app talks to the **juntraweb** Laravel backend (`xjanova/juntraweb`) at
-`จันทรา.online` **ONLY**. juntraweb proxies AI to the Thaiprompt-Affiliate
-pool server-side, so the app holds no upstream AI keys.
+The app talks to **juntraweb** (`xjanova/juntraweb`) at `จันทรา.online` **ONLY**
+(punycode `xn--82c4af5bzdj.online` in code). Main endpoints (all under `/api/v1`, Sanctum bearer):
 
-Endpoints (Sanctum bearer; see `lib/core/api/endpoints.dart`, all under `/api/v1`):
-
-- `/v1/auth/login` `/v1/auth/register` `/v1/auth/me` `/v1/auth/logout` — auth
-- `/v1/history/readings*` — tarot readings (debits wallet, runs FortuneAiService)
-- `/v1/chat/conversations*` — Mae Mor AI chat
-- `/v1/wallet*` — balance, PromptPay top-up + slip upload, transactions, cancel
-- `/v1/mlm/*` — MLM downline stats / tree / commissions
-
-> Natal chart is computed on-device; payments go through the wallet top-up flow.
-
-> Required backend patches live in `backend-patches/juntra/` — apply before first release.
+- `app/config` — open services, legal URLs, Play billing switch (public)
+- `tarot/packages` · `tarot/cards` · `tarot/deal` — catalog, card art, server-side shuffle
+- `history/readings` (`mode: async`) · `history/readings/{id}` · `…/{id}/status` — buy & poll readings
+- `chat/conversations*` — แม่หมอ chat (`reading_id` = chat about a reading), offers
+- `wallet*` — balance, transactions, PromptPay (direct) · `wallet/google-play*` — Play Billing (play)
+- `auth/*` · `auth/password` · `account/delete` · `reports` — account + AI content reports
+- `mlm/*` — referral tree / commissions
 
 ---
 **POWERED BY XMAN STUDIO**

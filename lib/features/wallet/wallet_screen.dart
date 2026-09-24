@@ -10,15 +10,20 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/app_config_repository.dart';
 import '../../core/api/idempotency.dart';
+import '../../core/api/tarot_packages_repository.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/app_channel.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/wallet_repository.dart';
 import '../../core/payments/promptpay_qr.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/starry_background.dart';
+import 'play_credits_panel.dart';
+import '../../shared/format/credits.dart';
 
 /// วอลเลต — credit balance, top-up start, recent transactions.
 ///
@@ -124,10 +129,16 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                         children: [
                           _BalanceCard(balance: balance, currency: currency),
                           const SizedBox(height: 14),
-                          _TopupRow(
-                            enabled: !_startingTopup,
-                            onPick: (amount) => _startTopup(amount),
-                          ),
+                          // 🛒 แอพบน Google Play ขายเครดิตผ่าน Google Play Billing เท่านั้น
+                          // (นโยบาย Payments ห้ามพร้อมเพย์/สลิป/ลิงก์จ่ายที่อื่นในแอพ Play)
+                          // แอพ APK (ช่อง direct) ยังเติมผ่านพร้อมเพย์เหมือนเดิม
+                          if (isPlayChannel)
+                            PlayCreditsPanel(onCredited: _refresh)
+                          else
+                            _TopupRow(
+                              enabled: !_startingTopup,
+                              onPick: (amount) => _startTopup(amount),
+                            ),
                           const SizedBox(height: 18),
                           _PricingHint(pricing: pricing.cast<String, dynamic>()),
                           const SizedBox(height: 18),
@@ -137,10 +148,13 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                             for (final t in txs)
                               _TxTile(
                                 tx: t.cast<String, dynamic>(),
-                                onReupload: () =>
-                                    _reuploadSlip(t.cast<String, dynamic>()),
-                                onCancel: () =>
-                                    _cancelTopup(t.cast<String, dynamic>()),
+                                // รายการพร้อมเพย์ที่ค้าง (สร้างจากเว็บ) — แอพ Play ไม่มีปุ่มจ่าย/อัปสลิป
+                                onReupload: isPlayChannel
+                                    ? null
+                                    : () => _reuploadSlip(t.cast<String, dynamic>()),
+                                onCancel: isPlayChannel
+                                    ? null
+                                    : () => _cancelTopup(t.cast<String, dynamic>()),
                               ),
                             const SizedBox(height: 10),
                             Center(
@@ -403,7 +417,7 @@ class _BalanceCard extends StatelessWidget {
         children: [
           const Text('ยอดเครดิตคงเหลือ',
               style: TextStyle(
-                fontSize: 11, letterSpacing: 1.6,
+                fontSize: 11,
                 color: JuntraColors.textFaint,
               )),
           const SizedBox(height: 8),
@@ -412,7 +426,7 @@ class _BalanceCard extends StatelessWidget {
               colors: [Color(0xFFFFE7A0), Color(0xFFF0C75E), Color(0xFFB8881F)],
             ).createShader(rect),
             child: Text(
-              '$symbol${NumberFormat.decimalPattern('th').format(balance)}',
+              currency == 'THB' ? formatCredits(balance) : '$symbol${NumberFormat.decimalPattern('th').format(balance)}',
               style: baiJamjuree(size: 38, color: Colors.white),
             ),
           ),
@@ -906,7 +920,7 @@ class _PromptPayInfoCard extends StatelessWidget {
         children: [
           const Text('โอนผ่าน PromptPay',
               style: TextStyle(
-                fontSize: 10, letterSpacing: 1.8,
+                fontSize: 10,
                 color: JuntraColors.textFaint, fontWeight: FontWeight.w600,
               )),
           if (payload != null) ...[
@@ -997,11 +1011,22 @@ class _QrBlock extends StatelessWidget {
   }
 }
 
-class _PricingHint extends StatelessWidget {
+class _PricingHint extends ConsumerWidget {
   const _PricingHint({required this.pricing});
   final Map<String, dynamic> pricing;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // บริการที่หลังบ้านปิดอยู่ / แพ็กเกจไพ่ที่ไม่ได้วางขาย ไม่ต้องโชว์ราคา —
+    // ลูกค้าเห็นราคา "ดูลายมือ" แล้วหาทางซื้อในแอพไม่เจอ
+    final config = ref.watch(appConfigValueProvider);
+    final forSale = ref.watch(tarotPackagesProvider).valueOrNull
+        ?.map((p) => p.type).toSet();
+    bool listed(String key) => switch (key) {
+          'chat_message' => config.isOpen('chat'),
+          _ when key.startsWith('tarot_') =>
+            config.isOpen('tarot') && (forSale == null || forSale.contains(key)),
+          _ => config.isOpen(key),
+        };
     // Show every feature the backend actually prices (keys present in the
     // /wallet pricing map), in a sensible order. Absent keys are skipped so we
     // never show a phantom "ฟรี" for a feature the backend didn't return.
@@ -1020,7 +1045,7 @@ class _PricingHint extends StatelessWidget {
     ];
     final items = <(String, String, num)>[
       for (final (icon, label, key) in defs)
-        if (pricing.containsKey(key)) (icon, label, _num(pricing[key])),
+        if (pricing.containsKey(key) && listed(key)) (icon, label, _num(pricing[key])),
     ];
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1034,7 +1059,7 @@ class _PricingHint extends StatelessWidget {
         children: [
           const Text('อัตราค่าบริการ',
               style: TextStyle(
-                fontSize: 11, letterSpacing: 1.6,
+                fontSize: 11,
                 color: JuntraColors.textFaint,
               )),
           const SizedBox(height: 8),
@@ -1049,7 +1074,7 @@ class _PricingHint extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 12.5, color: JuntraColors.textLavender,
                       ))),
-                  Text(cost > 0 ? '฿${cost.toStringAsFixed(0)}' : 'ฟรี',
+                  Text(cost > 0 ? formatCredits(cost) : 'ฟรี',
                       style: baiJamjuree(size: 13, color: JuntraColors.gold)),
                 ],
               ),
@@ -1092,7 +1117,7 @@ class _TxTile extends StatelessWidget {
     final isPositive = amount >= 0;
     final type = tx['type']?.toString() ?? '';
     final status = tx['status']?.toString() ?? 'success';
-    final desc = tx['description']?.toString() ?? '';
+    final desc = walletTxLabel(tx['description']?.toString() ?? '');
     final created = tx['created_at']?.toString() ?? '';
     final canReupload =
         onReupload != null && type == 'topup' && status == 'pending';
@@ -1142,7 +1167,7 @@ class _TxTile extends StatelessWidget {
                 ),
               ),
               Text(
-                '${isPositive ? '+' : ''}฿${amount.toStringAsFixed(2)}',
+                formatCreditsSigned(amount),
                 style: TextStyle(
                   fontSize: 14, fontWeight: FontWeight.w700,
                   color: isPositive

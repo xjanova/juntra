@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../core/api/wallet_repository.dart';
 import 'art_banner.dart';
 import 'starry_background.dart';
+import '../format/credits.dart';
 
 /// Shared input decoration for the non-tarot fortune forms.
 InputDecoration fortuneInputDecoration(String hint) => InputDecoration(
@@ -40,7 +41,7 @@ class FortuneField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(
-          fontSize: 12, color: JuntraColors.textFaint, letterSpacing: 0.5,
+          fontSize: 12, color: JuntraColors.textFaint,
         )),
         const SizedBox(height: 6),
         child,
@@ -106,7 +107,7 @@ class FortuneFormScaffold extends ConsumerWidget {
                           color: JuntraColors.gold.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: Text(price == 0 ? 'ฟรี' : '฿$price',
+                        child: Text(price == 0 ? 'ฟรี' : formatCredits(price),
                             style: const TextStyle(
                               fontSize: 12, color: JuntraColors.gold, fontWeight: FontWeight.w700,
                             )),

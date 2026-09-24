@@ -25,13 +25,17 @@ void main() async {
   ]);
 
   // Edge-to-edge with light status/navigation icons against the night-sky
-  // background (#000 → #1A0F2E radial).
+  // background (#000 → #1A0F2E radial). Android 15+ (target 35+) forces
+  // edge-to-edge anyway; opting in everywhere keeps older phones identical.
+  // No bar *colors* here: setStatusBarColor/setNavigationBarColor are
+  // deprecated on Android 15 (Play Console flags them) and ignored there —
+  // the bars are transparent over our own background instead.
+  unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
     statusBarBrightness: Brightness.dark,
-    systemNavigationBarColor: Color(0xFF000000),
     systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarContrastEnforced: false,
   ));
 
   // Pre-load mystical SFX (shuffle / pick / reveal / complete) so the first

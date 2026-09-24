@@ -5,7 +5,7 @@ publish_to: 'none'
 # Single source of truth for app version. Bumped automatically by
 # .github/workflows/auto-bump-on-merge.yml on PR merge, then the release
 # workflow tags + builds APK + signs + publishes Release artifacts.
-version: 0.4.0+17
+version: 0.4.0+4999
 
 environment:
   sdk: ^3.11.0
@@ -38,17 +38,19 @@ dependencies:
   google_fonts: ^6.2.1                 # Bai Jamjuree, Noto Sans Thai, Noto Serif Thai, Cinzel
   cached_network_image: ^3.4.1
   flutter_animate: ^4.5.2              # Concise animation chains for screen entries
-  shimmer: ^3.0.0                      # Skeleton loading on home/list
-  flutter_svg: ^2.0.16                 # Natal chart wheel + crescent moon glyphs
   flutter_markdown: ^0.7.5             # Render update changelog markdown
 
   # Device + system
-  device_info_plus: ^11.2.0
   package_info_plus: ^8.1.1
-  permission_handler: ^11.3.1
-  connectivity_plus: ^6.1.0
 
-  # Auto-update internals (Android sideload).
+  # Google Play channel — credits through Google Play Billing (PBL 8 via
+  # in_app_purchase_android 0.5.0; later versions need Flutter 3.44) and
+  # Play's own in-app update prompt. See lib/core/billing + app_channel.dart.
+  in_app_purchase: ^3.3.1
+  in_app_purchase_android: ^0.5.0      # consumePurchase() หลังเซิร์ฟเวอร์เติมเครดิตแล้ว
+  in_app_update: ^4.2.5
+
+  # Auto-update internals (DIRECT channel only — the GitHub APK).
   # NOTE: We use GitHub Releases as artifact storage but expose ZERO github
   # URLs in the UI — everything user-facing says "เซิร์ฟเวอร์อัปเดต".
   open_filex: ^4.5.0
@@ -62,16 +64,13 @@ dependencies:
   # don't bite. Has platform pickers; no separate iOS plugin needed.
   image_picker: ^1.1.2
 
-  # Sensory polish — haptics on card tap + bell on reveal
-  vibration: ^2.0.0
+  # Sensory polish — bell on reveal (haptics use Flutter's HapticFeedback,
+  # which needs no VIBRATE permission)
   audioplayers: ^6.1.0
 
   # Utilities
-  collection: ^1.19.0
   intl: ^0.20.1
-  logger: ^2.5.0
   equatable: ^2.0.7
-  uuid: ^4.5.1
   crypto: ^3.0.6
 
 dev_dependencies:
@@ -89,6 +88,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # `flutter run` / `flutter build` without --flavor build the Google Play
+  # channel. The GitHub APK is built with `--flavor direct` (release.yml).
+  # See android/app/build.gradle.kts → productFlavors.
+  default-flavor: play
 
   # NOTE: การประกาศโฟลเดอร์ใน Flutter **ไม่ลงลูก** — `assets/images/` เอาเฉพาะ
   # ไฟล์ที่อยู่ในนั้นตรง ๆ ไม่รวม `assets/images/art/` ทุกโฟลเดอร์ย่อยจึงต้อง
