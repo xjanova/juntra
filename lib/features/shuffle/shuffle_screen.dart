@@ -4,7 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/api/wallet_repository.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/api/tarot_packages_repository.dart';
+import '../../core/astronomy/birth_data_store.dart';
 import '../../core/api/idempotency.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
@@ -13,11 +16,13 @@ import '../../core/api/fortune_repository.dart';
 import '../../core/api/tarot_catalog_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/sound/sound_service.dart';
-import '../../shared/data/spreads.dart';
 import '../../shared/data/tarot_deck.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/tarot_card_widgets.dart';
+import '../../shared/format/credits.dart';
+import '../../core/app_channel.dart';
+import '../wallet/play_credits_panel.dart';
 
 /// ⭐ Screen 4 — Cinematic 5-phase tarot game.
 ///
@@ -42,10 +47,11 @@ import '../../shared/widgets/tarot_card_widgets.dart';
 /// legacy client-side sample reading so the cinematic still completes.
 class ShuffleScreen extends ConsumerStatefulWidget {
   const ShuffleScreen({
-    super.key, required this.spreadId, this.categoryId,
+    super.key, required this.spreadId, this.categoryId, this.initialQuestion,
   });
   final String spreadId;
   final String? categoryId;
+  final String? initialQuestion;
 
   @override
   ConsumerState<ShuffleScreen> createState() => _ShuffleScreenState();
@@ -69,17 +75,24 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
   /// จันทรา.online catalog loads, at which point cards swap to their real art.
   TarotCatalog _catalog = TarotCatalog.empty;
   // Captured for telemetry — sent with /v1/fortune/draw payload later.
-  String _question = '';
+  late String _question = (widget.initialQuestion ?? '').trim();
   final _picked = <int>[];
   // Reversed flag per pick, decided at reveal time. Stable RNG seeded
   // with picks order + DateTime micro so two consecutive readings of
   // the same spread don't produce identical orientations.
   final _reversed = <bool>[];
   int _revealIdx = 0;
-  late final Spread _spread = spreads.firstWhere(
-    (s) => s.id == widget.spreadId,
-    orElse: () => spreads.first,
-  );
+  /// แพ็กเกจของเกมนี้ (จากเซิร์ฟเวอร์ ชุดเดียวกับเว็บ) — ตรึงค่าแรกที่ได้ไว้ตลอดเกม
+  /// หลังบ้านปรับราคา/ตำแหน่งระหว่างที่ลูกค้ากำลังเล่น ต้องไม่ทำให้จำนวนใบเปลี่ยนกลางเกม
+  TarotPackage? _package;
+  TarotPackage get _pkg => _package!;
+
+  /// วันเกิด (ไม่บังคับ) — แพ็กเกจที่ผสานดวงวันเกิด (Celtic · 12 เดือน · คุณไสย) เหมือนเว็บ
+  DateTime? _birthDate;
+  bool _birthDefaulted = false;
+
+  /// ข้อความผิดพลาดล่าสุดตอนบันทึก — หน้าจอโชว์ปุ่ม "ลองอีกครั้ง" (เดิมค้างอยู่ที่ไพ่โดยไม่มีทางไปต่อ)
+  String? _lastError;
 
   late final AnimationController _shuffleCtrl;
   late final AnimationController _revealCtrl;
@@ -106,8 +119,12 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     });
   }
 
+  /// ช่องคำถาม — เติมคำถามจากแชทให้ (ถ้ามี) · dispose พร้อมหน้า
+  late final TextEditingController _questionCtrl = TextEditingController(text: _question);
+
   @override
   void dispose() {
+    _questionCtrl.dispose();
     _shuffleCtrl.dispose();
     _revealCtrl.dispose();
     super.dispose();
@@ -160,7 +177,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
       });
       return;
     }
-    if (_picked.length >= _spread.cards) return;
+    if (_picked.length >= _pkg.cards) return;
 
     HapticFeedback.lightImpact();
     SoundService.instance.cardPick();
@@ -232,29 +249,20 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     if (!mounted) return; // controller may complete after pop
   }
 
-  /// Persist the completed reading on supported spreads, otherwise fall
-  /// through to the legacy client-side sample renderer so cinematics on
-  /// not-yet-wired spreads (love, year, horseshoe, yes-no) still close
-  /// cleanly. This is the ONLY path that leaves /shuffle for /reading.
+  /// บันทึกคำทำนาย: ตัดเงิน → เซิร์ฟเวอร์ตอบทันที (แม่หมออ่านเบื้องหลัง) → ไปหน้าผลซึ่งถามสถานะจนเสร็จ
+  /// ทางเดียวที่ออกจาก /shuffle ไป /reading
   Future<void> _finalize() async {
-    final backendType = _backendTypeFor(_spread.id);
-    if (backendType == null) {
-      // Unsupported spread → keep old behaviour (sample reading screen).
-      context.pushReplacement('${Routes.reading}?spread=${_spread.id}');
-      return;
-    }
-
-    // Guests must sign in before we can debit a wallet. Preserve the
-    // shuffle progress mentally by bouncing through /login → user
-    // returns and reshuffles. (We could persist state across the
-    // round-trip; not worth the complexity for v1.)
+    // Guests must sign in before we can debit a wallet.
     final auth = ref.read(authControllerProvider);
     if (auth is! AuthAuthenticated) {
       _showLoginNeededSheet();
       return;
     }
 
-    setState(() => _phase = _Phase.saving);
+    setState(() {
+      _phase = _Phase.saving;
+      _lastError = null;
+    });
 
     try {
       final repo = await ref.read(fortuneRepositoryProvider.future);
@@ -266,83 +274,119 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
           ),
       ];
       if (!mounted) return;
+      final birth = _pkg.birth && _birthDate != null
+          ? DateFormat('yyyy-MM-dd').format(_birthDate!)
+          : null;
       final reading = await repo.createTarotReading(
-        type: backendType,
+        type: _pkg.type,
         question: _question.trim().isEmpty ? null : _question.trim(),
         picks: picks,
+        birthDate: birth,
         // เมื่อมีกองของเซิร์ฟเวอร์ ให้ส่ง "ตำแหน่งที่แตะ" ไปแทน แล้วเซิร์ฟเวอร์
         // แปลงเป็นไพ่+ทิศเอง — ไคลเอนต์จึงเลือกไพ่ที่อยากได้เองไม่ได้
         dealToken: _deal?.token,
         slots: _deal == null ? null : List<int>.from(_picked),
-        // ไพ่ชุดเดิม + คำถามเดิม = รายการเดียวกันเสมอ ถึง dio จะ retry
-        // ให้อัตโนมัติตอนสัญญาณตก ก็ต้องถูกคิดเงินครั้งเดียว
+        // ไพ่ชุดเดิม + คำถามเดิม = รายการเดียวกันเสมอ — ส่งซ้ำกี่รอบ (เน็ตหลุด / กด
+        // "ลองอีกครั้ง") เซิร์ฟเวอร์ก็คืนรายการเดิม ไม่ตัดเงินซ้ำ
         idempotencyKey: _attempt.begin(
-            '$backendType|${_question.trim()}|'
+            '${_pkg.type}|${_question.trim()}|${birth ?? ''}|'
             '${picks.map((p) => '${p.card.slug}:${p.reversed}').join(',')}'),
       );
       _attempt.succeeded();
 
-      // ต้องเช็ค mounted ก่อนแตะ ref — ผู้ใช้กด back ระหว่างรอ 8–12 วิ ได้
-      // (ref.read/invalidate หลัง dispose โยน StateError แล้วถูกกลืนเงียบ ๆ
-      //  ผลคือเงินถูกหักแต่ยอดเครดิตหน้าแรกกับประวัติไม่รีเฟรช = "จ่ายแล้วไม่ได้อะไร")
+      // ต้องเช็ค mounted ก่อนแตะ ref — ผู้ใช้กด back ระหว่างรอได้
       if (!mounted) return;
-
-      // Backend echoes new wallet balance — refresh auth state so the
-      // home screen pill + chat header stay in sync without a /me hit.
-      if (reading['balance'] is num) {
-        // ignore: unawaited_futures
-        ref.read(authControllerProvider.notifier).refresh();
-      }
-      // Invalidate history list so the new reading appears at the top
-      // next time the user opens /history without us re-running a full
-      // fetch from inside the cinematic.
+      // ยอดเครดิตหน้าแรก/แชท + ประวัติ ต้องสะท้อนการตัดเงินทันที
+      // ignore: unawaited_futures
+      ref.read(authControllerProvider.notifier).refresh();
       ref.invalidate(fortuneHistoryProvider);
 
-      if (!mounted) return;
       final id = reading['id'];
       if (id is num) {
         context.pushReplacement('${Routes.reading}?id=${id.toInt()}');
       } else {
-        // Saved but no id back — defensive fallback to the legacy path.
-        context.pushReplacement('${Routes.reading}?spread=${_spread.id}');
+        _fail('บันทึกผลไม่สำเร็จ กรุณาลองอีกครั้ง');
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      // 402/503 = ยังไม่ถูกตัดเงิน (หรือคืนให้แล้ว) เริ่มคีย์ใหม่ได้
-      if (e.statusCode == 402 || e.statusCode == 503) _attempt.notCharged();
-      if (e.statusCode == 402) {
-        _showInsufficientFundsSheet(e.message);
-        return;
+      // ยังไม่ถูกตัดเงิน (หรือคืนให้แล้ว) → การกดครั้งหน้าเป็นรายการใหม่ ใช้คีย์ใหม่ได้
+      // 409 in_flight เก็บคีย์เดิมไว้ — คำขอแรกอาจยังทำงานอยู่ ลองซ้ำด้วยคีย์เดิมจะได้รายการเดิม
+      if (e.reasonCode != 'in_flight' &&
+          (e.statusCode == 402 || e.statusCode == 409 || e.statusCode == 422 || e.statusCode == 503)) {
+        _attempt.notCharged();
       }
-      if (e.statusCode == 401) {
-        _showLoginNeededSheet();
-        return;
+      switch (e.statusCode) {
+        case 402:
+          _fail(e.message);
+          _showInsufficientFundsSheet(e.message);
+        case 401:
+          _fail('กรุณาเข้าสู่ระบบก่อน แล้วแตะ "ลองอีกครั้ง" — ยังไม่มีการหักเครดิต');
+          _showLoginNeededSheet();
+        case 409 when e.reasonCode == 'cooldown':
+          _fail(e.message, canRetry: false);
+          _showCooldownSheet(e.message, (e.body?['reading_id'] as num?)?.toInt());
+        case 422 when e.reasonCode == 'deal_expired':
+          _fail('กองไพ่หมดอายุแล้ว — กลับไปสับไพ่ใหม่อีกครั้งนะคะ', canRetry: false);
+        default:
+          _fail(e.message);
       }
-      _showErrorSnack(e.message);
-      // Step back to the grid so the user can read what happened.
-      setState(() => _phase = _Phase.grid);
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
-      _showErrorSnack('เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่');
-      setState(() => _phase = _Phase.grid);
+      _fail('เชื่อมต่อไม่สำเร็จ — ถ้าเครดิตถูกหักไปแล้ว กด "ลองอีกครั้ง" ได้เลย ระบบจะไม่หักซ้ำ');
     }
   }
 
-  /// Map a Flutter [Spread.id] to the backend reading `type`. Every spread
-  /// in the catalog now has backend support (its id IS the backend key), so
-  /// this returns `tarot_<id>` for any known spread. Unknown ids return
-  /// `null` and fall back to the legacy client-side sample renderer.
-  static String? _backendTypeFor(String spreadId) {
-    return spreadIds.contains(spreadId) ? 'tarot_$spreadId' : null;
+  /// กลับไปที่ไพ่ที่เปิดแล้วพร้อมเหตุผล + ปุ่มลองอีกครั้ง (ใช้คีย์เดิม ไม่ถูกหักซ้ำ)
+  void _fail(String message, {bool canRetry = true}) {
+    setState(() {
+      _phase = _Phase.grid;
+      _lastError = message;
+      _canRetry = canRetry;
+    });
   }
 
-  void _showErrorSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: JuntraColors.bgPurpleDeep,
-        content: Text(message,
-            style: const TextStyle(color: JuntraColors.textCream)),
-        duration: const Duration(seconds: 4),
+  bool _canRetry = true;
+
+  Future<void> _showCooldownSheet(String message, int? readingId) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: JuntraColors.bgPurpleDeep,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('ยังเปิดแพ็กเกจนี้ซ้ำไม่ได้',
+                  style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+              const SizedBox(height: 10),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender, height: 1.6)),
+              const SizedBox(height: 18),
+              if (readingId != null)
+                GoldButton(
+                  label: 'อ่านคำทำนายเดิม',
+                  onPressed: () {
+                    Navigator.of(sheetCtx).pop();
+                    context.pushReplacement('${Routes.reading}?id=$readingId');
+                  },
+                ),
+              const SizedBox(height: 6),
+              GhostButton(
+                label: 'เลือกแพ็กเกจอื่น',
+                onPressed: () {
+                  Navigator.of(sheetCtx).pop();
+                  if (context.canPop()) context.pop();
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -390,11 +434,23 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.of(sheetCtx).pop();
-                    context.push(Routes.wallet);
+                    if (!isPlayChannel) {
+                      context.push(Routes.wallet);
+                      return;
+                    }
+                    // แอพ Play: ซื้อเครดิตผ่าน Google Play ในหน้านี้เลย แล้วกดเปิดไพ่ต่อได้ทันที
+                    var credited = false;
+                    await showPlayCreditsSheet(context, onCredited: () => credited = true);
+                    if (credited && mounted) {
+                      setState(() {
+                        _lastError = 'เติมเครดิตแล้ว — แตะ "ลองอีกครั้ง" เพื่อเปิดไพ่ต่อ';
+                        _canRetry = true;
+                      });
+                    }
                   },
-                  child: const Text('ไปหน้าเติมเครดิต',
+                  child: const Text('เติมเครดิต',
                       style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ),
@@ -485,10 +541,41 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     );
   }
 
+  /// เติมวันเกิดจากที่ลูกค้าเคยบันทึกไว้ในหน้าดวงกำเนิด (ไม่ต้องพิมพ์ซ้ำ) — ครั้งเดียว
+  void _defaultBirthOnce() {
+    if (_birthDefaulted || !_pkg.birth) return;
+    _birthDefaulted = true;
+    final saved = ref.read(birthDataProvider);
+    if (saved.isCustom) {
+      _birthDate = DateTime(saved.data.year, saved.data.month, saved.data.day);
+    }
+  }
+
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _birthDate ?? DateTime(now.year - 30, now.month, now.day),
+      firstDate: DateTime(1901),
+      lastDate: now.subtract(const Duration(days: 1)),
+      helpText: 'วันเกิดของลูก (ไม่บังคับ)',
+    );
+    if (picked != null && mounted) setState(() => _birthDate = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Real web art when available; the built-in drawing is the per-card fallback.
     _catalog = ref.watch(tarotCatalogProvider).valueOrNull ?? TarotCatalog.empty;
+
+    // แพ็กเกจจากเซิร์ฟเวอร์ — ตรึงค่าแรกไว้ทั้งเกม (ดู [_package])
+    final pkgAsync = ref.watch(tarotPackageProvider(widget.spreadId));
+    _package ??= pkgAsync.valueOrNull;
+    if (_package == null) {
+      return _PackageGate(loading: pkgAsync.isLoading);
+    }
+    _defaultBirthOnce();
+
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -532,7 +619,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Text(
-                '${_picked.length}/${_spread.cards}',
+                '${_picked.length}/${_pkg.cards}',
                 style: baiJamjuree(size: 16, color: JuntraColors.gold),
               ),
             ),
@@ -549,7 +636,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
       child: Column(
         children: [
           const Spacer(),
-          Text('ก่อนเริ่ม...', style: baiJamjuree(size: 16, color: JuntraColors.gold)),
+          Text(_pkg.nameTh, style: baiJamjuree(size: 16, color: JuntraColors.gold)),
           const SizedBox(height: 8),
           Text('ลูกอยากรู้เรื่องอะไร?', style: baiJamjuree(size: 26)),
           const SizedBox(height: 16),
@@ -559,6 +646,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
           ),
           const SizedBox(height: 28),
           TextField(
+            controller: _questionCtrl,
             onChanged: (v) => _question = v,
             maxLines: 3, minLines: 3,
             style: const TextStyle(color: JuntraColors.textCream, fontSize: 14),
@@ -583,6 +671,14 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
               ),
             ),
           ),
+          if (_pkg.birth) ...[
+            const SizedBox(height: 14),
+            _BirthDateRow(
+              date: _birthDate,
+              onPick: _pickBirthDate,
+              onClear: () => setState(() => _birthDate = null),
+            ),
+          ],
           const Spacer(),
           GoldButton(
             label: 'เริ่มสับไพ่',
@@ -657,7 +753,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
-              Text('เลือกไพ่ ${_spread.cards} ใบจากสำรับเต็ม 78 ใบ',
+              Text('เลือกไพ่ ${_pkg.cards} ใบจากสำรับเต็ม 78 ใบ',
                   style: baiJamjuree(size: 20)),
               const SizedBox(height: 6),
               const Text(
@@ -700,10 +796,8 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
         // ก็ย้อนไม่ได้ (ชนกฎ "Destructive without confirm")
         _ConfirmBar(
           picked: _picked.length,
-          needed: _spread.cards,
-          price: ref.watch(walletPricingProvider)
-              .valueOrNull?[_spread.backendType]
-              ?.toDouble(),
+          needed: _pkg.cards,
+          price: _pkg.price?.toDouble(),
           onConfirm: _enterTravel,
         ),
       ],
@@ -812,8 +906,11 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
   // ─── Phase 5: Reveal ────────────────────────────────────────
   Widget _buildRevealPhase() {
     final card = _cardAt(_picked[_revealIdx]);
-    final positionLabel = _revealIdx < _spread.positions.length
-        ? _spread.positions[_revealIdx] : '';
+    final positionLabel = _revealIdx < _pkg.positions.length
+        ? _pkg.positions[_revealIdx] : '';
+    // ทิศของไพ่มาจากกองที่เซิร์ฟเวอร์สับ และเป็นค่าเดียวกับที่ถูกบันทึก/แม่หมอตีความ
+    // — ต้องพลิกให้เห็นกลับหัวตั้งแต่ตอนนี้ ไม่ใช่เห็นหัวตั้งแล้วไปกลับหัวในหน้าผล
+    final reversed = _revealIdx < _reversed.length && _reversed[_revealIdx];
 
     return Center(
       key: ValueKey('r$_revealIdx'),
@@ -841,10 +938,13 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                           ..setEntry(3, 2, 0.001)
                           ..rotateY(flipAngle),
                         child: flipAngle < math.pi / 2
-                            ? CardFace(
-                                card: card,
-                                imageUrl: _catalog.faceUrlFor(card.slug),
-                                width: 180, height: 290,
+                            ? Transform.rotate(
+                                angle: reversed ? math.pi : 0,
+                                child: CardFace(
+                                  card: card,
+                                  imageUrl: _catalog.faceUrlFor(card.slug),
+                                  width: 180, height: 290,
+                                ),
                               )
                             : Transform(
                                 alignment: Alignment.center,
@@ -870,16 +970,18 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                 style: baiJamjuree(size: 28, color: Colors.white)),
           ),
           const SizedBox(height: 4),
-          Text('ใบที่ ${_revealIdx + 1} · $positionLabel',
+          Text('ใบที่ ${_revealIdx + 1} · $positionLabel${reversed ? ' (กลับหัว)' : ''}',
               style: const TextStyle(
                 fontSize: 12, color: JuntraColors.textMuted,
-                letterSpacing: 1.4,
               )),
           const SizedBox(height: 28),
-          GhostButton(
-            label: _revealIdx + 1 == _picked.length
-                ? 'ดูคำทำนายเต็ม →' : 'ใบถัดไป →',
-            onPressed: _nextReveal,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: GhostButton(
+              label: _revealIdx + 1 == _picked.length
+                  ? 'ดูคำทำนายเต็ม →' : 'ใบถัดไป →',
+              onPressed: _nextReveal,
+            ),
           ),
         ],
       ),
@@ -888,20 +990,51 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
 
   // ─── Phase 6: Grid (brief landing then route) ──────────────
   Widget _buildGridPhase() {
-    return Center(
-      key: const ValueKey('g'),
-      child: Wrap(
+    final cards = Wrap(
         spacing: 8, runSpacing: 8,
         alignment: WrapAlignment.center,
-        children: _picked.map((i) {
-          final c = _cardAt(i);
-          return CardFace(
-            card: c,
-            imageUrl: _catalog.faceUrlFor(c.slug),
-            nameTh: _catalog.nameThFor(c.slug),
-            width: 72, height: 118,
-          );
-        }).toList(),
+        children: [
+          for (var k = 0; k < _picked.length; k++)
+            Transform.rotate(
+              angle: k < _reversed.length && _reversed[k] ? math.pi : 0,
+              child: CardFace(
+                card: _cardAt(_picked[k]),
+                imageUrl: _catalog.faceUrlFor(_cardAt(_picked[k]).slug),
+                nameTh: _catalog.nameThFor(_cardAt(_picked[k]).slug),
+                width: 72, height: 118,
+              ),
+            ),
+        ],
+      );
+    if (_lastError == null) {
+      return Center(key: const ValueKey('g'), child: cards);
+    }
+    return Center(
+      key: const ValueKey('g-err'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 70, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            cards,
+            const SizedBox(height: 22),
+            Text(_lastError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender, height: 1.6)),
+            const SizedBox(height: 16),
+            if (_canRetry)
+              GoldButton(
+                label: 'ลองอีกครั้ง',
+                icon: const Icon(Icons.refresh_rounded),
+                onPressed: _finalize,
+              ),
+            const SizedBox(height: 6),
+            GhostButton(
+              label: 'กลับไปเลือกแพ็กเกจ',
+              onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1020,7 +1153,7 @@ class _ConfirmBar extends StatelessWidget {
     final ready = picked >= needed;
     final priceText = price == null
         ? ''
-        : (price == 0 ? ' · ฟรี' : ' · ฿${price!.round()}');
+        : (price == 0 ? ' · ฟรี' : ' · ${formatCredits(price!.round())}');
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -1041,6 +1174,93 @@ class _ConfirmBar extends StatelessWidget {
             onPressed: onConfirm,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// รอแพ็กเกจจากเซิร์ฟเวอร์ / แพ็กเกจปิดขายไปแล้ว
+class _PackageGate extends StatelessWidget {
+  const _PackageGate({required this.loading});
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const StarryBackground(density: 50, intensity: 0.7),
+          SafeArea(
+            child: Center(
+              child: loading
+                  ? const CircularProgressIndicator(color: JuntraColors.gold)
+                  : Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.style_outlined, color: JuntraColors.textFaint, size: 44),
+                          const SizedBox(height: 12),
+                          Text('แพ็กเกจนี้ปิดขายชั่วคราว', style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+                          const SizedBox(height: 8),
+                          const Text('เลือกแพ็กเกจอื่นได้เลยนะคะ — ยังไม่มีการหักเครดิต',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 13, color: JuntraColors.textMuted)),
+                          const SizedBox(height: 18),
+                          GhostButton(
+                            label: 'ดูแพ็กเกจทั้งหมด',
+                            onPressed: () => context.go(Routes.spreads),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// วันเกิดแบบไม่บังคับ — แม่หมอผสานดวงวันเกิดเข้ากับไพ่ (Celtic · 12 เดือน · คุณไสย)
+class _BirthDateRow extends StatelessWidget {
+  const _BirthDateRow({required this.date, required this.onPick, required this.onClear});
+  final DateTime? date;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final d = date;
+    final label = d == null
+        ? 'ใส่วันเกิด (ไม่บังคับ) — แม่หมอผสานดวงเกิดให้แม่นขึ้น'
+        : 'วันเกิด: ${d.day} ${DateFormat('MMMM', 'th').format(d)} ${d.year + 543}';
+    return InkWell(
+      onTap: onPick,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: JuntraColors.purple.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.cake_outlined, color: JuntraColors.gold, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label, style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender)),
+            ),
+            if (d != null)
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: JuntraColors.textFaint, size: 18),
+                onPressed: onClear,
+                visualDensity: VisualDensity.compact,
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -12,6 +12,7 @@ import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/chantra_logo.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/starry_background.dart';
+import '../../core/api/app_config_repository.dart';
 
 /// Sign-in / sign-up — single screen, toggle between modes.
 ///
@@ -277,6 +278,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                   ],
+                  if (_signUp) ...[
+                    const SizedBox(height: 16),
+                    const _ConsentNote(),
+                  ],
                   const SizedBox(height: 24),
                   GoldButton(
                     label: _busy
@@ -424,3 +429,38 @@ class _Field extends StatelessWidget {
     );
   }
 }
+
+/// การสมัครสมาชิกถือว่ายอมรับข้อตกลงและนโยบายความเป็นส่วนตัว — ต้องเปิดอ่านได้จากในแอพ
+/// (Google Play: ลิงก์นโยบายความเป็นส่วนตัวต้องอยู่ในแอพด้วย ไม่ใช่แค่ในหน้าร้าน)
+class _ConsentNote extends ConsumerWidget {
+  const _ConsentNote();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cfg = ref.watch(appConfigValueProvider);
+    Widget link(String label, String url) => InkWell(
+          onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+          child: Text(label,
+              style: const TextStyle(
+                fontSize: 12, color: JuntraColors.gold,
+                decoration: TextDecoration.underline, decorationColor: JuntraColors.gold,
+              )),
+        );
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      runSpacing: 2,
+      children: [
+        const Text('การสมัครสมาชิกถือว่ายอมรับ',
+            style: TextStyle(fontSize: 12, color: JuntraColors.textMuted)),
+        link('ข้อตกลงการใช้งาน', cfg.termsUrl),
+        const Text('และ', style: TextStyle(fontSize: 12, color: JuntraColors.textMuted)),
+        link('นโยบายความเป็นส่วนตัว', cfg.privacyUrl),
+        const Text('· สำหรับผู้มีอายุ 18 ปีขึ้นไป',
+            style: TextStyle(fontSize: 12, color: JuntraColors.textMuted)),
+      ],
+    );
+  }
+}
+

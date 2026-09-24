@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
 import 'endpoints.dart';
+import '../auth/session.dart';
 
 /// Wallet — balance, transactions, PromptPay top-up start + native
 /// slip upload.
@@ -120,6 +121,9 @@ final walletRepositoryProvider = FutureProvider<WalletRepository>((ref) async {
 /// The app reads this so spread/feature prices always match what the backend
 /// actually debits — never a hardcoded number that can drift.
 final walletPricingProvider = FutureProvider<Map<String, num>>((ref) async {
+  // ต้องล็อกอิน — แขกได้ 401 แล้วค้างเป็น error ทั้งรอบเปิดแอพ (ราคาไม่ขึ้นจนกว่าจะปิดแอพ)
+  // watch ไว้ให้โหลดใหม่ทันทีที่ล็อกอิน
+  ref.watch(sessionUserIdProvider);
   final repo = await ref.watch(walletRepositoryProvider.future);
   final data = await repo.overview();
   final p = data['pricing'];

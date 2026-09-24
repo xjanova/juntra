@@ -16,6 +16,10 @@ class Api {
   // ─── Public ──────────────────────────────────────────────────
   static const appHealth = '/v1/app/health';
 
+  /// บริการที่เปิด/ปิดขาย (สวิตช์หลังบ้านชุดเดียวกับเว็บ) · ลิงก์นโยบาย/ลบบัญชี
+  /// · สวิตช์เติมเครดิตผ่าน Google Play — โหลดตอนเปิดแอพ แอพซ่อนบริการที่ปิดเหมือนเว็บ
+  static const appConfig = '/v1/app/config';
+
   // ─── Auth (Sanctum) ──────────────────────────────────────────
   static const authLogin    = '/v1/auth/login';
   static const authRegister = '/v1/auth/register';
@@ -24,6 +28,14 @@ class Api {
   /// Short-lived single-use code for the web OAuth bootstrap (so the bearer
   /// never goes in the mobile-start URL). POST; bearer in the auth header.
   static const authHandoff  = '/v1/auth/handoff';
+  /// PUT {current_password, password, password_confirmation} — เพิกถอนเครื่องอื่นให้ด้วย
+  static const authPassword = '/v1/auth/password';
+  /// POST {password} — ลบบัญชีและข้อมูลส่วนตัว (Google Play บังคับให้มีในแอพ)
+  static const accountDelete = '/v1/account/delete';
+
+  /// POST {subject_type: reading|chat_message, subject_id, reason, note?}
+  /// รายงานเนื้อหาที่ AI สร้าง (Google Play: AI-Generated Content policy)
+  static const reports = '/v1/reports';
 
   // ─── Wallet ─────────────────────────────────────────────────
   static const wallet               = '/v1/wallet';
@@ -36,6 +48,11 @@ class Api {
   static String walletTopupSlip(int id) => '/v1/wallet/topup/$id/slip';
   /// DELETE — cancel a still-pending top-up (releases the reserved amount).
   static String walletTopupCancel(int id) => '/v1/wallet/topup/$id';
+
+  /// แพ็กเครดิตที่ขายผ่าน Google Play + account_id ที่ส่งให้ Google ตอนซื้อ
+  static const walletGooglePlay = '/v1/wallet/google-play';
+  /// POST {product_id, purchase_token} — เซิร์ฟเวอร์ตรวจกับ Google แล้วเติมเครดิต (ครั้งเดียวต่อ token)
+  static const walletGooglePlayRedeem = '/v1/wallet/google-play/redeem';
 
   // ─── Mae Mor AI Chat ─────────────────────────────────────────
   static const chatConversations = '/v1/chat/conversations';
@@ -53,6 +70,8 @@ class Api {
   // ─── Reading history (tarot / numerology / palmistry / auspicious) ─
   static const historyReadings = '/v1/history/readings';
   static String historyReading(int id) => '/v1/history/readings/$id';
+  /// แม่หมออ่านไพ่เสร็จหรือยัง (คู่กับการซื้อแบบ `mode: async`) → pending|working|failed|done
+  static String historyReadingStatus(int id) => '/v1/history/readings/$id/status';
 
   // ─── Non-tarot paid readings ─────────────────────────────────
   static const fortuneNumerology = '/v1/fortune/numerology';
@@ -79,6 +98,9 @@ class Api {
   /// own built-in drawing per card. No auth required.
   static const tarotCards = '/v1/tarot/cards';
 
+  /// แพ็กเกจไพ่ที่เปิดขาย (ราคา · ภาพประกอบ · ตำแหน่งไพ่ · ข้อห้ามเปิดซ้ำ) — ชุดเดียวกับหน้า /tarot
+  static const tarotPackages = '/v1/tarot/packages';
+
   /// POST — สับไพ่หนึ่งกองต่อหนึ่งเกม (เซิร์ฟเวอร์เป็นคนสับและตัดสินหัวกลับ)
   /// ตอบกลับ `deal_token` + ลำดับไพ่ 78 ใบ ตอนบันทึกผลส่งแค่ "ตำแหน่งที่แตะ"
   static const tarotDeal = '/v1/tarot/deal';
@@ -92,7 +114,8 @@ class Api {
   static const mlmRefresh     = '/v1/mlm/refresh';
 
   // ─── Auto-update (internal — never shown to user) ───────────
-  /// GitHub Releases API. Called directly from [UpdateService].
+  /// GitHub Releases API. Called directly from [UpdateService] — DIRECT
+  /// channel only; the Google Play build never calls it (app_channel.dart).
   /// Switch to a self-hosted proxy if rate-limit becomes an issue
   /// (anonymous GH API allows 60 req/IP/hour, plenty for our 6h
   /// throttle even at 10× concurrent users per IP).

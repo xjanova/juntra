@@ -14,6 +14,7 @@ import '../../core/api/api_exceptions.dart';
 import '../../core/api/deep_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
+import '../../shared/format/credits.dart';
 
 /// ดูดวงเชิงลึก 39฿ — แพ็กเดียวกับที่ขายบนเว็บ จันทรา.online และบอท FB/LINE
 ///
@@ -461,10 +462,10 @@ class _PriceBar extends StatelessWidget {
         children: [
           const Icon(Icons.auto_awesome, size: 16, color: JuntraColors.gold),
           const SizedBox(width: 10),
-          Text('฿${cost.toStringAsFixed(cost == cost.roundToDouble() ? 0 : 2)}',
+          Text(formatCredits(cost),
               style: baiJamjuree(size: 18, color: JuntraColors.gold)),
           const Spacer(),
-          Text('เครดิต ฿${balance.toStringAsFixed(2)}',
+          Text('คงเหลือ ${formatCredits(balance, decimals: true)}',
               style: TextStyle(
                 fontSize: 12.5,
                 color: low ? const Color(0xFFF5C542) : JuntraColors.textMuted,

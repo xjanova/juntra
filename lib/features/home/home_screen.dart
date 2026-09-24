@@ -19,6 +19,10 @@ import '../../shared/widgets/pill.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/tarot_card_widgets.dart';
 import '../../shared/widgets/xman_studio_footer.dart';
+import '../../shared/format/avatar_initial.dart';
+import '../../shared/format/credits.dart';
+import '../../shared/format/plain_preview.dart';
+import '../../core/api/app_config_repository.dart';
 
 /// Screen 2 — Home. Daily card hero, daily transit reading, quick stats,
 /// fortune categories grid (2×4), Mae Mor online card, recent readings.
@@ -61,8 +65,6 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 10),
                 _CategoriesGrid(),
                 const SizedBox(height: 18),
-                const _SectionLabel('บริการดูดวงอื่น ๆ'),
-                const SizedBox(height: 10),
                 _OtherServices(),
                 const SizedBox(height: 16),
                 const ThaiDivider(),
@@ -89,9 +91,7 @@ class _Greeting extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final name = auth is AuthAuthenticated ? auth.displayName : 'แขก';
-    // Grapheme-safe first letter (runes handle surrogate pairs / emoji names).
-    final initial =
-        name.runes.isEmpty ? '?' : String.fromCharCode(name.runes.first);
+    final initial = avatarInitial(name);
     return Row(
       children: [
         Expanded(
@@ -101,7 +101,7 @@ class _Greeting extends ConsumerWidget {
               Text(
                 'สวัสดี · $weekday',
                 style: const TextStyle(
-                  fontSize: 9, letterSpacing: 2.4,
+                  fontSize: 9,
                   color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
                 ),
               ),
@@ -223,6 +223,12 @@ class _DailyCardHero extends ConsumerWidget {
 class _DailyTransitCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // ดิถี/วันพระในการ์ดนี้ใช้สูตรเดียวกับ "ดวงรายวัน" ที่หลังบ้านปิดไว้ (ตรวจเทียบปฏิทินหลวงแล้ว
+    // ดิถีคลาด ~41% ของวัน วันพระพลาด 81/184 วัน) — ปิดบริการนั้นอยู่ = ไม่แสดงการ์ดนี้ด้วย
+    // เหมือนหน้าเว็บที่ไม่แสดงดิถีเลยตอนนี้ (CLAUDE.md ของเว็บ: ยอมทำน้อยแต่ถูก)
+    if (!ref.watch(appConfigValueProvider).isOpen('horoscope')) {
+      return const SizedBox.shrink();
+    }
     final async = ref.watch(almanacTodayProvider);
     final a = async.valueOrNull;
 
@@ -265,7 +271,7 @@ class _DailyTransitCard extends ConsumerWidget {
                 Row(
                   children: [
                     const Text('ดาวดวงนี้บอกว่า', style: TextStyle(
-                      fontSize: 9, letterSpacing: 2.0,
+                      fontSize: 9,
                       color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
                     )),
                     if (a.isHolyDay) ...[
@@ -336,12 +342,14 @@ class _QuickStatsRow extends ConsumerWidget {
                   children: [
                     const Text('เครดิตคงเหลือ',
                         style: TextStyle(
-                          fontSize: 10, letterSpacing: 1.4,
+                          fontSize: 10,
                           color: JuntraColors.textFaint,
                         )),
                     const SizedBox(height: 2),
                     Text(
-                      '$symbol${NumberFormat.decimalPattern('th').format(balance)}',
+                      auth.walletCurrency == 'THB'
+                          ? formatCredits(balance)
+                          : '$symbol${NumberFormat.decimalPattern('th').format(balance)}',
                       style: baiJamjuree(size: 22, color: JuntraColors.gold),
                     ),
                   ],
@@ -397,20 +405,36 @@ class _QuickStatsRow extends ConsumerWidget {
 }
 
 /// Non-tarot services row (daily horoscope / numerology / auspicious dates).
-class _OtherServices extends StatelessWidget {
+///
+/// ซ่อนบริการที่หลังบ้านปิดขาย (ServiceGate ชุดเดียวกับเว็บ — ตอนนี้เว็บเหลือแต่ไพ่กับแชท)
+/// ปิดหมดทุกตัว = ไม่มีหัวข้อนี้เลย ไม่ใช่กล่องว่าง
+class _OtherServices extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cfg = ref.watch(appConfigValueProvider);
     // 🔴 'ดูดวงเชิงลึก' (39฿) เคยไม่มีทางเข้าจากหน้าแรกเลย — grep เจอแค่
     // นิยาม route กับกิ่งที่โผล่ตอนถูกบล็อกในแชท สินค้าที่ทำเงินจึงถูกซ่อน
-    const items = [
-      ('ดวงรายวัน', '☀', Routes.horoscope, JuntraColors.gold),
-      ('เชิงลึก', '✧', Routes.deep, JuntraColors.goldLight),
-      ('เลขศาสตร์', '⊛', Routes.numerology, JuntraColors.mintGreen),
-      ('ฤกษ์ยาม', '☼', Routes.auspicious, JuntraColors.cyan),
-      ('ลายมือ', '✋', Routes.palmistry, JuntraColors.purpleBright),
-      ('ปีนักษัตร', '☯', Routes.thaiZodiac, JuntraColors.cyan),
-    ];
-    // 6 หมวดใน Row เดียวจะบีบจนตัวอักษรถูกตัด — ใช้ตาราง 3 คอลัมน์แทน
+    final items = [
+      ('ดวงรายวัน', '☀', Routes.horoscope, JuntraColors.gold, 'horoscope'),
+      ('เชิงลึก', '✧', Routes.deep, JuntraColors.goldLight, 'deep'),
+      ('เลขศาสตร์', '⊛', Routes.numerology, JuntraColors.mintGreen, 'numerology'),
+      ('ฤกษ์ยาม', '☼', Routes.auspicious, JuntraColors.cyan, 'auspicious'),
+      ('ลายมือ', '✋', Routes.palmistry, JuntraColors.purpleBright, 'palmistry'),
+      ('ปีนักษัตร', '☯', Routes.thaiZodiac, JuntraColors.cyan, 'horoscope'),
+    ].where((e) => cfg.isOpen(e.$5)).map((e) => (e.$1, e.$2, e.$3, e.$4)).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('บริการดูดวงอื่น ๆ'),
+        const SizedBox(height: 10),
+        _servicesGrid(items),
+      ],
+    );
+  }
+
+  // 6 หมวดใน Row เดียวจะบีบจนตัวอักษรถูกตัด — ใช้ตาราง 3 คอลัมน์แทน
+  Widget _servicesGrid(List<(String, String, String, Color)> items) {
     return LayoutBuilder(builder: (context, c) {
       final tileW = (c.maxWidth - 12) / 3;
       return Wrap(
@@ -723,6 +747,7 @@ class _RecentReadingTile extends StatelessWidget {
     'tarot_decision': ('ทางแยก',      '✧', JuntraColors.purpleBright),
     'tarot_celtic':   ('เซลติกครอส',   '✧', JuntraColors.purpleBright),
     'tarot_year':     ('ดวง 12 เดือน', '☾', JuntraColors.gold),
+    'tarot_kunsai':   ('คุณไสย / โดนของ', '✧', Color(0xFFFFB86B)),
     'numerology':     ('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
     'palmistry':      ('ดูลายมือ',     '✋', JuntraColors.gold),
     'auspicious':     ('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
@@ -732,8 +757,15 @@ class _RecentReadingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final type = reading['type']?.toString() ?? '';
     final meta = _typeMeta[type] ?? ('คำทำนาย', '✦', JuntraColors.gold);
+    // ชื่อจากเซิร์ฟเวอร์ก่อน — แพ็กเกจที่เพิ่มบนเว็บทีหลังจะไม่ขึ้นเป็น "คำทำนาย" เฉย ๆ
+    final serverTitle = reading['title']?.toString() ?? '';
+    final title = serverTitle.isNotEmpty ? serverTitle : meta.$1;
     final id = (reading['id'] as num?)?.toInt();
-    final preview = reading['preview']?.toString() ?? '';
+    final preview = switch (reading['status']?.toString()) {
+      'pending' || 'working' => 'แม่หมอกำลังอ่านไพ่ชุดนี้...',
+      'failed' => 'อ่านไม่สำเร็จ · คืนเครดิตแล้ว',
+      _ => plainPreview(reading['preview']?.toString() ?? ''),
+    };
     final relative = _relativeTime(reading['created_at']?.toString());
 
     return Material(
@@ -768,10 +800,13 @@ class _RecentReadingTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(meta.$1, style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600,
-                          color: JuntraColors.textCream,
-                        )),
+                        Flexible(
+                          child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600,
+                                color: JuntraColors.textCream,
+                              )),
+                        ),
                         if (relative != null) ...[
                           const SizedBox(width: 6),
                           Text('· $relative', style: const TextStyle(

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,40 +10,32 @@ import 'package:intl/intl.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/fortune_repository.dart';
-import '../../shared/data/spreads.dart';
+import '../../core/api/report_repository.dart';
+import '../../core/auth/auth_state.dart';
 import '../../shared/data/tarot_deck.dart';
 import '../../shared/widgets/gold_button.dart';
+import '../../shared/widgets/report_content_sheet.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/tarot_card_widgets.dart';
+import 'reading_sections_view.dart';
 
-/// Screen 5 — Reading detail. Two modes:
+/// Screen 5 — ผลคำทำนาย (`GET /v1/history/readings/{id}`)
 ///
-///   A. **API mode** — when `readingId` is provided, fetch the persisted
-///      reading from `GET /v1/history/readings/{id}` and render the cards
-///      + AI interpretation that the backend (FortuneAiService) produced.
-///      This is the path taken after the shuffle cinematic completes for
-///      supported spreads (tarot_three, tarot_celtic).
+/// ไพ่ที่ซื้อจากแอพรุ่นนี้ใช้ `mode: async` — เซิร์ฟเวอร์ตัดเงินแล้วตอบทันที แม่หมออ่านไพ่
+/// เบื้องหลัง (แพ็กเกจยาว 36-55 วิ) หน้านี้จึงถาม `/status` ทุก 3 วิจนเสร็จ แล้วค่อยดึงผลเต็ม
+/// ไม่สำเร็จ = เซิร์ฟเวอร์คืนเงินแล้ว (TarotReadingFinisher) หน้านี้บอกลูกค้าและรีเฟรชยอด
 ///
-///   B. **Sample mode** — when only `spreadId` is provided and there's no
-///      `readingId`, fall back to the original hand-rolled sample reading
-///      from the design handoff. Used by spreads that don't have backend
-///      support yet (love, year, horseshoe, yes-no) so the cinematic
-///      always lands somewhere.
-///
-/// The "บันทึก" and "คุยต่อกับแม่หมอ" actions sit at the bottom of both
-/// modes — for API mode, share/save will eventually carry the reading id
-/// through; for now they're identical to the legacy buttons.
+/// โหมด "คำทำนายตัวอย่าง" ที่ฝังข้อความไว้ในแอพถูกลบทิ้งแล้ว — แสดงคำทำนายปลอมเหมือนจริง
+/// ขัดนโยบาย Deceptive Behavior ของ Google Play และทุกแพ็กเกจอ่านจากเซิร์ฟเวอร์ได้หมดแล้ว
 class ReadingScreen extends ConsumerWidget {
-  const ReadingScreen({super.key, this.spreadId, this.readingId});
-  final String? spreadId;
+  const ReadingScreen({super.key, this.readingId});
   final int? readingId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (readingId != null) {
-      return _ApiModeReading(readingId: readingId!);
-    }
-    return _SampleModeReading(spreadId: spreadId ?? 'three');
+    final id = readingId;
+    if (id == null) return const _NoReading();
+    return _ApiModeReading(readingId: id);
   }
 }
 
@@ -48,22 +43,111 @@ class ReadingScreen extends ConsumerWidget {
 // API MODE — backed by GET /v1/history/readings/{id}
 // ────────────────────────────────────────────────────────────────────
 
-class _ApiModeReading extends ConsumerWidget {
+class _ApiModeReading extends ConsumerStatefulWidget {
   const _ApiModeReading({required this.readingId});
   final int readingId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(readingDetailProvider(readingId));
+  ConsumerState<_ApiModeReading> createState() => _ApiModeReadingState();
+}
+
+class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
+  /// ถามทุก 3 วิเหมือนหน้าเว็บ — เลิกถามที่ 4 นาที (ตัวกวาดฝั่งเซิร์ฟเวอร์คืนเงินรายการค้างใน ~5-10 นาที)
+  static const _pollEvery = Duration(seconds: 3);
+  static const _giveUpAfter = Duration(minutes: 4);
+
+  Timer? _timer;
+  DateTime? _pollStarted;
+  bool _checking = false;
+  bool _gaveUp = false;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _ensurePolling() {
+    if (_timer != null || _gaveUp) return;
+    _pollStarted ??= DateTime.now();
+    _timer = Timer.periodic(_pollEvery, (_) => _tick());
+  }
+
+  void _stopPolling() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  Future<void> _tick() async {
+    if (_checking || !mounted) return;
+    if (DateTime.now().difference(_pollStarted!) > _giveUpAfter) {
+      _stopPolling();
+      setState(() => _gaveUp = true);
+      return;
+    }
+    _checking = true;
+    try {
+      final repo = await ref.read(fortuneRepositoryProvider.future);
+      final status = await repo.readingStatus(widget.readingId);
+      if (!mounted) return;
+      if (status == 'done' || status == 'failed') {
+        _stopPolling();
+        ref.invalidate(readingDetailProvider(widget.readingId));
+        ref.invalidate(fortuneHistoryProvider);
+        // ไม่สำเร็จ = เซิร์ฟเวอร์คืนเครดิตแล้ว — ยอดบนหน้าแรก/วอลเลตต้องกลับมาทันที
+        if (status == 'failed') {
+          // ignore: unawaited_futures
+          ref.read(authControllerProvider.notifier).refresh();
+        }
+      }
+    } catch (_) {
+      // สัญญาณหลุดชั่วคราว — รอบถัดไปถามใหม่
+    } finally {
+      _checking = false;
+    }
+  }
+
+  Future<void> _retryAfterGiveUp() async {
+    setState(() {
+      _gaveUp = false;
+      _pollStarted = DateTime.now();
+    });
+    ref.invalidate(readingDetailProvider(widget.readingId));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(readingDetailProvider(widget.readingId));
     return Scaffold(
       body: Stack(
         children: [
           const StarryBackground(density: 60, intensity: 0.7),
           SafeArea(
             child: async.when(
-              loading: () => _loading(),
-              error: (e, _) => _error(context, ref, e),
-              data: (reading) => _detail(context, reading),
+              loading: () => const Column(
+                children: [
+                  _BackHeader(title: 'ผลทำนาย'),
+                  Expanded(
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              error: (e, _) => _error(e),
+              data: (reading) {
+                final status = reading['status']?.toString() ?? 'done';
+                if (status == 'pending' || status == 'working') {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _ensurePolling();
+                  });
+                } else {
+                  _stopPolling();
+                }
+                return _detail(reading, status);
+              },
             ),
           ),
         ],
@@ -71,22 +155,7 @@ class _ApiModeReading extends ConsumerWidget {
     );
   }
 
-  Widget _loading() {
-    return Column(
-      children: [
-        _header(null, null, onBack: null),
-        const Expanded(
-          child: Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _error(BuildContext context, WidgetRef ref, Object e) {
+  Widget _error(Object e) {
     return Column(
       children: [
         const _BackHeader(title: 'ผลทำนาย'),
@@ -97,31 +166,21 @@ class _ApiModeReading extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.cloud_off,
-                      color: JuntraColors.textFaint, size: 48),
+                  const Icon(Icons.cloud_off, color: JuntraColors.textFaint, size: 48),
                   const SizedBox(height: 12),
                   const Text('โหลดผลทำนายไม่สำเร็จ',
-                      style: TextStyle(
-                        fontSize: 14, color: JuntraColors.textCream,
-                        fontWeight: FontWeight.w600,
-                      )),
+                      style: TextStyle(fontSize: 14, color: JuntraColors.textCream, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  Text(
-                    e.toString(),
-                    textAlign: TextAlign.center,
-                    maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11, color: JuntraColors.textFaint,
-                    ),
-                  ),
+                  const Text('ตรวจสอบสัญญาณอินเทอร์เน็ต แล้วลองใหม่อีกครั้ง',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11.5, color: JuntraColors.textFaint)),
                   const SizedBox(height: 16),
                   FilledButton.tonal(
                     style: FilledButton.styleFrom(
                       backgroundColor: JuntraColors.bgPurpleDeep,
                       foregroundColor: JuntraColors.gold,
                     ),
-                    onPressed: () =>
-                        ref.invalidate(readingDetailProvider(readingId)),
+                    onPressed: () => ref.invalidate(readingDetailProvider(widget.readingId)),
                     child: const Text('ลองใหม่'),
                   ),
                 ],
@@ -133,33 +192,49 @@ class _ApiModeReading extends ConsumerWidget {
     );
   }
 
-  Widget _detail(BuildContext context, Map<String, dynamic> reading) {
+  Widget _detail(Map<String, dynamic> reading, String status) {
     final type = reading['type']?.toString() ?? '';
-    final title = _titleFor(type);
+    final title = reading['title']?.toString() ?? _titleFor(type);
     final question = reading['question']?.toString();
     final result = reading['result']?.toString() ?? '';
     final cards = (reading['cards'] is List)
         ? (reading['cards'] as List).whereType<Map>().toList()
         : <Map>[];
-
     final readingId = (reading['id'] as num?)?.toInt();
+    final package = reading['package'] is Map ? Map<String, dynamic>.from(reading['package'] as Map) : null;
+    final sections = reading['sections'] is Map ? Map<String, dynamic>.from(reading['sections'] as Map) : null;
+    final sectionItems = (sections?['ok'] == true && sections?['items'] is List)
+        ? (sections!['items'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList()
+        : const <Map<String, dynamic>>[];
+    final isTarot = type.startsWith('tarot_');
+    final done = status == 'done';
 
     // 🔴 'คำทำนาย N ใบ' ใช้ได้เฉพาะไพ่ — เซิร์ฟเวอร์คืน cards = [] ให้ทุกหมวด
     // ที่ไม่ขึ้นต้นด้วย tarot_ เลขศาสตร์/ลายมือ/ฤกษ์/เชิงลึกจึงขึ้น
     // 'คำทำนาย 0 ใบ' เสมอ ดูเหมือนผลว่างเปล่าทั้งที่คำทำนายมาครบ
-    final subtitle = type.startsWith('tarot_')
+    final subtitle = isTarot
         ? 'คำทำนาย ${cards.length} ใบ'
         : (question != null && question.trim().isNotEmpty
             ? question.trim()
             : _readingDateLabel(reading['created_at']?.toString()));
 
+    final canReport = done && readingId != null && result.trim().isNotEmpty;
+
     return Column(
       children: [
-        _BackHeader(title: title, subtitle: subtitle, readingId: readingId),
+        _BackHeader(
+          title: title,
+          subtitle: subtitle,
+          readingId: done ? readingId : null,
+          onReport: canReport
+              ? () => ReportContentSheet.show(context, subject: ReportSubject.reading, subjectId: readingId)
+              : null,
+        ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
             children: [
+              if (package?['image_url'] is String) _PackageBanner(url: package!['image_url'] as String),
               if (question != null && question.trim().isNotEmpty)
                 _QuestionBubble(question: question),
               const SizedBox(height: 12),
@@ -167,29 +242,29 @@ class _ApiModeReading extends ConsumerWidget {
               // รูปที่ถูกต้อง (เซิร์ฟเวอร์ส่ง image_url เป็น absolute มาให้แล้ว)
               if ((reading['image_url']?.toString() ?? '').isNotEmpty)
                 _PalmPhoto(url: reading['image_url'].toString()),
-              // เลขศาสตร์: เลขชีวิต/เลขนาม/เลขวันเกิด — เว็บโชว์เป็นตัวเลขใหญ่
-              // สามช่อง แอพเคยไม่แสดงเลยเพราะ payload ไม่มีเลขมาก่อน
               if (type == 'numerology') _NumerologyNumbers(payload: reading['payload']),
-              // ฤกษ์ยาม: การ์ดวันมงคลพร้อมคะแนน/ฤกษ์บน/ดิถี/ช่วงเวลา —
-              // เว็บเขียนไว้เองว่า "เป็นเนื้อหาของสินค้า ไม่ใช่ของประดับ"
-              // แต่แอพไม่เคยอ่าน payload เลย ลูกค้าจ่ายเท่ากันได้ของน้อยกว่า
               if (type == 'auspicious') _AuspiciousDays(payload: reading['payload']),
               if (cards.isNotEmpty) _CardsRow(cards: cards),
               const SizedBox(height: 18),
-              ...cards.map((c) => _CardInterpretation(card: c)),
+              if (status == 'pending' || status == 'working')
+                _PendingPanel(gaveUp: _gaveUp, onRetry: _retryAfterGiveUp)
+              else if (status == 'failed')
+                _FailedPanel(spreadKey: package?['key']?.toString())
+              else if (sectionItems.isNotEmpty) ...[
+                ReadingSectionsView(items: sectionItems),
+              ] else ...[
+                ...cards.map((c) => _CardInterpretation(card: c)),
+                const SizedBox(height: 16),
+                _AiSummaryCard(result: result, reading: reading),
+              ],
               const SizedBox(height: 16),
-              _AiSummaryCard(result: result, reading: reading),
-              const SizedBox(height: 16),
-              _ActionRow(readingId: readingId),
+              if (done) _ActionRow(readingId: readingId, isTarot: isTarot),
+              if (canReport) _AiNotice(onReport: () => ReportContentSheet.show(context, subject: ReportSubject.reading, subjectId: readingId)),
             ],
           ),
         ),
       ],
     );
-  }
-
-  Widget _header(String? title, String? subtitle, {VoidCallback? onBack}) {
-    return _BackHeader(title: title ?? 'ผลทำนาย', subtitle: subtitle);
   }
 
   static String _titleFor(String type) {
@@ -201,19 +276,196 @@ class _ApiModeReading extends ConsumerWidget {
       'tarot_decision' => 'ทางแยก / ตัดสินใจ',
       'tarot_celtic'   => 'เซลติกครอส',
       'tarot_year'     => 'พยากรณ์ 12 เดือน',
+      'tarot_kunsai'   => 'ไพ่ดูคุณไสย / โดนของ',
       'numerology'     => 'ดวงเลขศาสตร์',
       'palmistry'      => 'ดูลายมือ',
       'auspicious'     => 'ฤกษ์ยาม',
+      'deep'           => 'ดูดวงเชิงลึก',
       _ => 'คำทำนาย',
     };
   }
 }
 
+/// แม่หมอกำลังอ่านไพ่ (อ่านเบื้องหลัง) — ถามสถานะทุก 3 วิ
+class _PendingPanel extends StatelessWidget {
+  const _PendingPanel({required this.gaveUp, required this.onRetry});
+  final bool gaveUp;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: JuntraColors.mysticHeroGradient,
+        borderRadius: BorderRadius.circular(JuntraRadius.hero),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        children: [
+          if (!gaveUp) ...[
+            const SizedBox(
+              width: 44, height: 44,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: JuntraColors.gold),
+            ),
+            const SizedBox(height: 16),
+            Text('แม่หมอกำลังอ่านไพ่ของลูก...', style: baiJamjuree(size: 17, color: JuntraColors.gold)),
+            const SizedBox(height: 8),
+            const Text(
+              'แพ็กเกจที่ลึกใช้เวลาราวหนึ่งนาที · ออกจากหน้านี้ได้ คำทำนายจะอยู่ในประวัติเมื่อเสร็จ',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12.5, color: JuntraColors.textLavender, height: 1.6),
+            ),
+          ] else ...[
+            const Icon(Icons.hourglass_bottom_rounded, color: JuntraColors.gold, size: 36),
+            const SizedBox(height: 12),
+            Text('ยังอ่านไม่เสร็จ', style: baiJamjuree(size: 17, color: JuntraColors.gold)),
+            const SizedBox(height: 8),
+            const Text(
+              'ระบบกำลังตรวจสอบให้ ถ้าไม่สำเร็จเครดิตจะคืนเข้าวอลเลตอัตโนมัติภายในไม่กี่นาที',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12.5, color: JuntraColors.textLavender, height: 1.6),
+            ),
+            const SizedBox(height: 14),
+            GhostButton(label: 'ตรวจอีกครั้ง', onPressed: onRetry),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// อ่านไม่สำเร็จ — เซิร์ฟเวอร์คืนเครดิตให้แล้ว
+class _FailedPanel extends StatelessWidget {
+  const _FailedPanel({this.spreadKey});
+  final String? spreadKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(JuntraRadius.hero),
+        border: Border.all(color: const Color(0xFFFF8FA0).withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFFFF8FA0), size: 36),
+          const SizedBox(height: 12),
+          Text('แม่หมออ่านไพ่ชุดนี้ไม่สำเร็จ', style: baiJamjuree(size: 17, color: JuntraColors.textCream)),
+          const SizedBox(height: 8),
+          const Text(
+            'เครดิตถูกคืนเข้าวอลเลตเรียบร้อยแล้ว ลองเปิดไพ่ใหม่อีกครั้งได้เลยค่ะ',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12.5, color: JuntraColors.textLavender, height: 1.6),
+          ),
+          const SizedBox(height: 14),
+          GoldButton(
+            label: 'เปิดไพ่ใหม่',
+            onPressed: () => context.pushReplacement(
+              spreadKey == null ? Routes.spreads : '${Routes.shuffle}?spread=$spreadKey',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PackageBanner extends StatelessWidget {
+  const _PackageBanner({required this.url});
+  final String url;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(JuntraRadius.card),
+        child: AspectRatio(
+          aspectRatio: 16 / 7,
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// เนื้อหาสร้างโดย AI + ทางรายงาน (Google Play: AI-Generated Content policy)
+class _AiNotice extends StatelessWidget {
+  const _AiNotice({required this.onReport});
+  final VoidCallback onReport;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'คำทำนายสร้างโดย AI เพื่อความบันเทิงและเป็นแนวทางไตร่ตรอง ไม่ใช่คำแนะนำทางการแพทย์ กฎหมาย หรือการเงิน',
+              style: TextStyle(fontSize: 10.5, color: JuntraColors.textFaint, height: 1.5),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onReport,
+            icon: const Icon(Icons.flag_outlined, size: 14),
+            label: const Text('รายงาน', style: TextStyle(fontSize: 11.5)),
+            style: TextButton.styleFrom(foregroundColor: JuntraColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoReading extends StatelessWidget {
+  const _NoReading();
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          const StarryBackground(density: 60, intensity: 0.7),
+          SafeArea(
+            child: Column(
+              children: [
+                const _BackHeader(title: 'ผลทำนาย'),
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('ไม่พบคำทำนายนี้',
+                              style: TextStyle(fontSize: 15, color: JuntraColors.textCream)),
+                          const SizedBox(height: 16),
+                          GoldButton(label: 'เลือกแพ็กเกจไพ่', onPressed: () => context.go(Routes.spreads)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BackHeader extends StatelessWidget {
-  const _BackHeader({required this.title, this.subtitle, this.readingId});
+  const _BackHeader({required this.title, this.subtitle, this.readingId, this.onReport});
   final int? readingId;
   final String title;
   final String? subtitle;
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -239,12 +491,30 @@ class _BackHeader extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined,
-                color: JuntraColors.purpleBright),
-            onPressed: () => context.push(
-                '${Routes.share}${readingId == null ? '' : '?id=$readingId'}'),
-          ),
+          if (readingId != null)
+            IconButton(
+              icon: const Icon(Icons.share_outlined,
+                  color: JuntraColors.purpleBright),
+              onPressed: () => context.push('${Routes.share}?id=$readingId'),
+            ),
+          if (onReport != null)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: JuntraColors.purpleBright),
+              color: JuntraColors.bgPurpleDeep,
+              onSelected: (_) => onReport!(),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'report',
+                  child: Row(
+                    children: [
+                      Icon(Icons.flag_outlined, color: JuntraColors.textMuted, size: 18),
+                      SizedBox(width: 10),
+                      Text('รายงานคำทำนายนี้', style: TextStyle(color: JuntraColors.textCream)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -269,7 +539,7 @@ class _QuestionBubble extends StatelessWidget {
         children: [
           const Text('คำถามของลูก',
               style: TextStyle(
-                fontSize: 10, letterSpacing: 2,
+                fontSize: 10,
                 color: JuntraColors.gold, fontWeight: FontWeight.w600,
               )),
           const SizedBox(height: 4),
@@ -417,7 +687,7 @@ class _CardInterpretation extends StatelessWidget {
           Row(
             children: [
               Text(positionLabel.toUpperCase(), style: const TextStyle(
-                fontSize: 10, letterSpacing: 2,
+                fontSize: 10,
                 color: JuntraColors.gold, fontWeight: FontWeight.w600,
               )),
               const SizedBox(width: 8),
@@ -521,8 +791,9 @@ class _AiSummaryCard extends StatelessWidget {
 }
 
 class _ActionRow extends StatelessWidget {
-  const _ActionRow({this.readingId});
+  const _ActionRow({this.readingId, this.isTarot = false});
   final int? readingId;
+  final bool isTarot;
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -540,171 +811,18 @@ class _ActionRow extends StatelessWidget {
           child: GoldButton(
             label: 'คุยต่อกับแม่หมอ',
             icon: const Icon(Icons.chat_bubble_outline),
-            onPressed: () => context.push(Routes.chat),
+            // ไพ่ที่จ่ายแล้ว: เปิดห้องที่แม่หมอเห็นไพ่+คำพยากรณ์ชุดนี้ (เหมือนเว็บ)
+            // เดิมเปิดแชทเปล่า ลูกค้าต้องเล่าไพ่ใหม่ทั้งหมด
+            onPressed: () => context.push(
+              isTarot && readingId != null
+                  ? '${Routes.chat}?reading=$readingId'
+                  : Routes.chat,
+            ),
           ),
         ),
       ],
     );
   }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// SAMPLE MODE — legacy hand-rolled reading for unsupported spreads
-// ────────────────────────────────────────────────────────────────────
-
-class _SampleModeReading extends StatelessWidget {
-  const _SampleModeReading({required this.spreadId});
-  final String spreadId;
-
-  @override
-  Widget build(BuildContext context) {
-    final spread = spreads.firstWhere(
-      (s) => s.id == spreadId,
-      orElse: () => spreads.first,
-    );
-
-    final picks = <_SamplePick>[
-      _SamplePick(card: tarotDeck[18], position: 'อดีต',
-          reading: 'ในอดีตหัวใจเดินอยู่ในเงาแห่งจันทร์ มีความสับสน '
-              'เรื่องที่ไม่ได้พูดออกมาตรงๆ — สัญชาตญาณกำลังบอกความจริง'),
-      _SamplePick(card: tarotDeck[6], position: 'ปัจจุบัน',
-          reading: 'ปัจจุบันคู่รักได้บรรจบ ดาวพฤหัสและศุกร์ส่องประกายชัดเจน '
-              'ลูกยืนอยู่ที่ทางแยกของหัวใจ — เลือกด้วยความจริงใจ'),
-      _SamplePick(card: tarotDeck[19], position: 'อนาคต',
-          reading: 'อนาคตสว่างไสวดั่งดวงตะวัน ความสัมพันธ์จะเบ่งบาน เปิดเผย '
-              'มั่นคง — แม่หมอเห็นแสงทองของลูกชัดเจนค่ะ'),
-    ];
-
-    return Scaffold(
-      body: Stack(
-        children: [
-          const StarryBackground(density: 60, intensity: 0.7),
-          SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left,
-                          color: JuntraColors.gold, size: 28),
-                      onPressed: () =>
-                          context.canPop() ? context.pop() : context.go(Routes.home),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(spread.name, style: baiJamjuree(size: 18)),
-                          Text('คำทำนาย ${spread.cards} ใบ',
-                              style: const TextStyle(
-                                fontSize: 11, color: JuntraColors.textFaint,
-                              )),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.share_outlined,
-                          color: JuntraColors.purpleBright),
-                      onPressed: () => context.push(Routes.share),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: picks.map((p) => Column(
-                    children: [
-                      CardFront(card: p.card, width: 88, height: 145),
-                      const SizedBox(height: 6),
-                      Text(p.position, style: const TextStyle(
-                        fontSize: 11, color: JuntraColors.gold,
-                        fontWeight: FontWeight.w600,
-                      )),
-                    ],
-                  )).toList(),
-                ),
-                const SizedBox(height: 18),
-                for (final p in picks) Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(JuntraRadius.card),
-                    border: Border.all(
-                      color: JuntraColors.purple.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(p.position, style: const TextStyle(
-                            fontSize: 10, letterSpacing: 2,
-                            color: JuntraColors.gold,
-                            fontWeight: FontWeight.w600,
-                          )),
-                          const SizedBox(width: 8),
-                          Text('· ${p.card.thai}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: JuntraColors.textCream,
-                              )),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(p.reading, style: const TextStyle(
-                        fontSize: 13, color: JuntraColors.textLavender,
-                        height: 1.6,
-                      )),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: JuntraColors.mysticHeroGradient,
-                    borderRadius: BorderRadius.circular(JuntraRadius.hero),
-                    border: Border.all(
-                      color: JuntraColors.gold.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('สรุปคำทำนาย', style: baiJamjuree(size: 16)),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'ดวงความรักของลูกในช่วงนี้กำลังก้าวจากเงาสู่แสง '
-                        'อย่ากลัวที่จะเปิดใจ ให้ความจริงนำทาง แล้วทุกสิ่งจะเข้าที่อย่างงดงาม ✨',
-                        style: TextStyle(
-                          fontSize: 13, color: JuntraColors.textLavender,
-                          height: 1.65,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const _ActionRow(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SamplePick {
-  _SamplePick({
-    required this.card, required this.position, required this.reading,
-  });
-  final TarotCard card;
-  final String position;
-  final String reading;
 }
 
 // ────────────────────────────────────────────────────────────────────

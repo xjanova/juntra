@@ -16,6 +16,7 @@ import '../features/numerology/numerology_screen.dart';
 import '../features/palmistry/palmistry_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/reading/reading_screen.dart';
+import '../features/settings/delete_account_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/horoscope/thai_zodiac_screen.dart';
 import '../features/share/share_screen.dart';
@@ -24,6 +25,7 @@ import '../features/splash/splash_screen.dart';
 import '../features/spreads/spreads_screen.dart';
 import '../features/wallet/transactions_screen.dart';
 import '../features/wallet/wallet_screen.dart';
+import '../shared/widgets/service_gate.dart';
 
 /// Root navigator key — required by [UpdateObserver] so the update dialog
 /// can attach to a Navigator that exists ABOVE the router builder. See
@@ -58,6 +60,8 @@ class Routes {
   static const wallet = '/wallet';
   static const transactions = '/transactions';
   static const settings = '/settings';
+  /// ลบบัญชีและข้อมูลในแอพ (Google Play บังคับให้มีทางลบบัญชีในแอพ)
+  static const deleteAccount = '/delete-account';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -79,23 +83,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (c, s) => ShuffleScreen(
           spreadId: s.uri.queryParameters['spread'] ?? 'three',
           categoryId: s.uri.queryParameters['category'],
+          // คำถามที่ลูกค้าพิมพ์ในแชทตอนแม่หมอยื่นแพ็กเกจ — ไม่ต้องพิมพ์ซ้ำ
+          initialQuestion: s.uri.queryParameters['q'],
         ),
       ),
       GoRoute(
         path: Routes.reading,
         builder: (c, s) {
-          // After-shuffle path: `?id=<readingId>` → fetch from API.
-          // Unsupported-spread / direct nav path: `?spread=<id>` →
-          // legacy hand-rolled sample reading. ReadingScreen branches
-          // internally based on which is present.
-          final idStr = s.uri.queryParameters['id'];
-          final id = idStr == null ? null : int.tryParse(idStr);
-          return ReadingScreen(
-            readingId: id,
-            spreadId: id == null
-                ? (s.uri.queryParameters['spread'] ?? 'three')
-                : null,
-          );
+          // `?id=<readingId>` → คำทำนายจากเซิร์ฟเวอร์ (หน้าผลถามสถานะเองถ้ายังอ่านไม่เสร็จ)
+          // ไม่มี id = ไม่มีอะไรให้แสดง (โหมดคำทำนายตัวอย่างถูกลบแล้ว)
+          final id = int.tryParse(s.uri.queryParameters['id'] ?? '');
+          return ReadingScreen(readingId: id);
         },
       ),
       GoRoute(
@@ -105,28 +103,32 @@ final routerProvider = Provider<GoRouter>((ref) {
           // starts a fresh one. ChatScreen branches in _bootstrap().
           final idStr = s.uri.queryParameters['id'];
           final id = idStr == null ? null : int.tryParse(idStr);
-          return ChatScreen(resumeConversationId: id);
+          // `?reading=N` = คุยต่อจากคำทำนายไพ่ใบนั้น (แม่หมอเห็นไพ่+คำพยากรณ์ชุดนั้น)
+          final readingId = int.tryParse(s.uri.queryParameters['reading'] ?? '');
+          return ChatScreen(resumeConversationId: id, fromReadingId: readingId);
         },
       ),
       GoRoute(
         path: Routes.chatConversations,
         builder: (c, s) => const ConversationListScreen(),
       ),
-      GoRoute(path: Routes.numerology, builder: (c, s) => const NumerologyScreen()),
-      GoRoute(path: Routes.auspicious, builder: (c, s) => const AuspiciousScreen()),
-      GoRoute(path: Routes.palmistry, builder: (c, s) => const PalmistryScreen()),
+      GoRoute(path: Routes.numerology, builder: (c, s) => const ServiceGate(service: 'numerology', name: 'ดวงเลขศาสตร์', child: NumerologyScreen())),
+      GoRoute(path: Routes.auspicious, builder: (c, s) => const ServiceGate(service: 'auspicious', name: 'หาฤกษ์ยาม', child: AuspiciousScreen())),
+      GoRoute(path: Routes.palmistry, builder: (c, s) => const ServiceGate(service: 'palmistry', name: 'ดูลายมือ', child: PalmistryScreen())),
       GoRoute(
         path: Routes.horoscope,
-        builder: (c, s) => HoroscopeScreen(
-          initialSlug: s.uri.queryParameters['sign'],
+        builder: (c, s) => ServiceGate(
+          service: 'horoscope',
+          name: 'ดวงรายวัน',
+          child: HoroscopeScreen(initialSlug: s.uri.queryParameters['sign']),
         ),
       ),
-      GoRoute(path: Routes.deep, builder: (c, s) => const DeepScreen()),
+      GoRoute(path: Routes.deep, builder: (c, s) => const ServiceGate(service: 'deep', name: 'ดูดวงเชิงลึก', child: DeepScreen())),
       GoRoute(path: Routes.history, builder: (c, s) => const HistoryScreen()),
       GoRoute(path: Routes.profile, builder: (c, s) => const ProfileScreen()),
       GoRoute(path: Routes.natal, builder: (c, s) => const NatalScreen()),
       GoRoute(path: Routes.affiliate, builder: (c, s) => const AffiliateScreen()),
-      GoRoute(path: Routes.thaiZodiac, builder: (c, s) => const ThaiZodiacScreen()),
+      GoRoute(path: Routes.thaiZodiac, builder: (c, s) => const ServiceGate(service: 'horoscope', name: 'ดวงปีนักษัตร', child: ThaiZodiacScreen())),
       GoRoute(
         path: Routes.share,
         // ส่ง id ของคำทำนายไปด้วย ลิงก์ที่แชร์จะได้พาไปหน้าผลจริง
@@ -139,6 +141,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.wallet, builder: (c, s) => const WalletScreen()),
       GoRoute(path: Routes.transactions, builder: (c, s) => const TransactionsScreen()),
       GoRoute(path: Routes.settings, builder: (c, s) => const SettingsScreen()),
+      GoRoute(path: Routes.deleteAccount, builder: (c, s) => const DeleteAccountScreen()),
     ],
   );
 });

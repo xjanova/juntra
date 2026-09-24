@@ -10,6 +10,7 @@ import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/wallet_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/api/idempotency.dart';
 
 /// เติมเครดิตจบในแชท — สแกน QR จ่ายครั้งเดียวเหมือนบอท FB/LINE
 ///
@@ -44,6 +45,10 @@ class ChatTopUpSheet extends ConsumerStatefulWidget {
 class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
   static const _bundles = [50, 100, 200, 500];
 
+  /// กันสร้างรายการเติมเงินซ้ำเมื่อสัญญาณหลุดแล้วแอพ/ผู้ใช้ส่งซ้ำ — ผูกกับยอดที่กด
+  /// (เดิมหน้านี้ไม่ส่งคีย์เลย ต่างจากหน้าวอลเลต)
+  final _attempt = IdempotentAttempt('chat-topup');
+
   int? _txId;
   double? _payable;
   String? _qrPayload;
@@ -73,7 +78,11 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
 
     try {
       final repo = await ref.read(walletRepositoryProvider.future);
-      final res = await repo.startPromptPayTopup(amount: amount.toDouble());
+      final res = await repo.startPromptPayTopup(
+        amount: amount.toDouble(),
+        idempotencyKey: _attempt.begin('$amount'),
+      );
+      _attempt.succeeded();
       if (!mounted) return;
 
       // อ่านจากชั้นที่ backend ส่งมาจริง — เคยพลาดตรงนี้มาแล้ว (อ่าน top-level

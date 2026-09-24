@@ -121,9 +121,37 @@ class AuthController extends StateNotifier<AuthState> {
       final api = await _ref.read(apiClientProvider.future);
       final me = await api.get<Map<String, dynamic>>(Api.authMe);
       state = _userToState(_unwrap(me));
+    } on ApiException catch (e) {
+      // 401 = โทเคนถูกเพิกถอน (ลบบัญชี/เปลี่ยนรหัสจากเครื่องอื่น) — ApiClient ล้าง token
+      // ให้แล้ว ถ้าคงสถานะเดิมไว้ หน้าจอยังโชว์ชื่อ/ยอดเครดิตทั้งที่ทุกคำขอต่อไปจะ 401
+      if (e.statusCode == 401) state = const AuthGuest();
     } catch (_) {
       // Keep prior state — don't kick the user to guest on a transient error.
     }
+  }
+
+  /// เปลี่ยนรหัสผ่านในแอพ — เซิร์ฟเวอร์เพิกถอนทุกเครื่องยกเว้นเครื่องนี้
+  /// Throws [ApiException] (422 รหัสเดิมผิด/รหัสใหม่ไม่ผ่าน) ให้หน้าจอแสดงข้อความ
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmation,
+  }) async {
+    final api = await _ref.read(apiClientProvider.future);
+    await api.put<Map<String, dynamic>>(Api.authPassword, data: {
+      'current_password': currentPassword,
+      'password': newPassword,
+      'password_confirmation': confirmation,
+    });
+  }
+
+  /// ลบบัญชีและข้อมูลส่วนตัวถาวร (ยืนยันด้วยรหัสผ่าน) แล้วกลับเป็นแขก
+  /// Throws [ApiException] 422 เมื่อรหัสผ่านผิด — บัญชียังอยู่ครบ
+  Future<void> deleteAccount({required String password}) async {
+    final api = await _ref.read(apiClientProvider.future);
+    await api.post<Map<String, dynamic>>(Api.accountDelete, data: {'password': password});
+    await api.clearToken();
+    state = const AuthGuest();
   }
 
   /// เข้าสู่ระบบด้วย **อีเมลหรือเบอร์โทร** — ต้องรับได้ทั้งคู่เหมือนฝั่งเว็บ

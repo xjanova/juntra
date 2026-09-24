@@ -3,7 +3,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
@@ -11,49 +10,32 @@ import '../../core/api/tarot_catalog_repository.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/xman_studio_footer.dart';
 import '../update/check_for_update.dart';
-
-/// Shared-preferences key for the notification opt-in. Read by the push
-/// layer once it exists; persisted here so the choice survives reinstalls
-/// of the widget tree.
-const kPrefNotificationsEnabled = 'juntra_notifications_enabled';
+import '../../core/api/app_config_repository.dart';
+import '../../core/app_channel.dart';
+import '../../core/auth/auth_state.dart';
+import '../../core/auth/thaiprompt_link.dart';
+import 'change_password_sheet.dart';
 
 /// Screen — Settings. Only exposes controls that actually do something:
-/// a persisted notifications toggle, a real update check, and honest
-/// (locked) language/theme info — the app ships Thai + dark only for now,
-/// so those are shown as facts, not fake switches.
-class SettingsScreen extends ConsumerStatefulWidget {
+/// account actions (in-app password change + account deletion — Google Play
+/// requires deletion inside the app), the legal pages every store listing
+/// links to, a real update check, and honest (locked) language/theme info.
+///
+/// The old notifications switch was removed: it saved a preference nothing
+/// ever read (the app has no push layer), so it only pretended to work.
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
-  @override
-  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _notifications = true;
-  bool _loaded = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
+    final cfg = ref.watch(appConfigValueProvider);
+    final authed = auth is AuthAuthenticated;
+    final linked = auth is AuthAuthenticated && auth.thaipromptLinked;
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _notifications = prefs.getBool(kPrefNotificationsEnabled) ?? true;
-      _loaded = true;
-    });
-  }
+    Future<void> open(String url) =>
+        launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
-  Future<void> _setNotifications(bool v) async {
-    setState(() => _notifications = v); // optimistic
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(kPrefNotificationsEnabled, v);
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
@@ -64,17 +46,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 const _Header(),
                 const SizedBox(height: 12),
-                const _SectionLabel('การใช้งาน'),
-                _SwitchTile(
-                  icon: Icons.notifications_outlined,
-                  iconColor: JuntraColors.gold,
-                  title: 'การแจ้งเตือน',
-                  subtitle: 'ข่าวสาร โปรโมชั่น และดวงประจำวัน',
-                  value: _notifications,
-                  enabled: _loaded,
-                  onChanged: _setNotifications,
-                ),
-                const SizedBox(height: 14),
                 const _SectionLabel('การแสดงผล'),
                 const _InfoTile(
                   icon: Icons.language_outlined,
@@ -88,41 +59,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: 'ธีม',
                   value: 'มืด',
                 ),
+                if (authed) ...[
+                  const SizedBox(height: 14),
+                  const _SectionLabel('บัญชีของลูก'),
+                  _ActionTile(
+                    icon: Icons.password_outlined,
+                    iconColor: JuntraColors.gold,
+                    title: 'เปลี่ยนรหัสผ่าน',
+                    subtitle: 'ออกจากระบบเครื่องอื่นให้อัตโนมัติ',
+                    onTap: () => ChangePasswordSheet.show(context),
+                  ),
+                  if (!linked)
+                    _ActionTile(
+                      icon: Icons.link_outlined,
+                      iconColor: JuntraColors.purpleBright,
+                      title: 'เชื่อมต่อบัญชี Thaiprompt',
+                      subtitle: 'เพื่อใช้ระบบสายงานแนะนำ',
+                      onTap: () async {
+                        final launched = await launchThaipromptLink(context, ref);
+                        // กลับมาจากเบราว์เซอร์แล้วสถานะ "เชื่อมแล้ว" ต้องขึ้นเอง
+                        if (launched) {
+                          // ignore: unawaited_futures
+                          Future<void>.delayed(const Duration(seconds: 3),
+                              () => ref.read(authControllerProvider.notifier).refresh());
+                        }
+                      },
+                    ),
+                  _ActionTile(
+                    icon: Icons.person_remove_outlined,
+                    iconColor: const Color(0xFFFF6B6B),
+                    title: 'ลบบัญชีและข้อมูล',
+                    subtitle: 'ลบถาวรตามสิทธิ์ PDPA · ทำได้ในแอพทันที',
+                    onTap: () => context.push(Routes.deleteAccount),
+                  ),
+                ],
                 const SizedBox(height: 14),
-                const _SectionLabel('บัญชีของลูก'),
-                // 🔴 เว็บมีครบมานานแล้ว (routes/auth.php + ProfileController
-                // ที่ลบข้อมูลตาม PDPA และเพิกถอน Sanctum token ทุกตัว) แต่แอพ
-                // ไม่มีทางเข้าถึงเลย — ลืมรหัสผ่านแล้วติดตายในแอพ และสิทธิ์
-                // ลบข้อมูลตาม PDPA เข้าไม่ถึงจากแอพ
+                const _SectionLabel('ความเป็นส่วนตัวและข้อตกลง'),
                 _ActionTile(
-                  icon: Icons.password_outlined,
+                  icon: Icons.privacy_tip_outlined,
+                  iconColor: JuntraColors.mintGreen,
+                  title: 'นโยบายความเป็นส่วนตัว',
+                  subtitle: 'ข้อมูลที่เราเก็บ และสิทธิ์ของลูกตาม PDPA',
+                  onTap: () => open(cfg.privacyUrl),
+                ),
+                _ActionTile(
+                  icon: Icons.description_outlined,
+                  iconColor: JuntraColors.cyan,
+                  title: 'ข้อตกลงการใช้งาน',
+                  subtitle: 'เงื่อนไขการใช้บริการและเครดิต',
+                  onTap: () => open(cfg.termsUrl),
+                ),
+                _ActionTile(
+                  icon: Icons.mail_outline_rounded,
                   iconColor: JuntraColors.gold,
-                  title: 'เปลี่ยนรหัสผ่าน',
-                  subtitle: 'เปิดหน้าบัญชีบนเว็บ',
-                  onTap: () => launchUrl(
-                    Uri.parse('https://xn--82c4af5bzdj.online/profile'),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                ),
-                _ActionTile(
-                  icon: Icons.link_outlined,
-                  iconColor: JuntraColors.purpleBright,
-                  title: 'เชื่อมต่อบัญชี Thaiprompt',
-                  subtitle: 'เพื่อใช้ระบบสายงานและคำทำนายเต็มรูปแบบ',
-                  onTap: () => launchUrl(
-                    Uri.parse('https://xn--82c4af5bzdj.online/auth/thaiprompt/redirect'),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                ),
-                _ActionTile(
-                  icon: Icons.person_remove_outlined,
-                  iconColor: const Color(0xFFFF6B6B),
-                  title: 'ลบบัญชีและข้อมูล',
-                  subtitle: 'ตามสิทธิ์ PDPA · ทำบนเว็บเพื่อยืนยันตัวตน',
-                  onTap: () => launchUrl(
-                    Uri.parse('https://xn--82c4af5bzdj.online/profile'),
-                    mode: LaunchMode.externalApplication,
-                  ),
+                  title: 'ติดต่อเรา',
+                  subtitle: cfg.supportEmailDisplay,
+                  onTap: () => launchUrl(Uri(scheme: 'mailto', path: cfg.supportEmail)),
                 ),
                 const SizedBox(height: 14),
                 const _SectionLabel('เกี่ยวกับ'),
@@ -130,7 +122,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.system_update_outlined,
                   iconColor: JuntraColors.mintGreen,
                   title: 'ตรวจสอบอัปเดต',
-                  subtitle: 'อัปเดตให้ทันสมัยอยู่เสมอ',
+                  subtitle: isPlayChannel ? 'อัปเดตผ่าน Google Play' : 'อัปเดตให้ทันสมัยอยู่เสมอ',
                   onTap: () => runManualUpdateCheck(context, ref),
                 ),
                 const _VersionTile(),
@@ -172,7 +164,7 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(text,
           style: const TextStyle(
-            fontSize: 11, letterSpacing: 1.8,
+            fontSize: 11,
             color: JuntraColors.textFaint, fontWeight: FontWeight.w600,
           )),
     );
@@ -211,52 +203,6 @@ class _LeadingIcon extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Icon(icon, color: color, size: 20),
-    );
-  }
-}
-
-class _SwitchTile extends StatelessWidget {
-  const _SwitchTile({
-    required this.icon, required this.iconColor,
-    required this.title, required this.subtitle,
-    required this.value, required this.enabled, required this.onChanged,
-  });
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-  @override
-  Widget build(BuildContext context) {
-    return _TileShell(
-      child: Row(
-        children: [
-          _LeadingIcon(icon: icon, color: iconColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w600,
-                  color: JuntraColors.textCream,
-                )),
-                const SizedBox(height: 2),
-                Text(subtitle, style: const TextStyle(
-                  fontSize: 11, color: JuntraColors.textMuted,
-                )),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: enabled ? onChanged : null,
-            activeTrackColor: JuntraColors.gold,
-          ),
-        ],
-      ),
     );
   }
 }

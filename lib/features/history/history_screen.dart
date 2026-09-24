@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../shared/format/plain_preview.dart';
 import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/starry_background.dart';
 
@@ -34,6 +35,7 @@ const Map<String, _TypeMeta> _typeMeta = {
   'tarot_decision': _TypeMeta('ทางแยก',      '✧', JuntraColors.purpleBright),
   'tarot_celtic':   _TypeMeta('เซลติกครอส',   '✧', JuntraColors.purpleBright),
   'tarot_year':     _TypeMeta('ดวง 12 เดือน', '☾', JuntraColors.gold),
+  'tarot_kunsai':   _TypeMeta('คุณไสย / โดนของ', '✧', Color(0xFFFFB86B)),
   'numerology':     _TypeMeta('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
   'palmistry':      _TypeMeta('ดูลายมือ',     '✋', JuntraColors.gold),
   'auspicious':     _TypeMeta('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
@@ -236,7 +238,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 backgroundColor: JuntraColors.bgPurpleDeep,
                 foregroundColor: JuntraColors.gold,
               ),
-              onPressed: () => ref.invalidate(fortuneHistoryProvider),
+              onPressed: () => ref.invalidate(historyPageProvider(_filter)),
               child: const Text('ลองใหม่'),
             ),
           ],
@@ -407,7 +409,13 @@ class _ReadingTile extends StatelessWidget {
     final type = reading['type']?.toString() ?? '';
     final meta = _typeMeta[type] ?? const _TypeMeta('คำทำนาย', '✦', JuntraColors.gold);
     final id = (reading['id'] as num?)?.toInt();
-    final preview = reading['preview']?.toString() ?? '';
+    final status = reading['status']?.toString() ?? 'done';
+    // แม่หมอยังอ่านอยู่ (ซื้อแบบอ่านเบื้องหลัง) = ยังไม่มีข้อความตัวอย่าง — บอกสถานะแทนช่องว่าง
+    final preview = switch (status) {
+      'pending' || 'working' => 'แม่หมอกำลังอ่านไพ่ชุดนี้...',
+      'failed' => 'อ่านไม่สำเร็จ · คืนเครดิตแล้ว',
+      _ => plainPreview(reading['preview']?.toString() ?? ''),
+    };
     final relative = _relativeTime(reading['created_at']?.toString());
 
     return Container(
@@ -444,7 +452,7 @@ class _ReadingTile extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(meta.label,
+                            child: Text(reading['title']?.toString() ?? meta.label,
                                 style: const TextStyle(
                                   fontSize: 13, fontWeight: FontWeight.w600,
                                   color: JuntraColors.textCream,

@@ -496,7 +496,7 @@ class _EarningsHero extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('รายได้สะสม', style: TextStyle(
-            fontSize: 10, letterSpacing: 2.4,
+            fontSize: 10,
             color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
           )),
           const SizedBox(height: 6),

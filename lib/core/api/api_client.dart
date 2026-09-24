@@ -95,7 +95,18 @@ class ApiClient {
       // ชน rate limit ฝั่งเซิร์ฟเวอร์ (throttle:auth-login) โดยผู้ใช้ไม่รู้ตัว
       retryEvaluator: (error, attempt) {
         final path = error.requestOptions.path;
-        if (path.startsWith('/v1/auth/')) return false;
+        if (path.startsWith('/v1/auth/') || path.startsWith('/v1/account/')) return false;
+        // 🔴 คำขอที่เปลี่ยนข้อมูล/ตัดเงิน (POST/PUT/DELETE) retry ได้เฉพาะตอนที่
+        // "คำขอไม่ได้ออกจากเครื่อง" (ต่อเซิร์ฟเวอร์ไม่ติด) — ของเดิม retry ทั้ง timeout และ
+        // 5xx ด้วย: 503 reading_failed (คืนเงินแล้ว) ถูกยิงซ้ำเป็นการตัดเงิน+เรียก AI
+        // รอบใหม่ทันทีโดยผู้ใช้ไม่ได้กด และ timeout ที่คำขอถึงเซิร์ฟเวอร์ไปแล้วก็ถูกยิงซ้ำ
+        // ให้ผู้ใช้กด "ลองใหม่" เอง (ด้วย Idempotency-Key เดิม) ปลอดภัยกว่า
+        final method = error.requestOptions.method.toUpperCase();
+        if (method != 'GET' && method != 'HEAD') {
+          final notSent = error.type == DioExceptionType.connectionError ||
+              error.type == DioExceptionType.connectionTimeout;
+          if (!notSent) return false;
+        }
         return DefaultRetryEvaluator(defaultRetryableStatuses).evaluate(error, attempt);
       },
     ));
@@ -153,6 +164,15 @@ class ApiClient {
             ? null
             : Options(headers: {'Idempotency-Key': idempotencyKey}),
       );
+      return _decode<T>(res);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<T> put<T>(String path, {dynamic data, Map<String, dynamic>? query}) async {
+    try {
+      final res = await dio.put(path, data: data, queryParameters: query);
       return _decode<T>(res);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);

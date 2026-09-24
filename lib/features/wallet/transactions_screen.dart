@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/wallet_repository.dart';
 import '../../shared/widgets/starry_background.dart';
+import '../../shared/format/credits.dart';
 
 /// Full wallet history — cursor-paginated `/v1/wallet/transactions` (the
 /// wallet screen only shows the last 10). Read-only.
@@ -147,7 +148,7 @@ class _TxRow extends StatelessWidget {
     final isPositive = amount >= 0;
     final type = tx['type']?.toString() ?? '';
     final status = tx['status']?.toString() ?? 'success';
-    final desc = tx['description']?.toString() ?? '';
+    final desc = walletTxLabel(tx['description']?.toString() ?? '');
     final created = tx['created_at']?.toString() ?? '';
 
     return Container(
@@ -186,7 +187,7 @@ class _TxRow extends StatelessWidget {
               ],
             ),
           ),
-          Text('${isPositive ? '+' : ''}฿${amount.toStringAsFixed(2)}',
+          Text(formatCreditsSigned(amount),
               style: TextStyle(
                 fontSize: 14, fontWeight: FontWeight.w700,
                 color: isPositive ? JuntraColors.mintGreen : JuntraColors.purpleBright,

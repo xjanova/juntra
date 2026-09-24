@@ -12,6 +12,8 @@ import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/xman_studio_footer.dart';
 import '../update/check_for_update.dart';
+import '../../shared/format/avatar_initial.dart';
+import '../../shared/format/credits.dart';
 
 /// Screen 9 — Profile. Real identity from [authControllerProvider]
 /// (name / email / wallet credit / Thaiprompt link), live menu navigation,
@@ -77,7 +79,7 @@ class ProfileScreen extends ConsumerWidget {
                   icon: Icons.settings_outlined,
                   iconColor: JuntraColors.textMuted,
                   title: 'ตั้งค่า',
-                  subtitle: 'การแจ้งเตือน · ภาษา · ธีม',
+                  subtitle: 'บัญชี · รหัสผ่าน · ความเป็นส่วนตัว · ลบบัญชี',
                   onTap: () => context.push(Routes.settings),
                 ),
                 _MenuCard(
@@ -206,9 +208,7 @@ class _AccountBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = displayName.trim().isEmpty
-        ? '?'
-        : displayName.trim().substring(0, 1);
+    final initial = avatarInitial(displayName);
     final symbol = currency == 'THB' ? '฿' : currency;
     return Column(
       children: [
@@ -243,7 +243,7 @@ class _AccountBlock extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 color: linked ? JuntraColors.mintGreen : JuntraColors.gold,
-                fontWeight: FontWeight.w700, letterSpacing: 1.2,
+                fontWeight: FontWeight.w700,
               )),
         ),
         const SizedBox(height: 16),
@@ -269,7 +269,9 @@ class _AccountBlock extends StatelessWidget {
                 Text(
                   balance == null
                       ? '—'
-                      : '$symbol${NumberFormat.decimalPattern('th').format(balance)}',
+                      : (currency == 'THB'
+                          ? formatCredits(balance!)
+                          : '$symbol${NumberFormat.decimalPattern('th').format(balance)}'),
                   style: baiJamjuree(size: 20, color: JuntraColors.gold),
                 ),
                 const Icon(Icons.chevron_right, color: JuntraColors.gold),

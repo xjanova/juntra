@@ -102,7 +102,7 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
               const Text(
                 '✨ มีเวอร์ชันใหม่',
                 style: TextStyle(
-                  fontSize: 10, letterSpacing: 4,
+                  fontSize: 10,
                   color: JuntraColors.gold, fontWeight: FontWeight.w600,
                 ),
                 textAlign: TextAlign.center,

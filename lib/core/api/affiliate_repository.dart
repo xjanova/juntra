@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_client.dart';
 import 'api_exceptions.dart';
 import 'endpoints.dart';
+import '../auth/session.dart';
 
 /// MLM affiliate dashboard — wraps `/v1/mlm/*` which proxies to the
 /// upstream Thaiprompt-Affiliate API via the user's thaiprompt_token.
@@ -137,6 +138,7 @@ final affiliateRepositoryProvider = FutureProvider<AffiliateRepository>((ref) as
 /// without two more pointless 403s. Tree + commissions run in parallel
 /// once we know we're linked.
 final affiliateBundleProvider = FutureProvider<MlmResult>((ref) async {
+  ref.watch(sessionUserIdProvider); // ข้อมูลส่วนตัว — ล้างทิ้งเมื่อสลับผู้ใช้
   final repo = await ref.watch(affiliateRepositoryProvider.future);
 
   final statsResult = await repo.stats();

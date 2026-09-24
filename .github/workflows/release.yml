@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v0.1.0+1)'
+        description: 'Tag to release (e.g. v0.5.0+5000)'
         required: true
 
 jobs:
@@ -14,6 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      # Optional: a Google Play service-account key (JSON) with "Release apps
+      # to testing tracks" permission in Play Console. When set, the App Bundle
+      # is uploaded to the internal testing track as a DRAFT — nothing reaches
+      # users until someone rolls it out in Play Console. See docs/GOOGLE_PLAY.md.
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,9 +49,7 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
           # Gradle resolves storeFile relative to android/app/ (where the
           # module build.gradle.kts lives), so we must point to ../ to
-          # find the keystore at android/upload-keystore.jks. Local devs
-          # who keep the .jks at android/ + run from the project root see
-          # the same resolution path.
+          # find the keystore at android/upload-keystore.jks.
           cat > android/key.properties <<EOF
           storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -53,51 +57,68 @@ jobs:
           storeFile=../upload-keystore.jks
           EOF
 
-      # We tolerate info + warnings in CI — they're style hints, not bugs,
-      # and fixing them all would balloon this commit. Errors still fail.
+      # A release must never be signed with the debug key (it changes per
+      # machine → installed apps could not be updated, and Play rejects it).
+      - name: Require the release keystore
+        run: |
+          if [ ! -f android/key.properties ]; then
+            echo "::error::ANDROID_KEYSTORE_* secrets are missing — refusing to build a debug-signed release"
+            exit 1
+          fi
+
       - run: flutter analyze --no-fatal-infos --no-fatal-warnings
-      - run: flutter test || echo "no tests yet"
+      - run: flutter test
 
-      # We split the build into TWO gradle invocations with `flutter clean`
-      # between them. AGP can't share its shrinkResources output between
-      # split-per-abi APKs and a universal APK in one run — conflict
-      # produces "Multiple shrunk-resources files found" failures
-      # (https://issuetracker.google.com/402800800).
-      #
-      # AAB (Play Store bundle) hits the same issue against any APK build,
-      # so we defer it until the app graduates to Play Store; for now,
-      # GitHub Releases delivers APKs and the in-app UpdateService picks
-      # the universal asset.
-      # No --dart-define for the API base: the app connects to จันทรา.online
-      # ONLY, which is the compiled-in default (ApiClient._kApiBase). Letting
-      # the default apply keeps release identical to debug and avoids piping a
-      # non-ASCII (Thai IDN) host through the CI shell. (Earlier releases wrongly
-      # pointed at main.thaiprompt.online — the Thaiprompt pool, not juntraweb.)
-      - name: Build split-per-ABI APKs (arm64, armv7, x86_64)
-        run: flutter build apk --release --split-per-abi
+      # ── DIRECT channel: one universal APK for GitHub Releases ──────────
+      # Per-ABI split APKs were dropped: Flutter gives them versionCode
+      # 1000*abi+build (arm64 = 2000+build), which is HIGHER than the
+      # universal/Play build — phones that installed a split APK could not
+      # take the next update from the in-app updater or from Google Play.
+      # (Build 5000 onwards is above every split code ever published.)
+      # No --dart-define for the API base: the compiled-in default
+      # (ApiClient._kApiBase = จันทรา.online) is what every channel uses.
+      - name: Build DIRECT APK (GitHub Releases, in-app updater)
+        run: flutter build apk --release --flavor direct
 
-      - name: Clean intermediates so universal build won't collide
-        run: flutter clean && flutter pub get
-
-      - name: Build universal APK
-        run: flutter build apk --release
+      # ── PLAY channel: App Bundle for Google Play ────────────────────────
+      - name: Build PLAY App Bundle (Google Play)
+        run: flutter build appbundle --release --flavor play
 
       - name: Compute version label
         id: ver
         run: |
-          V=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:\s*//' | sed 's/+/+/')
-          NAME=${V%+*}
-          echo "version=$NAME" >> $GITHUB_OUTPUT
+          V=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:\s*//')
+          echo "version=${V%+*}" >> $GITHUB_OUTPUT
+          echo "full=$V" >> $GITHUB_OUTPUT
 
       - name: Stage artifacts with friendly names
         run: |
-          mkdir -p dist
+          set -e
+          mkdir -p dist play
           V=${{ steps.ver.outputs.version }}
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk     "dist/juntra-$V-arm64-v8a.apk"     || true
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk   "dist/juntra-$V-armeabi-v7a.apk"   || true
-          cp build/app/outputs/flutter-apk/app-x86_64-release.apk        "dist/juntra-$V-x86_64.apk"        || true
-          cp build/app/outputs/flutter-apk/app-release.apk               "dist/juntra-$V-universal.apk"     || true
-          ls -la dist/
+          cp build/app/outputs/flutter-apk/app-direct-release.apk "dist/juntra-$V-universal.apk"
+          cp build/app/outputs/bundle/playRelease/app-play-release.aab "play/juntra-${{ steps.ver.outputs.full }}.aab"
+          ls -la dist/ play/
+
+      # The AAB is for Google Play only — kept as a workflow artifact (download
+      # it from the run page and upload it in Play Console), never attached to
+      # the public GitHub release.
+      - name: Keep the App Bundle as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-bundle-${{ steps.ver.outputs.full }}
+          path: play/*.aab
+          retention-days: 90
+
+      - name: Upload to Google Play (internal testing, draft)
+        if: ${{ env.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ env.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.xjanova.juntra
+          releaseFiles: play/*.aab
+          track: internal
+          status: draft
 
       # บันทึกรุ่นที่แอพเอาไปแสดงในหน้าต่างอัปเดต — ห้ามมีลิงก์หรือชื่อของ
       # ที่เก็บไฟล์เด็ดขาด ผู้ใช้ต้องเห็นแค่คำว่า "เซิร์ฟเวอร์อัปเดต"
@@ -124,7 +145,7 @@ jobs:
             echo 'JUNTRA_EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Publish GitHub Release
+      - name: Publish GitHub Release (direct APK)
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
