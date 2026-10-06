@@ -46,7 +46,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const StarryBackground(density: 80, intensity: 1.1),
+          // หน้านี้มีโลโก้ใหญ่กลางจออยู่แล้ว — ไม่ต้องมีโลโก้เล็กมุมขวาซ้ำอีกอัน
+          const StarryBackground(density: 80, intensity: 1.1, showMoon: false),
           SafeArea(
             // Fill the screen on normal phones (Spacers distribute the slack)
             // but scroll instead of hard-overflowing on short screens — the

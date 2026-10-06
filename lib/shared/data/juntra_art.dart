@@ -20,6 +20,7 @@ class JuntraArt {
   static const _state = 'assets/images/state';
   static const _zodiac = 'assets/images/zodiac';
   static const _orn = 'assets/images/ornament';
+  static const _category = 'assets/images/category';
 
   // ─── แบนเนอร์ประจำหมวด (16:9) ────────────────────────────────
   static const tarot = '$_art/tarot.webp';
@@ -54,6 +55,24 @@ class JuntraArt {
   // ─── ตัวละคร / โลโก้ ─────────────────────────────────────────
   static const maeMor = 'assets/images/maehmor.webp';
   static const logo = 'assets/images/logo-chantra.webp';
+
+  /// โลโก้ตัดขอบโปร่งใสออกแล้ว (240px) สำหรับมุมขวาบนของทุกหน้า — ใช้ไฟล์เต็ม
+  /// [logo] ตรงนั้นจะเหลือขนาดจริงแค่ ~70% ของกรอบ เพราะภาพมีขอบใสเยอะ
+  static const logoMark = 'assets/images/logo-chantra-mark.webp';
+
+  /// หลังไพ่ — ลายเดียวกับ `card_back_url` ของเว็บ (คัดลอกมาเก็บในแอพ)
+  ///
+  /// พัดไพ่ 78 ใบต้องขึ้นทันทีโดยไม่รอเน็ต จึงใช้ไฟล์ในเครื่อง ส่วนไพ่ใบเด่น
+  /// (บินขึ้นมา/กำลังพลิก) ยังดึงจากเว็บเหมือนเดิม — ลายต้องตรงกันทั้งสองทาง
+  /// ไม่งั้นไพ่ที่ลูกแตะเลือกจะเปลี่ยนลายกลางแอนิเมชัน
+  static const cardBack = 'assets/images/card-back.webp';
+
+  /// การ์ดหมวดดูดวงบนหน้าแรก (2:3 ทรงไพ่) — [id] คือ `FortuneCategory.id`
+  ///
+  /// ชุดนี้เจนด้วย ChatGPT ในห้องเดียวกันทั้ง 8 ใบ (กติกาเดียวกัน: ม่วงคราม +
+  /// ลายกนกทอง + จันทร์เสี้ยว ครึ่งล่างมืดไว้วางชื่อหมวด) ต้นฉบับ 1024×1536
+  /// อยู่ที่ `art-src/category/` นอกรีโป
+  static String category(String id) => '$_category/$id.webp';
 
   /// ภาพประจำราศี — [slug] เป็น slug เดียวกับที่ /v1/horoscope ส่งมา
   /// (aries…pisces) จึงจับคู่กับ API ได้โดยไม่ต้องแปลงชื่อ

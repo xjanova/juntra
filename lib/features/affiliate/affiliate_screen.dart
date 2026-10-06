@@ -112,6 +112,7 @@ class AffiliateScreen extends ConsumerWidget {
             tooltip: 'ดึงยอดสดจาก Thaiprompt',
             onPressed: () => _hardRefresh(ref),
           ),
+          const SizedBox(width: StarryBackground.logoReserve),
         ],
       ),
     );

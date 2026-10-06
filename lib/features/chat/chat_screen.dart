@@ -718,6 +718,7 @@ class _ChatHeader extends StatelessWidget {
             tooltip: 'บทสนทนาเก่า',
             onPressed: () => context.push(Routes.chatConversations),
           ),
+          const SizedBox(width: StarryBackground.logoReserve + 8),
         ],
       ),
     );

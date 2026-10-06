@@ -136,7 +136,7 @@ class UpdateService {
   /// Stream APK download progress; on completion launches the system
   /// installer. Android only.
   Stream<UpdateProgress> downloadAndInstall(UpdateInfo info) async* {
-    if (!Platform.isAndroid) {
+    if (kIsWeb || !Platform.isAndroid) {
       throw UnsupportedError('การอัปเดตอัตโนมัติรองรับเฉพาะ Android');
     }
 

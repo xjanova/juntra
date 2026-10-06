@@ -11,6 +11,7 @@ import '../../core/api/tarot_packages_repository.dart';
 import '../../shared/data/fortune_categories.dart';
 import '../../shared/widgets/pill.dart';
 import '../../shared/widgets/starry_background.dart';
+import '../../shared/widgets/tarot_card_widgets.dart';
 import '../../shared/format/credits.dart';
 
 /// Screen 3 — แพ็กเกจไพ่ (ชุดเดียวกับหน้า /tarot บนเว็บ) — เลือกแล้วเข้าซีนสับไพ่
@@ -23,8 +24,10 @@ class SpreadsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // ไม่ได้มาจากการ์ดหมวด (เช่นแตะไพ่ประจำวันบนหน้าแรก) = ดวงภาพรวม
+    // เดิมตกไปเป็น 'love' หัวจอจึงขึ้น "ดวงความรัก" ทั้งที่ลูกไม่ได้เลือก
     final cat = fortuneCategories.firstWhere(
-      (c) => c.id == (categoryId ?? 'love'),
+      (c) => c.id == (categoryId ?? 'general'),
       orElse: () => fortuneCategories.first,
     );
     final async = ref.watch(tarotPackagesProvider);
@@ -55,7 +58,16 @@ class SpreadsScreen extends ConsumerWidget {
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (_, i) {
                           if (i == 0) {
-                            return const ArtBanner(asset: JuntraArt.tarot, height: 118);
+                            // ภาพประจำหมวดชุดเดียวกับการ์ดบนหน้าแรก — ลูกเห็นว่ากำลังดูเรื่องอะไร
+                            return ArtBanner(
+                              asset: JuntraArt.category(cat.id),
+                              height: 132,
+                              alignment: const Alignment(0, -0.42),
+                              overlay: Text(
+                                'เลือกแพ็กเกจไพ่สำหรับดวง${cat.name}',
+                                style: baiJamjuree(size: 15, color: JuntraColors.goldLight),
+                              ),
+                            );
                           }
                           final p = packages[i - 1];
                           return _PackageTile(
@@ -107,6 +119,8 @@ class _Header extends StatelessWidget {
             icon: const Icon(Icons.share_outlined, color: JuntraColors.purpleBright),
             onPressed: () => context.push(Routes.share),
           ),
+          // เว้นที่ให้โลโก้มุมขวาบน (StarryBackground)
+          const SizedBox(width: StarryBackground.logoReserve),
         ],
       ),
     );
@@ -250,6 +264,7 @@ class _ImageFallback extends StatelessWidget {
   }
 }
 
+/// กองไพ่จิ๋ว — แสดงแทนภาพแพ็กเกจตอนออฟไลน์/ยังไม่มีภาพ ใช้หลังไพ่ลายเดียวกับพัดไพ่
 class _MiniDeck extends StatelessWidget {
   const _MiniDeck({required this.count});
   final int count;
@@ -262,26 +277,29 @@ class _MiniDeck extends StatelessWidget {
         children: List.generate(shown, (i) {
           return Positioned(
             left: i * 6.0, top: i * 4.0,
-            child: Container(
-              width: 38, height: 60,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2D1A5C), Color(0xFF1A0F2E)],
-                ),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: JuntraColors.gold.withValues(alpha: 0.5), width: 0.8,
-                ),
-              ),
+            child: Stack(
               alignment: Alignment.center,
-              child: Text(
-                i == shown - 1 ? '$count' : '☾',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: JuntraColors.goldLight,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              children: [
+                const CardBack(width: 38, height: 60),
+                if (i == shown - 1)
+                  Container(
+                    width: 22, height: 22,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.85),
+                      border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.7), width: 0.8),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: JuntraColors.goldLight,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           );
         }),

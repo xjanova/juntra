@@ -104,7 +104,10 @@ flutter:
   assets:
     - assets/images/maehmor.webp
     - assets/images/logo-chantra.webp
+    - assets/images/logo-chantra-mark.webp
+    - assets/images/card-back.webp
     - assets/images/art/
+    - assets/images/category/
     - assets/images/state/
     - assets/images/zodiac/
     - assets/images/ornament/

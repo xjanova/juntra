@@ -95,6 +95,7 @@ class _Header extends StatelessWidget {
             tooltip: 'แก้ไขข้อมูลวันเกิด',
             onPressed: onEdit,
           ),
+          const SizedBox(width: StarryBackground.logoReserve),
         ],
       ),
     );

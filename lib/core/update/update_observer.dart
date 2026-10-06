@@ -36,7 +36,7 @@ class _UpdateObserverState extends ConsumerState<UpdateObserver> {
   @override
   void initState() {
     super.initState();
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_checked) {
         _checked = true;

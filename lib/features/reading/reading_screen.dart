@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -515,6 +516,7 @@ class _BackHeader extends StatelessWidget {
                 ),
               ],
             ),
+          const SizedBox(width: StarryBackground.logoReserve + 8),
         ],
       ),
     );
@@ -558,14 +560,21 @@ class _CardsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // For 3-card spreads use space-evenly. For 10-card celtic use a
-    // horizontal scroll so cards don't squish unreadably small.
-    if (cards.length <= 4) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: cards.map((c) => _CardThumb(card: c, width: 84, height: 140))
-            .toList(),
-      );
+    // ไม่เกิน 5 ใบ (ความรัก/การงาน/ทางแยก) วางแถวเดียวให้เห็นครบ — เดิมเกิน 4 ใบ
+    // ตกไปเป็นแถวเลื่อนข้าง ใบที่ 5 จึงหลุดขอบจอโดยไม่มีอะไรบอกว่าเลื่อนได้
+    // 10 ใบ (เซลติก) ยังเลื่อนข้างเหมือนเดิม ไม่งั้นไพ่เล็กจนอ่านไม่ออก
+    if (cards.length <= 5) {
+      return LayoutBuilder(builder: (context, box) {
+        final slot = box.maxWidth / cards.length;
+        final w = math.min(84.0, slot - 10);
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            for (final c in cards)
+              _CardThumb(card: c, width: w, height: w * 5 / 3, labelWidth: slot - 2),
+          ],
+        );
+      });
     }
     return SizedBox(
       height: 170,
@@ -585,10 +594,15 @@ class _CardsRow extends StatelessWidget {
 }
 
 class _CardThumb extends StatelessWidget {
-  const _CardThumb({required this.card, required this.width, required this.height});
+  const _CardThumb({
+    required this.card, required this.width, required this.height, this.labelWidth,
+  });
   final Map card;
   final double width;
   final double height;
+
+  /// ความกว้างป้ายตำแหน่งใต้ไพ่ — แถวเดียวต้องไม่เกินช่องของตัวเอง
+  final double? labelWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -618,7 +632,7 @@ class _CardThumb extends StatelessWidget {
               ),
         const SizedBox(height: 6),
         SizedBox(
-          width: width + 8,
+          width: labelWidth ?? width + 8,
           child: Text(
             positionLabel,
             maxLines: 2, textAlign: TextAlign.center,

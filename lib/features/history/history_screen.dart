@@ -136,6 +136,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         tooltip: 'รีเฟรช',
                         onPressed: () => ref.invalidate(historyPageProvider(_filter)),
                       ),
+                      const SizedBox(width: StarryBackground.logoReserve),
                     ],
                   ),
                 ),

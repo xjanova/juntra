@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -623,6 +624,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                 style: baiJamjuree(size: 16, color: JuntraColors.gold),
               ),
             ),
+          const SizedBox(width: StarryBackground.logoReserve),
         ],
       ),
     );
@@ -630,12 +632,26 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
 
   // ─── Phase 1: Question ──────────────────────────────────────
   Widget _buildQuestionPhase() {
+    // ภาพประจำแพ็กเกจ (ชุดเดียวกับการ์ดในหน้าเลือกแพ็กเกจ) — เดิมหน้านี้มีแต่
+    // ตัวหนังสือลอยกลางจอว่าง ๆ · หุบตอนคีย์บอร์ดขึ้น ไม่งั้นจอเตี้ยล้น
+    final art = _pkg.imageUrl;
+    final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Padding(
       key: const ValueKey('q'),
       padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
       child: Column(
         children: [
           const Spacer(),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            child: (art == null || keyboardUp)
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 22),
+                    child: _PackageArt(url: art),
+                  ),
+          ),
           Text(_pkg.nameTh, style: baiJamjuree(size: 16, color: JuntraColors.gold)),
           const SizedBox(height: 8),
           Text('ลูกอยากรู้เรื่องอะไร?', style: baiJamjuree(size: 26)),
@@ -1135,6 +1151,51 @@ class _RaysPainter extends CustomPainter {
 }
 
 /// แถบยืนยันก่อนเปิดไพ่ — บอกจำนวนที่เลือกและราคาที่จะถูกหัก
+/// ภาพประจำแพ็กเกจบนหน้าตั้งคำถาม — โหลดไม่ได้ก็ยุบหายไป ไม่ทิ้งกรอบว่าง
+class _PackageArt extends StatelessWidget {
+  const _PackageArt({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 150,
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.35)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x99000000), blurRadius: 22, offset: Offset(0, 10)),
+          BoxShadow(color: Color(0x26F0C75E), blurRadius: 30, spreadRadius: -6),
+        ],
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            fadeInDuration: const Duration(milliseconds: 300),
+            placeholder: (_, _) => const ColoredBox(color: JuntraColors.bgPurpleDeep),
+            errorWidget: (_, _, _) => const ColoredBox(color: JuntraColors.bgPurpleDeep),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0x000A0414), Color(0x990A0414)],
+                stops: [0.55, 1.0],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ConfirmBar extends StatelessWidget {
   const _ConfirmBar({
     required this.picked,
