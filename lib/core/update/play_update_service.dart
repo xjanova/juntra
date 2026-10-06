@@ -45,7 +45,7 @@ class PlayUpdateService {
   static const _kThrottle = Duration(hours: 12);
 
   Future<PlayUpdateStatus> check({bool isManual = false}) async {
-    if (!Platform.isAndroid || !isPlayChannel) return const PlayUpdateUnavailable();
+    if (kIsWeb || !Platform.isAndroid || !isPlayChannel) return const PlayUpdateUnavailable();
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!isManual) {

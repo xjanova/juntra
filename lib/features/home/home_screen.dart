@@ -125,6 +125,8 @@ class _Greeting extends ConsumerWidget {
             fontWeight: FontWeight.w700,
           )),
         ),
+        // มุมขวาสุดเป็นโลโก้จันทรา (วาดโดย StarryBackground)
+        const SizedBox(width: StarryBackground.logoReserve),
       ],
     );
   }
@@ -488,79 +490,132 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// หมวดดูดวง 8 หมวด — วางเป็นไพ่ทรง 2:3 สองแถว แถวละ 4 ใบ เหมือนแม่หมอ
+/// คลี่ไพ่บนผ้า แต่ละใบมีภาพประจำหมวด ([JuntraArt.category]) ชุดเดียวกันทั้งสำรับ
+///
+/// เดิมเป็นกล่องสี่เหลี่ยมมีแค่สัญลักษณ์ตัวอักษร (♥ ◈ ✦ …) กับวงเรืองแสงเบลอ ๆ
 class _CategoriesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
-        childAspectRatio: 2.4,
+        crossAxisCount: 4, mainAxisSpacing: 12, crossAxisSpacing: 10,
+        childAspectRatio: 2 / 3,
       ),
       itemCount: fortuneCategories.length,
-      itemBuilder: (context, i) {
-        final c = fortuneCategories[i];
-        return InkWell(
-          borderRadius: BorderRadius.circular(JuntraRadius.card),
-          onTap: () => context.push('${Routes.spreads}?category=${c.id}'),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-                colors: [
-                  JuntraColors.bgPurpleDeep,
-                  JuntraColors.bgPurpleDeep.withValues(alpha: 0.6),
-                ],
+      itemBuilder: (context, i) => _CategoryCard(category: fortuneCategories[i])
+          .animate()
+          .fadeIn(delay: (70 * i).ms, duration: 420.ms)
+          .slideY(begin: 0.12, curve: Curves.easeOutCubic),
+    );
+  }
+}
+
+class _CategoryCard extends StatelessWidget {
+  const _CategoryCard({required this.category});
+  final FortuneCategory category;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = category;
+    // กรอบทองอมสีประจำหมวด — ทองล้วนทั้ง 8 ใบจะแยกหมวดด้วยตาไม่ออก
+    final rim = Color.lerp(c.color, JuntraColors.gold, 0.55)!;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: rim.withValues(alpha: 0.75), width: 1.2),
+        boxShadow: [
+          BoxShadow(color: c.glow.withValues(alpha: 0.30), blurRadius: 14, spreadRadius: -3),
+          const BoxShadow(color: Color(0x99000000), blurRadius: 10, offset: Offset(0, 6)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: JuntraColors.bgPurpleDeep),
+            Image.asset(
+              JuntraArt.category(c.id),
+              fit: BoxFit.cover,
+              alignment: const Alignment(0, -0.35),
+              // ไพ่กว้าง ~90px บนจอ — decode แค่ที่วาดจริง ไม่ใช่ทั้งไฟล์
+              cacheWidth: (110 * dpr).round(),
+              errorBuilder: (_, _, _) => Center(
+                child: Text(c.icon, style: TextStyle(fontSize: 30, color: c.color)),
               ),
-              borderRadius: BorderRadius.circular(JuntraRadius.card),
-              border: Border.all(color: c.color.withValues(alpha: 0.3)),
             ),
-            child: Stack(
-              children: [
-                Positioned(
-                  right: -10, top: -10,
-                  child: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [
-                        c.glow.withValues(alpha: 0.4),
-                        c.glow.withValues(alpha: 0),
-                      ]),
+            // สกริมล่างให้ชื่อหมวดอ่านออกเสมอ ไม่พึ่งว่าภาพจะมืดพอ
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x000A0414), Color(0x000A0414), Color(0xB30A0414), Color(0xF20A0414)],
+                  stops: [0.0, 0.42, 0.72, 1.0],
+                ),
+              ),
+            ),
+            // เส้นกรอบในบาง ๆ แบบหน้าไพ่ทาโรต์
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.35), width: 0.6),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 4, right: 4, bottom: 9,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    c.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: baiJamjuree(size: 13.5, color: JuntraColors.textPrimary).copyWith(
+                      height: 1.1,
+                      shadows: const [Shadow(color: Color(0xCC000000), blurRadius: 6)],
                     ),
                   ),
-                ),
-                Row(
-                  children: [
-                    Text(c.icon, style: TextStyle(
-                      fontSize: 24, color: c.color,
-                    )),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(c.name, style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w700,
-                            color: JuntraColors.textPrimary,
-                          )),
-                          Text(c.en, style: const TextStyle(
-                            fontSize: 10, letterSpacing: 1.5,
-                            color: JuntraColors.textFaint,
-                          )),
-                        ],
-                      ),
+                  const SizedBox(height: 2),
+                  Text(
+                    c.en.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.fade,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 7.5, letterSpacing: 1.2, height: 1.1,
+                      fontWeight: FontWeight.w600,
+                      color: c.glow.withValues(alpha: 0.9),
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+            // ระลอกแตะต้องอยู่บนสุด — ถ้าอยู่ใต้ภาพจะถูกภาพบังจนมองไม่เห็น
+            Positioned.fill(
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: () => context.push('${Routes.spreads}?category=${c.id}'),
+                  splashColor: c.glow.withValues(alpha: 0.25),
+                  highlightColor: c.glow.withValues(alpha: 0.10),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

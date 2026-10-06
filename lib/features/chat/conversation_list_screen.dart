@@ -86,6 +86,7 @@ class ConversationListScreen extends ConsumerWidget {
             tooltip: 'รีเฟรช',
             onPressed: () => ref.invalidate(chatConversationsProvider),
           ),
+          const SizedBox(width: StarryBackground.logoReserve),
         ],
       ),
     );

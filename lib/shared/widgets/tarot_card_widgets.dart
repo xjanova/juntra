@@ -5,10 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app/theme.dart';
+import '../data/juntra_art.dart';
 import '../data/tarot_deck.dart';
 
-/// The mystical face-down back of a tarot card — purple/gold filigree
-/// pattern, used during the cinematic shuffle phase.
+/// หลังไพ่ — ลายเดียวกับเว็บ ([JuntraArt.cardBack]) ใช้ทั้งพัด 78 ใบและซีนสับไพ่
+///
+/// เดิมพัดวาดหลังไพ่ด้วยโค้ด (ม่วงเรียบ + ☾) ส่วนไพ่ที่บินขึ้นมาเปิดใช้ลายของเว็บ
+/// ลูกจึงเห็นไพ่ใบที่แตะเปลี่ยนลายกลางแอนิเมชัน — ตอนนี้ใช้ภาพเดียวกันทั้งสองที่
+/// ภาพถูก decode ครั้งเดียวที่กว้าง 300px แล้วใช้ซ้ำทุกใบ (78 ใบ = ภาพเดียวใน
+/// แคช) ลายที่วาดด้วยโค้ดเหลือไว้เป็นสำรองตอนไฟล์ภาพเสีย
 class CardBack extends StatelessWidget {
   const CardBack({super.key, this.width = 88, this.height = 145});
   final double width;
@@ -20,10 +25,7 @@ class CardBack extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [Color(0xFF2D1A5C), Color(0xFF1A0F2E), Color(0xFF0A0414)],
-        ),
+        color: const Color(0xFF1A0F2E),
         borderRadius: BorderRadius.circular(width * 0.08),
         border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.55), width: 1.4),
         boxShadow: const [
@@ -33,7 +35,39 @@ class CardBack extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(width * 0.08 - 1.4),
-        child: Stack(
+        child: Image.asset(
+          JuntraArt.cardBack,
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          cacheWidth: 300,
+          gaplessPlayback: true,
+          errorBuilder: (_, _, _) => _DrawnCardBack(width: width, height: height),
+        ),
+      ),
+    );
+  }
+}
+
+/// หลังไพ่ที่วาดด้วยโค้ด — สำรองเมื่อไฟล์ [JuntraArt.cardBack] โหลดไม่ได้
+class _DrawnCardBack extends StatelessWidget {
+  const _DrawnCardBack({required this.width, required this.height});
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [Color(0xFF2D1A5C), Color(0xFF1A0F2E), Color(0xFF0A0414)],
+        ),
+      ),
+      // กรอบทอง/เงา/มุมโค้งมาจาก [CardBack] ที่ห่ออยู่แล้ว
+      child: Stack(
           alignment: Alignment.center,
           children: [
             // Inner double border
@@ -74,7 +108,6 @@ class CardBack extends StatelessWidget {
             ..._corners(width),
           ],
         ),
-      ),
     );
   }
 

@@ -2,9 +2,16 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
+import '../data/juntra_art.dart';
 
 /// Cinematic night-sky background — radial gradient nebula, twinkling
-/// stars, slow-floating gold particles, optional crescent in top-right.
+/// stars, slow-floating gold particles, and the จันทรา brand logo in the
+/// top-right corner.
+///
+/// มุมขวาบนเดิมเป็นพระจันทร์เสี้ยวที่วาดด้วยโค้ด (วงทองมีวงกลมมืดเจาะกลาง ดูไม่ออก
+/// ว่าเป็นอะไร) ตอนนี้เป็นโลโก้จริง [JuntraArt.logoMark] วางตาม safe area จึงอยู่
+/// แถวเดียวกับหัวจอเสมอ — หัวจอที่มีปุ่มด้านขวาต้องเว้นที่ท้ายแถวไว้
+/// [StarryBackground.logoReserve] ไม่งั้นปุ่มจะทับโลโก้
 ///
 /// Performance: stars are precomputed in initState (no rebuild churn);
 /// twinkle/float are animated with a single AnimationController fed
@@ -18,7 +25,12 @@ class StarryBackground extends StatefulWidget {
   });
   final int density;
   final double intensity;
+
+  /// แสดงโลโก้จันทรามุมขวาบน (ชื่อเดิมจากสมัยที่เป็นพระจันทร์วาดเอง)
   final bool showMoon;
+
+  /// ความกว้างที่หัวจอต้องเว้นไว้ท้ายแถว (นับจากขอบใน 16px) เพื่อไม่ให้ปุ่มทับโลโก้
+  static const double logoReserve = 54;
 
   @override
   State<StarryBackground> createState() => _StarryBackgroundState();
@@ -66,7 +78,7 @@ class _StarryBackgroundState extends State<StarryBackground>
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
+    final sky = RepaintBoundary(
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
@@ -76,11 +88,65 @@ class _StarryBackgroundState extends State<StarryBackground>
               particles: _particles,
               t: _controller.value * 6.28,
               intensity: widget.intensity,
-              showMoon: widget.showMoon,
             ),
             size: Size.infinite,
           );
         },
+      ),
+    );
+    if (!widget.showMoon) return sky;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        sky,
+        Positioned(
+          top: MediaQuery.paddingOf(context).top + 8,
+          right: 8,
+          child: const IgnorePointer(child: _BrandMark()),
+        ),
+      ],
+    );
+  }
+}
+
+/// โลโก้จันทรา (เสี้ยวจันทร์ทอง + ตัวอักษร) พร้อมแสงทองนวล ๆ ด้านหลัง
+class _BrandMark extends StatelessWidget {
+  const _BrandMark();
+
+  static const double _w = 56;
+
+  @override
+  Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return SizedBox(
+      width: _w,
+      height: _w * 0.875,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: JuntraColors.gold.withValues(alpha: 0.28),
+                  blurRadius: 22,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: const SizedBox(width: _w * 0.6, height: _w * 0.6),
+          ),
+          Image.asset(
+            JuntraArt.logoMark,
+            width: _w,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            cacheWidth: (_w * dpr).round(),
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -102,13 +168,12 @@ class _Particle {
 class _StarryPainter extends CustomPainter {
   _StarryPainter({
     required this.stars, required this.particles,
-    required this.t, required this.intensity, required this.showMoon,
+    required this.t, required this.intensity,
   });
   final List<_Star> stars;
   final List<_Particle> particles;
   final double t;
   final double intensity;
-  final bool showMoon;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -175,37 +240,6 @@ class _StarryPainter extends CustomPainter {
         paint,
       );
     }
-
-    if (showMoon) _paintMoon(canvas, size);
-  }
-
-  void _paintMoon(Canvas canvas, Size size) {
-    final cx = size.width - 40;
-    const cy = 70.0;
-    const r = 26.0;
-
-    // Outer glow
-    final glow = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16)
-      ..color = JuntraColors.gold.withValues(alpha: 0.4);
-    canvas.drawCircle(Offset(cx, cy), r + 8, glow);
-
-    // Crescent — large filled circle minus offset cut-out
-    final moon = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0xFFFFE7A0), Color(0xFFF0C75E),
-          Color(0xFFC99B2D), Color(0xFF7A5A1E),
-        ],
-        stops: [0.0, 0.4, 0.7, 1.0],
-      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r));
-    final path = Path()
-      ..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r))
-      ..fillType = PathFillType.evenOdd
-      ..addOval(Rect.fromCircle(center: Offset(cx + 8, cy - 4), radius: r * 0.85));
-    canvas.drawPath(path, moon);
   }
 
   @override

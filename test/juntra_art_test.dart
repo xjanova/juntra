@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:juntra/shared/data/fortune_categories.dart';
 import 'package:juntra/shared/data/juntra_art.dart';
 import 'package:yaml/yaml.dart';
 
@@ -41,7 +42,10 @@ void main() {
     JuntraArt.nebula,
     JuntraArt.maeMor,
     JuntraArt.logo,
+    JuntraArt.logoMark,
+    JuntraArt.cardBack,
     ...JuntraArt.zodiacSlugs.map(JuntraArt.zodiac),
+    ...fortuneCategories.map((c) => JuntraArt.category(c.id)),
   ];
 
   test('ทุก path ใน JuntraArt มีไฟล์อยู่จริง', () {
@@ -54,6 +58,15 @@ void main() {
     for (final slug in JuntraArt.zodiacSlugs) {
       expect(File(JuntraArt.zodiac(slug)).existsSync(), isTrue,
           reason: 'ไม่มีภาพราศี $slug');
+    }
+  });
+
+  test('การ์ดหมวดบนหน้าแรกมีภาพครบทุกหมวด', () {
+    // เพิ่มหมวดใหม่ใน fortune_categories.dart แล้วลืมเจนภาพ = การ์ดใบนั้น
+    // ตกไปเป็นสัญลักษณ์ตัวอักษรใบเดียวในสำรับ
+    for (final c in fortuneCategories) {
+      expect(File(JuntraArt.category(c.id)).existsSync(), isTrue,
+          reason: 'ไม่มีภาพการ์ดหมวด ${c.id} (${c.name})');
     }
   });
 

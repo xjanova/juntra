@@ -167,7 +167,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          const StarryBackground(density: 60, intensity: 0.8),
+          // มีโลโก้ใหญ่ (ChantraLogo) อยู่ในฟอร์มแล้ว — ไม่ต้องมีมุมขวาซ้ำ
+          const StarryBackground(density: 60, intensity: 0.8, showMoon: false),
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
