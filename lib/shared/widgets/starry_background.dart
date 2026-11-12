@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../data/juntra_art.dart';
 
-/// Cinematic night-sky background — radial gradient nebula, twinkling
-/// stars, slow-floating gold particles, and the จันทรา brand logo in the
-/// top-right corner.
+/// Cinematic night-sky background — the web's `.bg-fixed` (violet, magenta
+/// and gold glows over a deep-night gradient + `bg-nebula.webp` at .55),
+/// twinkling stars, slow-floating gold particles, and the จันทรา brand logo
+/// in the top-right corner.
 ///
 /// มุมขวาบนเดิมเป็นพระจันทร์เสี้ยวที่วาดด้วยโค้ด (วงทองมีวงกลมมืดเจาะกลาง ดูไม่ออก
 /// ว่าเป็นอะไร) ตอนนี้เป็นโลโก้จริง [JuntraArt.logoMark] วางตาม safe area จึงอยู่
@@ -15,7 +16,8 @@ import '../data/juntra_art.dart';
 ///
 /// Performance: stars are precomputed in initState (no rebuild churn);
 /// twinkle/float are animated with a single AnimationController fed
-/// into a CustomPainter so the widget tree stays cheap.
+/// into a CustomPainter so the widget tree stays cheap. The sky and the
+/// nebula sit outside the animated RepaintBoundary, so they paint once.
 class StarryBackground extends StatefulWidget {
   const StarryBackground({
     super.key,
@@ -54,6 +56,8 @@ class _StarryBackgroundState extends State<StarryBackground>
         baseOpacity: rng.nextDouble() * 0.6 + 0.2,
         twinklePhase: rng.nextDouble() * 6.28,
         twinkleSpeed: rng.nextDouble() * 0.6 + 0.4,
+        // .bg-stars ของเว็บผสมดาวขาวกับดาวทองอุ่น (#ffe9b3) ราวหนึ่งในสี่
+        warm: rng.nextDouble() < 0.25,
       );
     });
     _particles = List.generate(14, (_) {
@@ -78,21 +82,37 @@ class _StarryBackgroundState extends State<StarryBackground>
 
   @override
   Widget build(BuildContext context) {
-    final sky = RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return CustomPaint(
-            painter: _StarryPainter(
-              stars: _stars,
-              particles: _particles,
-              t: _controller.value * 6.28,
-              intensity: widget.intensity,
-            ),
-            size: Size.infinite,
-          );
-        },
-      ),
+    final sky = Stack(
+      fit: StackFit.expand,
+      children: [
+        CustomPaint(
+          painter: _SkyPainter(glow: (0.55 + 0.45 * widget.intensity).clamp(0.5, 1.1)),
+          size: Size.infinite,
+        ),
+        // .bg-fixed::after — bg-nebula.webp cover, opacity .55
+        Image.asset(
+          JuntraArt.bgNebula,
+          fit: BoxFit.cover,
+          opacity: const AlwaysStoppedAnimation(0.55),
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+        RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              return CustomPaint(
+                painter: _StarryPainter(
+                  stars: _stars,
+                  particles: _particles,
+                  t: _controller.value * 6.28,
+                  intensity: widget.intensity,
+                ),
+                size: Size.infinite,
+              );
+            },
+          ),
+        ),
+      ],
     );
     if (!widget.showMoon) return sky;
     return Stack(
@@ -156,13 +176,74 @@ class _Star {
   _Star({
     required this.x, required this.y, required this.size,
     required this.baseOpacity, required this.twinklePhase, required this.twinkleSpeed,
+    required this.warm,
   });
   final double x, y, size, baseOpacity, twinklePhase, twinkleSpeed;
+  final bool warm;
 }
 
 class _Particle {
   _Particle({required this.x, required this.y, required this.phase, required this.speed});
   final double x, y, phase, speed;
+}
+
+/// พื้นฟ้าของเว็บ `.bg-fixed` — วาดครั้งเดียว ไม่ขยับ
+///
+/// ```css
+/// radial-gradient(ellipse at 20% 10%, rgba(122,61,240,.35), transparent 55%),
+/// radial-gradient(ellipse at 85% 30%, rgba(210,74,209,.20), transparent 60%),
+/// radial-gradient(ellipse at 50% 90%, rgba(231,201,122,.10), transparent 60%),
+/// linear-gradient(180deg, #0a0612 0%, #100722 50%, #0a0612 100%);
+/// ```
+class _SkyPainter extends CustomPainter {
+  _SkyPainter({required this.glow});
+
+  /// ตัวคูณความเข้มของวงแสง (หน้ารองใช้อ่อนลงเล็กน้อย)
+  final double glow;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [JuntraColors.bgDeepest, JuntraColors.bgDark1, JuntraColors.bgDeepest],
+        ).createShader(rect),
+    );
+    // ลำดับเดียวกับ CSS: ชั้นแรกอยู่บนสุด จึงวาดจากล่างขึ้นบน
+    _ellipse(canvas, size, 0.50, 0.90, JuntraColors.gold, 0.10 * glow, 0.60);
+    _ellipse(canvas, size, 0.85, 0.30, JuntraColors.magenta, 0.20 * glow, 0.60);
+    _ellipse(canvas, size, 0.20, 0.10, JuntraColors.purple, 0.35 * glow, 0.55);
+  }
+
+  /// `radial-gradient(ellipse at {ax} {ay}, color, transparent {stop})` —
+  /// ขนาด farthest-corner แบบ CSS: รัศมีตามด้านที่ไกลที่สุด × √2
+  static void _ellipse(Canvas canvas, Size size, double ax, double ay,
+      Color color, double alpha, double stop) {
+    final rx = size.width * math.max(ax, 1 - ax) * math.sqrt2;
+    final ry = size.height * math.max(ay, 1 - ay) * math.sqrt2;
+    if (rx <= 0 || ry <= 0) return;
+    final c = color.withValues(alpha: alpha.clamp(0.0, 1.0));
+    canvas.save();
+    canvas.translate(size.width * ax, size.height * ay);
+    canvas.scale(1, ry / rx);
+    final circle = Rect.fromCircle(center: Offset.zero, radius: rx);
+    canvas.drawRect(
+      circle,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [c, c.withValues(alpha: 0)],
+          stops: [0, stop],
+        ).createShader(circle),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SkyPainter old) => old.glow != glow;
 }
 
 class _StarryPainter extends CustomPainter {
@@ -175,48 +256,17 @@ class _StarryPainter extends CustomPainter {
   final double t;
   final double intensity;
 
+  static const _white = Color(0xFFFFFFFF);
+  static const _warm = Color(0xFFFFE9B3);
+
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-
-    // Nebula radial background
-    final bg = Paint()
-      ..shader = const RadialGradient(
-        center: Alignment(0, -0.6),
-        radius: 1.4,
-        colors: [
-          Color(0xFF2A1B4A), Color(0xFF150924), Color(0xFF0A0414), Color(0xFF060309),
-        ],
-        stops: [0.0, 0.4, 0.8, 1.0],
-      ).createShader(rect);
-    canvas.drawRect(rect, bg);
-
-    // Purple nebula glow (top-left)
-    final purpleGlow = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40)
-      ..color = JuntraColors.purple.withValues(alpha: 0.18 * intensity);
-    canvas.drawCircle(
-      Offset(size.width * -0.1, size.height * 0.05),
-      size.width * 0.5,
-      purpleGlow,
-    );
-
-    // Gold nebula glow (bottom-right)
-    final goldGlow = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 50)
-      ..color = JuntraColors.gold.withValues(alpha: 0.12 * intensity);
-    canvas.drawCircle(
-      Offset(size.width * 1.05, size.height * 0.85),
-      size.width * 0.5,
-      goldGlow,
-    );
-
     // Stars — twinkling
     for (final s in stars) {
       final tw = (math.sin(t * s.twinkleSpeed + s.twinklePhase) + 1) * 0.5;
       final opacity = (s.baseOpacity * (0.4 + tw * 0.8)).clamp(0.0, 1.0);
       final paint = Paint()
-        ..color = const Color(0xFFFFF8E1).withValues(alpha: opacity)
+        ..color = (s.warm ? _warm : _white).withValues(alpha: opacity)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, s.size * 1.2);
       canvas.drawCircle(
         Offset(s.x * size.width, s.y * size.height),

@@ -52,6 +52,9 @@ class JuntraArt {
   static const frameThai = '$_orn/frame-thai.webp';
   static const nebula = '$_orn/nebula.webp';
 
+  /// พื้นเนบิวลาเต็มจอของเว็บ (`/images/juntra/bg-nebula.webp`, `.bg-fixed::after`)
+  static const bgNebula = '$_orn/bg-nebula.webp';
+
   // ─── ตัวละคร / โลโก้ ─────────────────────────────────────────
   static const maeMor = 'assets/images/maehmor.webp';
   static const logo = 'assets/images/logo-chantra.webp';
