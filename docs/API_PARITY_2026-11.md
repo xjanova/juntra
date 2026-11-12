@@ -166,6 +166,42 @@ Same limits/throttle as web `/chat/transcribe`.
   sending from another device/tab — nothing charged, show "ลองส่งใหม่");
   422 `room_closed` when the conversation's room was closed since it started.
 
+Second batch (juntraweb chat API written, 2026-11-12):
+- A1 `accent` is always a hex (`#7cc7f6` · `#a884f4` · `#e0455f`). `media.voice` and
+  `media.voice_by_spread` are always objects (`{}` when empty). `media.theater.bg_url`
+  is always null (the web has plate + sprite only). `spreads` = tarot spreads only —
+  deep reading shows up in `menu` as `spread: "deep"`. `meta.daily_limit` null = no
+  limit. `meta.lede` is the full sentence. `meta.lock.until` = epoch seconds.
+- A2 `/v1/chat/live` is wrapped: `{data: <web /chat/live JSON>}`.
+- A3 423 `room_locked` / 422 `room_closed` only on the `room` path; the `reading_id`
+  path is unchanged (no lock check). `room` + `new: true` → 201; resume → 200. Opening
+  a room does not call the AI (greeting built locally, like the web).
+- A4 `pending_bill` = `{id, ref, amount, payable_amount, qr_payload, expires_at (epoch s),
+  has_slip, blocks}`; with `X-App-Channel: play` the key is present and null.
+  `menu` items = `{spread ("deep" for deep reading), key, label, cards, price,
+  locked_until}` — **`locked_until` is Thai display text** ("15 พ.ย. 2569"), null = open now.
+  List items (GET conversations) add only `persona`, `room`, `free_reading_id`; qa,
+  free_ask, menu and pending_bill come with start/show/send only. show adds `ai_suggestions`.
+- A5 `reply_voice.url` is a **public** Thaiprompt/R2 file URL — fetch it WITHOUT the
+  juntraweb bearer (never send the bearer to another host). Every send/held answer
+  carries qa, free_ask, pending_bill, menu, server_time. `message` null = degraded
+  reply: show `reply` and offer resend as today.
+- A6 `qa/end` → `{data: {qa, message: <message object {id, role, content, …}>|null,
+  server_time}}` — a full message (append it to the list), null on a repeat.
+- A7 feed messages have the same shape as `conversation.messages`.
+- A8 transcribe errors: 429 `mic_daily_limit`, 422 `transcribe_failed`, plus the usual
+  422 file validation.
+- Play: with `X-App-Channel: play` the bot never answers "unpaid bill, scan the QR", and
+  a bill opened on the web does not block the menu.
+- E1/E2 = `{checked_in, streak, next_milestone {days, label, left}|null,
+  earned [{days, label}], reading|null}`; E2 adds `new` (bool) and always answers 200.
+- E3 `favourite` = `{slug, name_th, count}|null`; cards not found yet still carry name +
+  image (the app draws the card back when `found` is false).
+- E4 items = `{name, service, rating, message}`; `?limit` 1..12.
+- F1 `phone` = the login number (users.phone, as auth/me) + extra `contact_phone`
+  (contact number from the astrology form); F2 never edits email/phone.
+- Validation 422 = `{message, reason_code: "validation_failed", errors}`.
+
 ## Natal (app only)
 The app keeps its on-device natal chart but switches to the web's zodiac:
 sidereal = tropical − `ThaiAstro::ayanamsa` (Lahiri). The Dart port is pinned
