@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
+import '../app_channel.dart';
 import 'api_exceptions.dart';
 
 /// Base URL for the juntraweb (จันทรา.online) Laravel backend.
@@ -48,9 +49,12 @@ class ApiClient {
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
       sendTimeout: const Duration(seconds: 30),
-      headers: const {
+      headers: {
         'Accept': 'application/json',
         'X-Client': 'juntra-android',
+        // Play policy, enforced on the server too: a Play build must never
+        // receive PromptPay/QR/bank data (room bills, top-up channels).
+        'X-App-Channel': isPlayChannel ? 'play' : 'direct',
       },
       // Don't throw on 4xx — let callers inspect status + body.
       validateStatus: (s) => s != null && s < 500,

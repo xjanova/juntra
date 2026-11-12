@@ -6,6 +6,12 @@ import '../features/affiliate/affiliate_screen.dart';
 import '../features/auspicious/auspicious_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/chat/chat_screen.dart';
+import '../features/chat/rooms_screen.dart';
+import '../features/collection/collection_screen.dart';
+import '../features/daily_luck/daily_luck_screen.dart';
+import '../features/free_card/free_card_screen.dart';
+import '../features/profile/account_profile_screen.dart';
+import '../features/settings/notification_settings_screen.dart';
 import '../features/deep/deep_screen.dart';
 import '../features/horoscope/horoscope_screen.dart';
 import '../features/chat/conversation_list_screen.dart';
@@ -32,12 +38,31 @@ import '../shared/widgets/service_gate.dart';
 /// `core/update/update_observer.dart` for the full story.
 final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
-/// 12-screen route table — names match `extracted/juntra/project/app.jsx`
-/// `screens` map exactly so the design's intent stays grep-able.
+/// Route table. Screens follow the website's pages (จันทรา.online, 2026-11):
+/// room picker → oracle room chat → shuffle → reading, plus the account
+/// extras the web added (daily luck, card collection, astrology profile).
 class Routes {
   Routes._();
   static const splash = '/';
   static const home = '/home';
+
+  /// หน้า "เลือกผู้พยากรณ์" (เว็บ /chat ที่ยังไม่เลือกห้อง) — บุษบา · แม่หมอ · คุณไสย
+  static const rooms = '/rooms';
+
+  /// ไพ่ฟรี 1 ใบ (เว็บ /tarot/free) → ห้องถามฟรี 2 นาที
+  static const freeCard = '/free-card';
+
+  /// เช็กอินรายวัน + ดวงเสี่ยงทายประจำวัน (เว็บ dashboard#daily-luck)
+  static const dailyLuck = '/daily-luck';
+
+  /// สมุดสะสมไพ่ 78 ใบ (เว็บ /account/collection)
+  static const collection = '/collection';
+
+  /// ชื่อ · วันเกิด · เวลาเกิด · สถานที่เกิด (เว็บ /account/astrology + /profile)
+  static const accountProfile = '/account-profile';
+
+  /// การแจ้งเตือน (เว็บ push preferences)
+  static const notifications = '/notifications';
   static const spreads = '/spreads';
   static const shuffle = '/shuffle';
   static const reading = '/reading';
@@ -105,9 +130,21 @@ final routerProvider = Provider<GoRouter>((ref) {
           final id = idStr == null ? null : int.tryParse(idStr);
           // `?reading=N` = คุยต่อจากคำทำนายไพ่ใบนั้น (แม่หมอเห็นไพ่+คำพยากรณ์ชุดนั้น)
           final readingId = int.tryParse(s.uri.queryParameters['reading'] ?? '');
-          return ChatScreen(resumeConversationId: id, fromReadingId: readingId);
+          // `?room=busaba|maemor|kunsai` = เข้าห้องของผู้พยากรณ์คนนั้น · `?new=1` = ห้องคุยใหม่
+          return ChatScreen(
+            resumeConversationId: id,
+            fromReadingId: readingId,
+            room: s.uri.queryParameters['room'],
+            startNew: s.uri.queryParameters['new'] == '1',
+          );
         },
       ),
+      GoRoute(path: Routes.rooms, builder: (c, s) => const RoomsScreen()),
+      GoRoute(path: Routes.freeCard, builder: (c, s) => const FreeCardScreen()),
+      GoRoute(path: Routes.dailyLuck, builder: (c, s) => const DailyLuckScreen()),
+      GoRoute(path: Routes.collection, builder: (c, s) => const CollectionScreen()),
+      GoRoute(path: Routes.accountProfile, builder: (c, s) => const AccountProfileScreen()),
+      GoRoute(path: Routes.notifications, builder: (c, s) => const NotificationSettingsScreen()),
       GoRoute(
         path: Routes.chatConversations,
         builder: (c, s) => const ConversationListScreen(),

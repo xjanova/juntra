@@ -24,6 +24,11 @@ class AppConfig {
     this.supportEmail = kSupportEmail,
     this.supportLine,
     this.fromServer = false,
+    this.features = const {},
+    this.voicePremium,
+    this.rooms = false,
+    this.freeReading = false,
+    this.pushFcm = false,
   });
 
   static const kPrivacyUrl = 'https://xn--82c4af5bzdj.online/privacy';
@@ -46,8 +51,26 @@ class AppConfig {
   final String? supportLine;
   final bool fromServer;
 
+  /// `features.*` — ความสามารถที่เซิร์ฟเวอร์รุ่นนี้มี (เซิร์ฟเวอร์เก่าไม่มีคีย์ = ไม่มี)
+  final Map<String, bool> features;
+
+  /// เสียงพรีเมียม (+฿100 ต่อคำทำนาย) — null = ขายไม่ได้ตอนนี้/เซิร์ฟเวอร์เก่า
+  final VoicePremiumOffer? voicePremium;
+
+  /// เซิร์ฟเวอร์มีห้องผู้พยากรณ์ (`/v1/chat/rooms`) แล้ว
+  final bool rooms;
+
+  /// ไพ่ฟรี 1 ใบเปิดอยู่ (สิทธิ์รายคนเช็คที่ `GET /v1/tarot/free`)
+  final bool freeReading;
+
+  /// เซิร์ฟเวอร์ส่ง push ผ่าน FCM ได้
+  final bool pushFcm;
+
   /// ไม่รู้จักบริการนี้ = ถือว่าปิด (บริการใหม่ในอนาคตต้องให้เซิร์ฟเวอร์เปิดเอง)
   bool isOpen(String service) => services[service] ?? false;
+
+  /// ไม่รู้จัก = ไม่มี (แอพซ่อนสิ่งที่เซิร์ฟเวอร์ยังไม่รองรับ)
+  bool has(String feature) => features[feature] ?? false;
 
   /// อีเมลสำหรับแสดงผล — โดเมนเป็นภาษาไทยแบบที่เว็บแสดง ("hello@จันทรา.online")
   /// ลิงก์ mailto ยังใช้ [supportEmail] แบบ punycode ที่แอพอีเมลทุกตัวส่งได้
@@ -59,6 +82,10 @@ class AppConfig {
     final legal = j['legal'] is Map ? Map<String, dynamic>.from(j['legal'] as Map) : const <String, dynamic>{};
     final support = j['support'] is Map ? Map<String, dynamic>.from(j['support'] as Map) : const <String, dynamic>{};
     final billing = j['billing'] is Map ? Map<String, dynamic>.from(j['billing'] as Map) : const <String, dynamic>{};
+    final f = j['features'];
+    final vp = j['voice_premium'];
+    final free = j['free_reading'];
+    final push = j['push'];
     String url(String? v, String d) =>
         (v != null && v.startsWith('https://')) ? v : d;
     return AppConfig(
@@ -75,8 +102,35 @@ class AppConfig {
           : kSupportEmail,
       supportLine: support['line']?.toString(),
       fromServer: true,
+      features: {
+        if (f is Map)
+          for (final e in f.entries) e.key.toString(): e.value == true,
+      },
+      voicePremium: vp is Map ? VoicePremiumOffer.fromJson(Map<String, dynamic>.from(vp)) : null,
+      rooms: j['rooms'] == true,
+      freeReading: free is Map && free['enabled'] == true,
+      pushFcm: push is Map && push['fcm'] == true,
     );
   }
+}
+
+/// ข้อเสนอเสียงพรีเมียมจาก `/v1/app/config` → `voice_premium`
+@immutable
+class VoicePremiumOffer {
+  const VoicePremiumOffer({required this.offerable, required this.price, required this.qaMinutes});
+
+  /// ระบบเสียงพร้อมและโควต้าวันนี้ยังพอ — false = ห้ามโชว์ปุ่มซื้อ
+  final bool offerable;
+  final num price;
+
+  /// ซื้อเสียงแล้วได้เวลาถามต่ออย่างน้อยกี่นาที
+  final int qaMinutes;
+
+  factory VoicePremiumOffer.fromJson(Map<String, dynamic> j) => VoicePremiumOffer(
+        offerable: j['offerable'] == true,
+        price: j['price'] is num ? j['price'] as num : num.tryParse('${j['price']}') ?? 0,
+        qaMinutes: (j['qa_minutes'] as num?)?.toInt() ?? 20,
+      );
 }
 
 class AppConfigRepository {

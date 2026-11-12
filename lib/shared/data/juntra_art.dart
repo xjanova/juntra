@@ -78,6 +78,38 @@ class JuntraArt {
   /// (aries…pisces) จึงจับคู่กับ API ได้โดยไม่ต้องแปลงชื่อ
   static String zodiac(String slug) => '$_zodiac/$slug.webp';
 
+  // ─── ชุดเว็บ 2026-11 (ธีม juntra-payakorn) ───────────────────
+  // ก๊อปจาก juntraweb/public/images/juntra/ — ภาพชุดเดียวกับที่ลูกค้าเห็นบนเว็บ
+
+  /// ภาพห้องผู้พยากรณ์ — [key] = busaba · maemor · kunsai (rooms/{key}.webp)
+  static String room(String key) => 'assets/images/rooms/$key.webp';
+
+  /// ฉากโต๊ะของห้อง (theater plate) — rooms/plate-{key}.webp
+  static String roomPlate(String key) => 'assets/images/rooms/plate-$key.webp';
+
+  /// ภาพประจำแพ็กเกจไพ่ — [key] = single · three · quick · … · kunsai
+  static String spread(String key) => 'assets/images/spreads/$key.webp';
+
+  /// สไลด์หน้าแรก (ภาพเดียวกับ hero ของเว็บ)
+  static const heroSlides = <String>[
+    'assets/images/hero/maemor-1.webp',
+    'assets/images/hero/busaba-1.webp',
+    'assets/images/hero/maemor-2.webp',
+    'assets/images/hero/busaba-2.webp',
+    'assets/images/hero/maemor-3.webp',
+    'assets/images/hero/busaba-3.webp',
+    'assets/images/hero/maemor-4.webp',
+    'assets/images/hero/maemor-5.webp',
+  ];
+
+  /// ป้ายเช็กอินต่อเนื่อง (DailyLuck::MILESTONES 3 · 7 · 14 · 30 วัน)
+  static String streakBadge(int days) => 'assets/images/badges/streak-$days.webp';
+
+  /// ภาพหน้าบัญชีชุดใหม่ของเว็บ
+  static const collection = '$_art/collection.webp';
+  static const dailyLuck = '$_art/daily-luck.webp';
+  static const review = '$_art/review.webp';
+
   /// ราศีทั้ง 12 ตามลำดับโหราศาสตร์ — ใช้ตรวจว่าไฟล์ครบในเทสต์
   static const zodiacSlugs = <String>[
     'aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo',

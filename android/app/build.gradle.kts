@@ -108,3 +108,11 @@ android {
 flutter {
     source = "../.."
 }
+
+// Push notifications (firebase_messaging). The Firebase config is not in the
+// repo yet — the owner creates the Firebase project and drops
+// google-services.json here. Without it the plugin is skipped, the build
+// still works and lib/core/push/push_service.dart turns push off.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}

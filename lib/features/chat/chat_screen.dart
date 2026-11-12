@@ -45,13 +45,25 @@ import '../../core/api/app_config_repository.dart';
 ///   - `/chat`        → คุยต่อจากบทสนทนาล่าสุด (สร้างใหม่เมื่อยังไม่มี)
 ///   - `/chat?id=N`   → resume บทสนทนาที่ระบุ
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, this.resumeConversationId, this.fromReadingId});
+  const ChatScreen({
+    super.key,
+    this.resumeConversationId,
+    this.fromReadingId,
+    this.room,
+    this.startNew = false,
+  });
 
   /// If provided, load that conversation instead of the most recent one.
   final int? resumeConversationId;
 
   /// เปิดห้องคุยต่อจากคำทำนายไพ่ใบนี้ ("คุยต่อกับแม่หมอ" ในหน้าผล)
   final int? fromReadingId;
+
+  /// ห้องผู้พยากรณ์ (busaba · maemor · kunsai) — null = ห้องแม่หมอ / ห้องของคำทำนาย
+  final String? room;
+
+  /// true = เริ่มบทสนทนาใหม่ในห้องนี้ ไม่คุยต่อห้องเดิม
+  final bool startNew;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
