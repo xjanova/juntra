@@ -111,6 +111,23 @@ class JuntraArt {
   /// ตรา DBD Registered (กรมพัฒนาธุรกิจการค้า) — ชุดเดียวกับ footer/หน้าแรกของเว็บ
   static const dbdBadge = 'assets/images/dbd-registered.webp';
 
+  /// โลโก้ของเว็บ (พื้นทึบ 512px) — ใช้ในกรอบ/การ์ด ไม่ใช่มุมจอ (มุมจอใช้ [logoMark])
+  static const logoJuntra = 'assets/images/logo-juntra.webp';
+
+  /// พื้นหลังหน้าแรก 9:16 จาก ChatGPT — จันทร์เสี้ยวบน วัดกับลายกนกล่าง ช่วงกลางมืดไว้วางการ์ด
+  static const homeBg = 'assets/images/home/home-bg.webp';
+
+  /// พื้นหลังสแปลช — วงแหวนทองสำหรับโลโก้อยู่ที่ x 50% · **y ≈ 41%** (ไม่ใช่กึ่งกลาง)
+  static const splashBg = 'assets/images/home/splash-bg.webp';
+
+  /// ภาพสถานะว่างชุดใหม่ (4:3)
+  static const stateNoChat = '$_state/no-chat.webp';
+  static const stateOffline = '$_state/offline.webp';
+  static const stateCollectionEmpty = '$_state/collection-empty.webp';
+
+  /// แบนเนอร์ "มีอะไรใหม่" ของเว็บ
+  static const whatsNew = '$_art/whats-new.webp';
+
   /// ภาพหน้าบัญชีชุดใหม่ของเว็บ
   static const collection = '$_art/collection.webp';
   static const dailyLuck = '$_art/daily-luck.webp';

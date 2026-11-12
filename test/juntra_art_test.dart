@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:juntra/core/api/rooms_repository.dart';
 import 'package:juntra/shared/data/fortune_categories.dart';
 import 'package:juntra/shared/data/juntra_art.dart';
+import 'package:juntra/shared/data/spreads.dart';
 import 'package:yaml/yaml.dart';
 
 /// ภาพประกอบต้องมีอยู่จริง และต้องถูกประกาศใน pubspec
@@ -46,6 +48,23 @@ void main() {
     JuntraArt.cardBack,
     ...JuntraArt.zodiacSlugs.map(JuntraArt.zodiac),
     ...fortuneCategories.map((c) => JuntraArt.category(c.id)),
+    // ชุดเว็บ 2026-11 + ChatGPT
+    JuntraArt.bgNebula,
+    JuntraArt.dbdBadge,
+    JuntraArt.logoJuntra,
+    JuntraArt.homeBg,
+    JuntraArt.splashBg,
+    JuntraArt.stateNoChat,
+    JuntraArt.stateOffline,
+    JuntraArt.stateCollectionEmpty,
+    JuntraArt.whatsNew,
+    JuntraArt.collection,
+    JuntraArt.dailyLuck,
+    JuntraArt.review,
+    ...JuntraArt.heroSlides,
+    for (final k in OracleRoom.keys) ...[JuntraArt.room(k), JuntraArt.roomPlate(k)],
+    ...spreadIds.map(JuntraArt.spread),
+    for (final d in const [3, 7, 14, 30]) JuntraArt.streakBadge(d),
   ];
 
   test('ทุก path ใน JuntraArt มีไฟล์อยู่จริง', () {
