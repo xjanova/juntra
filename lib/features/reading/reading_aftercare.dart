@@ -35,6 +35,7 @@ class _ReadingReviewCardState extends ConsumerState<ReadingReviewCard>
   late final TextEditingController _message = TextEditingController(text: widget.initial?.message ?? '');
   bool _sending = false;
   bool _justSaved = false;
+  bool _unsupported = false;
   String? _error;
 
   /// พิมพ์รีวิวค้างไว้แล้วเลื่อนจอ — ข้อความต้องไม่หาย
@@ -56,6 +57,7 @@ class _ReadingReviewCardState extends ConsumerState<ReadingReviewCard>
     });
     try {
       final repo = await ref.read(readingEngagementRepositoryProvider.future);
+      if (!mounted) return;
       final review = await repo.saveReview(
         widget.readingId,
         rating: _rating,
@@ -70,7 +72,7 @@ class _ReadingReviewCardState extends ConsumerState<ReadingReviewCard>
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.message);
+      setState(() { _unsupported = e.statusCode == 404; _error = e.message; });
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'บันทึกรีวิวไม่สำเร็จ ตรวจสอบสัญญาณแล้วลองใหม่อีกครั้งนะคะ');
@@ -82,6 +84,7 @@ class _ReadingReviewCardState extends ConsumerState<ReadingReviewCard>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (_unsupported) return const SizedBox.shrink();
     return _AftercareBox(
       art: JuntraArt.review,
       eyebrow: 'คำทำนายนี้ตรงใจไหมคะ',
@@ -281,6 +284,7 @@ class _ReadingShareCardState extends ConsumerState<ReadingShareCard> {
   late bool _public = widget.initial.public;
   bool _busy = false;
   String? _error;
+  bool _unsupported = false;
 
   @override
   void didUpdateWidget(covariant ReadingShareCard old) {
@@ -291,6 +295,7 @@ class _ReadingShareCardState extends ConsumerState<ReadingShareCard> {
 
   Future<void> _set(bool public) async {
     if (_busy) return;
+    setState(() => _busy = true);
     if (public) {
       final ok = await showDialog<bool>(
         context: context,
@@ -313,7 +318,8 @@ class _ReadingShareCardState extends ConsumerState<ReadingShareCard> {
           ],
         ),
       );
-      if (ok != true || !mounted) return;
+      if (!mounted) return;
+      if (ok != true) { setState(() => _busy = false); return; }
     }
     setState(() {
       _busy = true;
@@ -321,12 +327,14 @@ class _ReadingShareCardState extends ConsumerState<ReadingShareCard> {
     });
     try {
       final repo = await ref.read(readingEngagementRepositoryProvider.future);
+      if (!mounted) return;
       final share = await repo.setShare(widget.readingId, public: public);
       if (!mounted) return;
       setState(() => _public = share.public);
+      ref.invalidate(readingDetailProvider(widget.readingId));
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.message);
+      setState(() { _unsupported = e.statusCode == 404; _error = e.message; });
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'เปลี่ยนการแชร์ไม่สำเร็จ ตรวจสอบสัญญาณแล้วลองใหม่อีกครั้งนะคะ');
@@ -337,6 +345,7 @@ class _ReadingShareCardState extends ConsumerState<ReadingShareCard> {
 
   @override
   Widget build(BuildContext context) {
+    if (_unsupported) return const SizedBox.shrink();
     return _AftercareBox(
       eyebrow: 'แชร์ไพ่ชุดนี้',
       child: Column(

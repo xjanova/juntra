@@ -19,6 +19,7 @@ import '../../core/api/api_exceptions.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/api/tarot_catalog_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/auth/session.dart';
 import '../../core/sound/sound_service.dart';
 import '../../shared/data/juntra_art.dart';
 import '../../shared/data/tarot_deck.dart';
@@ -49,7 +50,7 @@ import 'shuffle_pricing.dart';
 /// turns them into cards, debits the wallet, reads in the background and
 /// returns a Reading id — we then `pushReplacement('/reading?id=<id>')`.
 /// No deal = no game: the app never draws cards locally (the web never does).
-class ShuffleScreen extends ConsumerStatefulWidget {
+class ShuffleScreen extends ConsumerWidget {
   const ShuffleScreen({
     super.key, required this.spreadId, this.categoryId, this.initialQuestion,
   });
@@ -58,12 +59,25 @@ class ShuffleScreen extends ConsumerStatefulWidget {
   final String? initialQuestion;
 
   @override
-  ConsumerState<ShuffleScreen> createState() => _ShuffleScreenState();
+  Widget build(BuildContext context, WidgetRef ref) => _ShuffleSessionScreen(
+    key: ValueKey('${ref.watch(sessionUserIdProvider)}:$spreadId'),
+    spreadId: spreadId, categoryId: categoryId, initialQuestion: initialQuestion,
+  );
+}
+
+class _ShuffleSessionScreen extends ConsumerStatefulWidget {
+  const _ShuffleSessionScreen({super.key, required this.spreadId, this.categoryId, this.initialQuestion});
+  final String spreadId;
+  final String? categoryId;
+  final String? initialQuestion;
+
+  @override
+  ConsumerState<_ShuffleSessionScreen> createState() => _ShuffleScreenState();
 }
 
 enum _Phase { question, shuffle, dealFailed, fan, travel, reveal, grid, saving }
 
-class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
+class _ShuffleScreenState extends ConsumerState<_ShuffleSessionScreen>
     with TickerProviderStateMixin {
   _Phase _phase = _Phase.question;
   /// กันคิดเงินซ้ำ: การเปิดไพ่หนึ่งครั้งใช้คีย์เดียวตลอด รวมถึงตอนกดลองใหม่
@@ -199,6 +213,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
   Future<TarotDeal?> _fetchDeal() async {
     try {
       final repo = await ref.read(tarotCatalogRepositoryProvider.future);
+      if (!mounted) return null;
       final deal = await repo.deal().timeout(const Duration(seconds: 25));
       // ต้องพอให้เลือกครบแพ็กเกจ — กองแหว่ง = เซิร์ฟเวอร์ผิดปกติ ไม่เล่นต่อ
       if (deal != null && deal.cards.length >= _pkg.cards) return deal;
@@ -288,6 +303,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
   String get _reader => OracleRoom.builtIn(_pkg.roomKey).short;
 
   Future<void> _enterTravel() async {
+    if (_phase != _Phase.fan || _picked.length != _pkg.cards) return;
     setState(() => _phase = _Phase.travel);
     await Future<void>.delayed(
       Duration(milliseconds: 800 + _picked.length * 80),
@@ -325,6 +341,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
   /// บันทึกคำทำนาย: ตัดเงิน → เซิร์ฟเวอร์ตอบทันที (แม่หมออ่านเบื้องหลัง) → ไปหน้าผลซึ่งถามสถานะจนเสร็จ
   /// ทางเดียวที่ออกจาก /shuffle ไป /reading
   Future<void> _finalize() async {
+    if (_phase == _Phase.saving) return;
     // Guests must sign in before we can debit a wallet.
     final auth = ref.read(authControllerProvider);
     if (auth is! AuthAuthenticated) {
@@ -346,6 +363,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
 
     try {
       final repo = await ref.read(fortuneRepositoryProvider.future);
+      if (!mounted) return;
       final picks = <TarotPick>[
         for (var i = 0; i < _picked.length; i++)
           TarotPick(
@@ -353,7 +371,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
             reversed: i < _reversed.length ? _reversed[i] : false,
           ),
       ];
-      if (!mounted) return;
+      if (!mounted || ref.read(sessionUserIdProvider) != auth.userId) return;
       final birth = _pkg.birth && _birthDate != null
           ? DateFormat('yyyy-MM-dd').format(_birthDate!)
           : null;
@@ -379,7 +397,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
       _attempt.succeeded();
 
       // ต้องเช็ค mounted ก่อนแตะ ref — ผู้ใช้กด back ระหว่างรอได้
-      if (!mounted) return;
+      if (!mounted || ref.read(sessionUserIdProvider) != auth.userId) return;
       // ยอดเครดิตหน้าแรก/แชท + ประวัติ ต้องสะท้อนการตัดเงินทันที
       // ignore: unawaited_futures
       ref.read(authControllerProvider.notifier).refresh();
@@ -495,6 +513,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                   icon: const Icon(Icons.chat_bubble_outline),
                   onPressed: () {
                     Navigator.of(sheetCtx).pop();
+                    if (!mounted) return;
                     context.pushReplacement('${Routes.chat}?room=${room.key}');
                   },
                 ),
@@ -536,6 +555,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                   label: 'อ่านคำทำนายเดิม',
                   onPressed: () {
                     Navigator.of(sheetCtx).pop();
+                    if (!mounted) return;
                     context.pushReplacement('${Routes.reading}?id=$readingId');
                   },
                 ),
@@ -544,6 +564,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                 label: 'เลือกแพ็กเกจอื่น',
                 onPressed: () {
                   Navigator.of(sheetCtx).pop();
+                  if (!mounted) return;
                   if (context.canPop()) context.pop();
                 },
               ),
@@ -599,6 +620,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                   ),
                   onPressed: () async {
                     Navigator.of(sheetCtx).pop();
+                    if (!mounted) return;
                     if (!isPlayChannel) {
                       context.push(Routes.wallet);
                       return;
@@ -678,6 +700,7 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
                   ),
                   onPressed: () {
                     Navigator.of(sheetCtx).pop();
+                    if (!mounted) return;
                     context.push(Routes.login);
                   },
                   child: const Text('เข้าสู่ระบบ',
@@ -729,8 +752,8 @@ class _ShuffleScreenState extends ConsumerState<ShuffleScreen>
     // แพ็กเกจจากเซิร์ฟเวอร์ — ตรึงค่าแรกไว้ทั้งเกม (ดู [_package])
     final pkgAsync = ref.watch(tarotPackageProvider(widget.spreadId));
     _package ??= pkgAsync.valueOrNull;
-    if (_package == null) {
-      return _PackageGate(loading: pkgAsync.isLoading);
+    if (_package == null || _package!.webOnly || !ref.watch(appConfigValueProvider).isOpen('tarot')) {
+      return _PackageGate(loading: _package == null && pkgAsync.isLoading);
     }
     _defaultBirthOnce();
 

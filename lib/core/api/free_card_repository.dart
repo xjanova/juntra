@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/session.dart';
 import 'api_client.dart';
 import 'api_exceptions.dart';
+import 'app_config_repository.dart';
 import 'endpoints.dart';
 
 /// ไพ่ฟรี 1 ใบ (เว็บ /tarot/free · docs/API_PARITY_2026-11.md §D)
@@ -64,7 +65,7 @@ class FreeCardState {
   /// claimed (เว็บเรียก used) · disabled · daily_cap · in_flight · no_token · guest
   final String? reason;
 
-  /// ความยาวสูงสุดที่เซิร์ฟเวอร์ให้ — แอพใช้คุมช่องคำถาม
+  /// ความยาวคำตอบ AI สูงสุดจากเซิร์ฟเวอร์ (ไม่ใช่ความยาวคำถาม)
   final int? maxChars;
 
   /// ข้อความไทยของเซิร์ฟเวอร์ (ถ้ามี) — ใช้ก่อนข้อความในแอพเสมอ
@@ -143,6 +144,8 @@ final freeCardRepositoryProvider = FutureProvider<FreeCardRepository>((ref) asyn
 /// สิทธิ์ไพ่ฟรีของผู้ใช้ที่ล็อกอินอยู่ — ออกจากระบบ/สลับบัญชีแล้วโหลดใหม่ (null = ยังไม่ล็อกอิน)
 final freeCardStatusProvider = FutureProvider.autoDispose<FreeCardState?>((ref) async {
   if (ref.watch(sessionUserIdProvider) == null) return null;
+  final config = ref.watch(appConfigValueProvider);
+  if (!config.has('free_reading') || !config.freeReading) return FreeCardState.unsupported;
   final repo = await ref.watch(freeCardRepositoryProvider.future);
   return repo.status();
 });

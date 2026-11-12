@@ -56,6 +56,7 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
   bool _busy = false;
   bool _foreground = true;
   bool _slow = false;
+  bool _toggling = false;
 
   Timer? _tickTimer;
   Timer? _slowTimer;
@@ -103,14 +104,10 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
     _tickTimer?.cancel();
     _slowTimer?.cancel();
     _download?.cancel();
-    for (final s in _subs) {
-      s.cancel();
-    }
-    _player?.dispose();
-    _player = null;
-    for (final path in _tempFiles) {
-      _deleteQuietly(path);
-    }
+    // รอตัวเล่นปล่อยไฟล์ก่อนลบ (Windows ลบไฟล์ที่ยังเปิดอยู่ไม่ได้)
+    unawaited(_disposePlayer().whenComplete(() {
+      for (final path in _tempFiles) { _deleteQuietly(path); }
+    }));
     super.dispose();
   }
 
@@ -141,7 +138,7 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
 
   Future<void> _tick() async {
     if (!mounted || _busy || _stage != _Stage.building) return;
-    if (!_foreground) {
+    if (!_foreground || ModalRoute.isCurrentOf(context) == false) {
       _schedule(const Duration(seconds: 3));
       return;
     }
@@ -149,6 +146,7 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
     VoiceBuild? got;
     try {
       final repo = await ref.read(readingEngagementRepositoryProvider.future);
+      if (!mounted) return;
       got = await repo.voiceNext(widget.readingId);
     } on ApiException catch (e) {
       // ไม่มีเส้นนี้ (เซิร์ฟเวอร์เก่า) / ไม่ใช่เจ้าของ = ไม่มีเสียงให้ฟัง ซ่อนเงียบ ๆ
@@ -169,6 +167,10 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
       _misses = 0;
       final b = got;
       setState(() => _build = b);
+      if (b.wait) {
+        _schedule(const Duration(seconds: 3));
+        return;
+      }
       if (b.ready) {
         if (b.voice != null && b.voice!.chapters.isNotEmpty) _chapters = b.voice!.chapters;
         setState(() => _stage = _Stage.downloading);
@@ -182,10 +184,6 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
           // ignore: unawaited_futures
           ref.read(authControllerProvider.notifier).refresh();
         }
-        return;
-      }
-      if (b.wait) {
-        _schedule(const Duration(seconds: 3));
         return;
       }
     }
@@ -216,10 +214,12 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
     String? path;
     try {
       final dir = await getTemporaryDirectory();
+      if (!mounted || cancel.isCancelled) return;
       path = '${dir.path}${Platform.pathSeparator}juntra-voice-${widget.readingId}-'
           '${DateTime.now().millisecondsSinceEpoch}.mp3';
       _tempFiles.add(path);
       final repo = await ref.read(readingEngagementRepositoryProvider.future);
+      if (!mounted || cancel.isCancelled) return;
       await repo.downloadVoice(widget.readingId, path, url: url, cancel: cancel);
       if (!mounted) return; // dispose ลบไฟล์ใน _tempFiles ให้แล้ว
 
@@ -228,6 +228,7 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
       final player = AudioPlayer();
       _player = player;
       await player.setReleaseMode(ReleaseMode.stop);
+      if (!mounted) return;
       await player.setSource(DeviceFileSource(path));
       if (!mounted) return;
       _subs.addAll([
@@ -258,18 +259,19 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
       }
       setState(() => _stage = _Stage.failed);
     } finally {
+      // การดาวน์โหลดอาจเขียนไฟล์หลัง dispose เริ่มเก็บกวาดไปแล้ว
+      if ((!mounted || cancel.isCancelled) && path != null) _deleteQuietly(path);
       if (identical(_download, cancel)) _download = null;
     }
   }
 
   Future<void> _disposePlayer() async {
-    for (final s in _subs) {
-      await s.cancel();
-    }
+    final subscriptions = List<StreamSubscription<dynamic>>.from(_subs);
     _subs.clear();
     final old = _player;
     _player = null;
-    await old?.dispose();
+    for (final s in subscriptions) { await s.cancel(); }
+    try { await old?.dispose(); } catch (_) { /* ยังต้องเก็บกวาดไฟล์แม้ native player ปิดไปแล้ว */ }
   }
 
   static void _deleteQuietly(String path) {
@@ -281,15 +283,19 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
 
   Future<void> _toggle() async {
     final p = _player;
-    if (p == null) return;
+    if (p == null || _toggling || !_foreground) return;
+    setState(() => _toggling = true);
     try {
       if (_playerState == PlayerState.playing) {
         await p.pause();
       } else {
         await p.resume();
+        if (!_foreground || !mounted) await p.pause();
       }
     } catch (_) {
       if (mounted) setState(() => _stage = _Stage.failed);
+    } finally {
+      if (mounted) setState(() => _toggling = false);
     }
   }
 
@@ -415,7 +421,7 @@ class _ReadingVoicePanelState extends ConsumerState<ReadingVoicePanel>
               shape: const CircleBorder(),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: _toggle,
+                onTap: _toggling ? null : _toggle,
                 child: Ink(
                   width: 52, height: 52,
                   decoration: const BoxDecoration(

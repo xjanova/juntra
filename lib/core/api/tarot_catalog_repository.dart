@@ -192,7 +192,11 @@ extension TarotDealApi on TarotCatalogRepository {
     if (data is! Map) return null;
     final token = data['deal_token']?.toString();
     final raw = data['cards'];
-    if (token == null || raw is! List) return null;
+    if (token == null || token.isEmpty || raw is! List || raw.length != 78 ||
+        raw.any((c) => c is! Map || c['slug'] is! String || (c['slug'] as String).trim().isEmpty) ||
+        raw.map((c) => (c as Map)['slug']).toSet().length != 78) {
+      return null;
+    }
     return TarotDeal(
       token: token,
       cards: raw.whereType<Map>().map((c) => DealCard(

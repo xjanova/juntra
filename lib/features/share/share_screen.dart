@@ -9,6 +9,7 @@ import '../../core/api/api_exceptions.dart';
 import '../../core/api/app_config_repository.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/api/reading_engagement_repository.dart';
+import '../../core/auth/session.dart';
 import 'share_link.dart';
 
 /// Screen 12 — แชร์คำทำนาย
@@ -22,24 +23,42 @@ import 'share_link.dart';
 /// `/tarot/result/{id}` ตรง ๆ เพื่อนที่กดลิงก์เจอ 403 ทุกครั้ง ตอนนี้:
 ///   - เซิร์ฟเวอร์มี `features.reading_share` → เปิดลิงก์ก่อน (`POST …/share {public:true}`)
 ///     แล้วใช้ลิงก์ที่ได้กลับมา
-///   - เซิร์ฟเวอร์เก่า → ใช้ลิงก์เดิมเฉพาะเมื่อคำทำนายเปิดแชร์ไว้แล้ว ไม่งั้นแชร์ข้อความอย่างเดียว
-class ShareScreen extends ConsumerStatefulWidget {
+///   - เซิร์ฟเวอร์เก่า / 404 → แชร์ข้อความอย่างเดียว ไม่มีลิงก์คำทำนายที่เปิดไม่ได้
+class ShareScreen extends ConsumerWidget {
   const ShareScreen({super.key, this.readingId});
 
   /// id ของคำทำนายที่จะแชร์ — ไม่มีก็แชร์ลิงก์เว็บกลางแทน
   final int? readingId;
 
   @override
-  ConsumerState<ShareScreen> createState() => _ShareScreenState();
+  Widget build(BuildContext context, WidgetRef ref) => _SessionShareScreen(
+    key: ValueKey('${ref.watch(sessionUserIdProvider)}:$readingId'), readingId: readingId,
+  );
 }
 
-class _ShareScreenState extends ConsumerState<ShareScreen> {
+class _SessionShareScreen extends ConsumerStatefulWidget {
+  const _SessionShareScreen({super.key, this.readingId});
+  final int? readingId;
+
+  @override
+  ConsumerState<_SessionShareScreen> createState() => _ShareScreenState();
+}
+
+class _ShareScreenState extends ConsumerState<_SessionShareScreen> {
   /// ลิงก์ที่ตัดสินแล้ว (เปิดลิงก์ครั้งเดียวต่อการเปิดแผ่นนี้)
   ShareLink? _link;
   bool _busy = false;
 
   bool get _usesShareApi =>
-      widget.readingId != null && ref.read(appConfigValueProvider).has('reading_share');
+      widget.readingId != null && _finishedTarot && ref.read(appConfigValueProvider).has('reading_share');
+
+  bool get _finishedTarot {
+    final id = widget.readingId;
+    if (id == null) return false;
+    final detail = ref.read(readingDetailProvider(id)).valueOrNull;
+    return detail != null && (detail['type']?.toString().startsWith('tarot_') ?? false) &&
+        (detail['status'] ?? 'done') == 'done' && (detail['result']?.toString().trim().isNotEmpty ?? false);
+  }
 
   /// รายละเอียดคำทำนาย (ถ้าหน้าผลโหลดไว้แล้ว) — ใช้ชื่อผู้อ่าน + สถานะแชร์ของเซิร์ฟเวอร์เก่า
   ReadingExtras? get _extras {
@@ -54,22 +73,21 @@ class _ShareScreenState extends ConsumerState<ShareScreen> {
     if (cached != null) return cached;
     final id = widget.readingId;
     if (id == null || !_usesShareApi) {
-      return _link = shareLinkFor(readingId: id, share: _extras?.share);
+      return _link = shareLinkFor(readingId: id);
     }
-    setState(() => _busy = true);
     try {
       final repo = await ref.read(readingEngagementRepositoryProvider.future);
+      if (!mounted) return null;
       final share = await repo.setShare(id, public: true);
       if (!mounted) return null;
       // หน้าผลต้องเห็นว่าลิงก์เปิดแล้ว (การ์ดแชร์บนหน้าผล)
       ref.invalidate(readingDetailProvider(id));
       return _link = shareLinkFor(readingId: id, share: share);
     } on ApiException catch (e) {
+      if (e.statusCode == 404) return _link = shareLinkFor(readingId: id);
       _snack(e.message);
     } catch (_) {
       _snack('เปิดลิงก์แชร์ไม่สำเร็จ ตรวจสอบสัญญาณแล้วลองใหม่อีกครั้งนะคะ');
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
     return null;
   }
@@ -82,10 +100,10 @@ class _ShareScreenState extends ConsumerState<ShareScreen> {
   @override
   Widget build(BuildContext context) {
     final id = widget.readingId;
-    final shareApi = id != null && ref.watch(appConfigValueProvider).has('reading_share');
     final detail = id == null ? null : ref.watch(readingDetailProvider(id)).valueOrNull;
+    final shareApi = id != null && _finishedTarot && ref.watch(appConfigValueProvider).has('reading_share');
     final public = detail != null && ReadingExtras.fromReading(detail).share.public;
-    final textOnly = id != null && !shareApi && !public;
+    final textOnly = id != null && (!shareApi || (_link != null && !_link!.hasUrl));
     final willOpenLink = shareApi && !public && _link == null;
 
     return Scaffold(
@@ -187,29 +205,40 @@ class _ShareScreenState extends ConsumerState<ShareScreen> {
     );
   }
 
-  Future<void> _shareLine() async {
-    final link = await _resolve();
-    if (link == null || !mounted) return;
+  Future<void> _act(Future<void> Function(ShareLink) action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final link = await _resolve();
+      if (link == null || !mounted) return;
+      await action(link);
+    } catch (_) {
+      _snack('แชร์ไม่สำเร็จ ลองคัดลอกข้อความอีกครั้งนะคะ');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _shareLine() => _act((link) async {
     final body = link.hasUrl ? '$_text ${link.url}' : _text;
     await _open('https://line.me/R/share?text=${Uri.encodeComponent(body)}');
-  }
+  });
 
-  Future<void> _shareFacebook() async {
-    final link = await _resolve();
-    if (link == null || !mounted) return;
-    // Facebook แชร์ได้แต่ลิงก์ — คำทำนายส่วนตัว (เซิร์ฟเวอร์เก่า) แชร์หน้าแรกแทนลิงก์ที่เปิดไม่ได้
-    final url = link.url ?? kSiteUrl;
-    await _open('https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(url)}');
-  }
+  Future<void> _shareFacebook() => _act((link) async {
+    if (link.url == null) {
+      await Clipboard.setData(ClipboardData(text: _text));
+      _snack('คัดลอกข้อความแล้วค่ะ วางใน Facebook ได้เลย');
+      return;
+    }
+    await _open('https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(link.url!)}');
+  });
 
-  Future<void> _copy() async {
-    final link = await _resolve();
-    if (link == null || !mounted) return;
+  Future<void> _copy() => _act((link) async {
     await Clipboard.setData(ClipboardData(text: link.url ?? _text));
     if (!mounted) return;
     _snack(link.hasUrl ? 'คัดลอกลิงก์แล้วค่ะ' : 'คัดลอกข้อความแล้วค่ะ');
     context.pop();
-  }
+  });
 
   Future<void> _open(String url) async {
     var ok = false;

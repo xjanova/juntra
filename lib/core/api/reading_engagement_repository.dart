@@ -58,7 +58,7 @@ class ReadingEngagementRepository {
       final res = await _api.post<Map<String, dynamic>>(Api.historyReadingVoiceNext(readingId));
       return VoiceBuild.fromJson(_data(res));
     } on ApiException catch (e) {
-      if (e.statusCode == 409 && e.body != null) {
+      if (e.statusCode == 409 && e.body != null && _data(e.body!)['wait'] == true) {
         return VoiceBuild.fromJson({..._data(e.body!), 'wait': true});
       }
       rethrow;
@@ -93,7 +93,8 @@ class ReadingEngagementRepository {
     if (url != null && url.startsWith('https://')) {
       final base = Uri.tryParse(_api.dio.options.baseUrl);
       final u = Uri.tryParse(url);
-      if (base != null && u != null && u.host == base.host && u.path.contains('/v1/history/readings/$readingId/voice')) {
+      if (base != null && u != null && u.origin == base.origin && u.userInfo.isEmpty &&
+          u.path == '${base.path.replaceFirst(RegExp(r'/$'), '')}${Api.historyReadingVoiceFile(readingId)}') {
         return url;
       }
     }
@@ -156,7 +157,7 @@ class VoiceBuild {
       refunded: j['refunded'] == true,
       wait: j['wait'] == true,
       busy: j['busy'] == true,
-      url: j['url'] is String ? j['url'] as String : null,
+      url: j['url'] is String ? j['url'] as String : (voice is Map && voice['url'] is String ? voice['url'] as String : null),
       voice: voice is Map ? ReadingVoice.fromJson(Map<String, dynamic>.from(voice)) : null,
     );
   }

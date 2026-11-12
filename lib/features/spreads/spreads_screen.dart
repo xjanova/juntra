@@ -8,6 +8,7 @@ import '../../shared/data/juntra_art.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/rooms_repository.dart';
+import '../../core/api/app_config_repository.dart';
 import '../../core/api/tarot_packages_repository.dart';
 import '../../shared/data/fortune_categories.dart';
 import '../../shared/widgets/pill.dart';
@@ -60,6 +61,7 @@ class SpreadsScreen extends ConsumerWidget {
                       // ไม่เกิดจริง (repository คืนสำรองในเครื่องเสมอ) แต่กันไว้
                       error: (_, _) => ListView(children: const [SizedBox(height: 80)]),
                       data: (packages) {
+                        if (!ref.watch(appConfigValueProvider).isOpen('tarot')) packages = const [];
                         final items = <Widget>[
                           // ภาพประจำหมวดชุดเดียวกับการ์ดบนหน้าแรก — เห็นว่ากำลังดูเรื่องอะไร
                           ArtBanner(

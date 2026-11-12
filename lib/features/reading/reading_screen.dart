@@ -16,6 +16,7 @@ import '../../core/api/free_card_repository.dart';
 import '../../core/api/report_repository.dart';
 import '../../core/api/rooms_repository.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/auth/session.dart';
 import '../../shared/data/juntra_art.dart';
 import '../../shared/data/tarot_deck.dart';
 import '../../shared/widgets/gold_button.dart';
@@ -42,7 +43,9 @@ class ReadingScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final id = readingId;
     if (id == null) return const _NoReading();
-    return _ApiModeReading(readingId: id);
+    final user = ref.watch(sessionUserIdProvider);
+    if (user == null) return const _NoReading();
+    return _ApiModeReading(key: ValueKey('$user:$id'), readingId: id);
   }
 }
 
@@ -51,14 +54,14 @@ class ReadingScreen extends ConsumerWidget {
 // ────────────────────────────────────────────────────────────────────
 
 class _ApiModeReading extends ConsumerStatefulWidget {
-  const _ApiModeReading({required this.readingId});
+  const _ApiModeReading({super.key, required this.readingId});
   final int readingId;
 
   @override
   ConsumerState<_ApiModeReading> createState() => _ApiModeReadingState();
 }
 
-class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
+class _ApiModeReadingState extends ConsumerState<_ApiModeReading> with WidgetsBindingObserver {
   /// ถามทุก 3 วิเหมือนหน้าเว็บ — เลิกถามที่ 4 นาที (ตัวกวาดฝั่งเซิร์ฟเวอร์คืนเงินรายการค้างใน ~5-10 นาที)
   static const _pollEvery = Duration(seconds: 3);
   static const _giveUpAfter = Duration(minutes: 4);
@@ -67,9 +70,22 @@ class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
   DateTime? _pollStarted;
   bool _checking = false;
   bool _gaveUp = false;
+  bool _foreground = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }
@@ -86,7 +102,7 @@ class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
   }
 
   Future<void> _tick() async {
-    if (_checking || !mounted) return;
+    if (_checking || !mounted || !_foreground || ModalRoute.isCurrentOf(context) == false) return;
     if (DateTime.now().difference(_pollStarted!) > _giveUpAfter) {
       _stopPolling();
       setState(() => _gaveUp = true);
@@ -95,6 +111,7 @@ class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
     _checking = true;
     try {
       final repo = await ref.read(fortuneRepositoryProvider.future);
+      if (!mounted) return;
       final status = await repo.readingStatus(widget.readingId);
       if (!mounted) return;
       if (status == 'done' || status == 'failed') {
@@ -245,7 +262,7 @@ class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
         _BackHeader(
           title: title,
           subtitle: subtitle,
-          readingId: done ? readingId : null,
+          readingId: aftercare ? readingId : null,
           onReport: canReport
               ? () => ReportContentSheet.show(context, subject: ReportSubject.reading, subjectId: readingId)
               : null,
@@ -295,7 +312,7 @@ class _ApiModeReadingState extends ConsumerState<_ApiModeReading> {
                   qaMinutes: extras.qaMinutes,
                   conversationId: freeConversation,
                   // การ์ดแชร์ด้านล่างทำหน้าที่ปุ่มแชร์แทน (เปิด/ปิดลิงก์ได้ในที่เดียว)
-                  showShare: !showShareCard,
+                  showShare: aftercare && !showShareCard,
                 ),
               if (done && extras.free) const _FreeUpsell(),
               if (showReview)
