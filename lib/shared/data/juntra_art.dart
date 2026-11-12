@@ -108,6 +108,9 @@ class JuntraArt {
   /// ป้ายเช็กอินต่อเนื่อง (DailyLuck::MILESTONES 3 · 7 · 14 · 30 วัน)
   static String streakBadge(int days) => 'assets/images/badges/streak-$days.webp';
 
+  /// ตรา DBD Registered (กรมพัฒนาธุรกิจการค้า) — ชุดเดียวกับ footer/หน้าแรกของเว็บ
+  static const dbdBadge = 'assets/images/dbd-registered.webp';
+
   /// ภาพหน้าบัญชีชุดใหม่ของเว็บ
   static const collection = '$_art/collection.webp';
   static const dailyLuck = '$_art/daily-luck.webp';

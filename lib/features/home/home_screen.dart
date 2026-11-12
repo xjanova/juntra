@@ -12,70 +12,78 @@ import '../../core/auth/auth_state.dart';
 import '../../shared/data/fortune_categories.dart';
 import '../../shared/data/juntra_art.dart';
 import '../../shared/data/tarot_deck.dart';
-import '../../shared/widgets/art_banner.dart';
 import '../../shared/widgets/crescent_moon.dart';
+import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/pill.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/widgets/tarot_card_widgets.dart';
 import '../../shared/widgets/xman_studio_footer.dart';
-import '../../shared/format/avatar_initial.dart';
 import '../../shared/format/credits.dart';
 import '../../shared/format/plain_preview.dart';
 import '../../core/api/app_config_repository.dart';
+import '../../core/api/rooms_repository.dart';
+import 'home_hero.dart';
+import 'home_sections.dart';
 
-/// Screen 2 — Home. Daily card hero, daily transit reading, quick stats,
-/// fortune categories grid (2×4), Mae Mor online card, recent readings.
+/// Screen 2 — Home, laid out like the web's home page (juntra-payakorn, 2026-11):
+/// full-bleed hero slideshow → wallet → daily card → oracle rooms → tarot
+/// packages (real prices + reader) → the app's fortune categories (owner:
+/// "เก็บหมวดเดิมไว้ด้วย") → free card → other open services → recent readings
+/// → testimonials → DBD → CTA. Every block hides itself when the server does
+/// not have it, so an old server shows a shorter page, never an empty box.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
+  static const _pad = EdgeInsets.symmetric(horizontal: 16);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Defensive: even with locale data initialized in main(), fall back
-    // to a hand-rolled Thai weekday array if anything goes sideways here
-    // — never let a single date format throw and black-out the screen.
-    String weekday;
-    try {
-      weekday = DateFormat('EEEE', 'th').format(DateTime.now());
-    } catch (_) {
-      const days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี',
-                    'ศุกร์', 'เสาร์', 'อาทิตย์'];
-      weekday = days[(DateTime.now().weekday - 1) % 7];
-    }
-
     return Scaffold(
       body: Stack(
         children: [
-          const StarryBackground(density: 50, intensity: 0.6),
-          SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-              children: [
-                _Greeting(weekday: weekday),
-                const SizedBox(height: 16),
-                _DailyCardHero(),
-                const SizedBox(height: 14),
-                _DailyTransitCard(),
-                const SizedBox(height: 14),
-                _QuickStatsRow(),
-                const SizedBox(height: 16),
-                const ThaiDivider(),
-                const SizedBox(height: 12),
-                const _SectionLabel('หมวดดูดวง'),
-                const SizedBox(height: 10),
-                _CategoriesGrid(),
-                const SizedBox(height: 18),
-                _OtherServices(),
-                const SizedBox(height: 16),
-                const ThaiDivider(),
-                const SizedBox(height: 12),
-                _MaeMorOnlineCard(),
-                const SizedBox(height: 18),
-                _RecentReadingsSection(),
-                const SizedBox(height: 24),
-                const Center(child: XmanStudioFooter()),
-              ],
-            ),
+          // hero ทับมุมขวาบน — โลโก้จึงอยู่ใน hero แทน
+          const StarryBackground(density: 50, intensity: 0.6, showMoon: false),
+          ListView(
+            padding: const EdgeInsets.only(bottom: 100),
+            children: [
+              const HomeHero(),
+              const Padding(padding: _pad, child: _HeroActions()),
+              const SizedBox(height: 18),
+              Padding(padding: _pad, child: _QuickStatsRow()),
+              const SizedBox(height: 14),
+              Padding(padding: _pad, child: _DailyCardHero()),
+              const SizedBox(height: 14),
+              Padding(padding: _pad, child: _DailyTransitCard()),
+              const SizedBox(height: 28),
+              const HomeRoomsStrip(),
+              const SizedBox(height: 30),
+              const HomePackages(),
+              const SizedBox(height: 30),
+              const Padding(
+                padding: _pad,
+                child: HomeSectionHead(
+                  eyebrow: 'Categories · หมวดดูดวง',
+                  title: 'ดูดวงตามเรื่องที่ค้างใจ',
+                ),
+              ),
+              const SizedBox(height: 14),
+              Padding(padding: _pad, child: _CategoriesGrid()),
+              const SizedBox(height: 22),
+              const HomeFreeCard(),
+              const SizedBox(height: 22),
+              Padding(padding: _pad, child: _OtherServices()),
+              const SizedBox(height: 22),
+              Padding(padding: _pad, child: _RecentReadingsSection()),
+              const SizedBox(height: 30),
+              const HomeTestimonials(),
+              const SizedBox(height: 30),
+              const HomeDbdCard(),
+              const SizedBox(height: 24),
+              const HomeCtaStrip(),
+              const SizedBox(height: 24),
+              const Center(child: XmanStudioFooter()),
+            ],
           ),
         ],
       ),
@@ -84,49 +92,33 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _Greeting extends ConsumerWidget {
-  const _Greeting({required this.weekday});
-  final String weekday;
+/// ปุ่มใต้ hero แบบ `.hero-cta` ของเว็บ: เปิดไพ่ (หลัก) · คุยกับผู้พยากรณ์ (รอง)
+class _HeroActions extends ConsumerWidget {
+  const _HeroActions();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authControllerProvider);
-    final name = auth is AuthAuthenticated ? auth.displayName : 'แขก';
-    final initial = avatarInitial(name);
+    final hasPicker = ref.watch(roomsValueProvider).hasPicker;
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'สวัสดี · $weekday',
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: JuntraColors.textFaint, fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text('$name ✨', style: baiJamjuree(size: 22)),
-            ],
+          flex: 11,
+          child: GoldButton(
+            label: 'เปิดไพ่ยิปซีออนไลน์',
+            icon: const Icon(Icons.auto_awesome),
+            onPressed: () => context.push(Routes.spreads),
           ),
         ),
-        Container(
-          width: 40, height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [JuntraColors.bgPurpleLight, JuntraColors.bgPurple],
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 9,
+          child: GhostButton(
+            label: hasPicker ? 'เลือกผู้พยากรณ์' : 'คุยกับแม่หมอ',
+            onPressed: () => context.push(
+              hasPicker ? Routes.rooms : '${Routes.chat}?room=${OracleRoom.defaultKey}',
             ),
-            border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.5)),
           ),
-          alignment: Alignment.center,
-          child: Text(initial, style: const TextStyle(
-            color: JuntraColors.goldLight,
-            fontWeight: FontWeight.w700,
-          )),
         ),
-        // มุมขวาสุดเป็นโลโก้จันทรา (วาดโดย StarryBackground)
-        const SizedBox(width: StarryBackground.logoReserve),
       ],
     );
   }
@@ -202,7 +194,7 @@ class _DailyCardHero extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text('เปิดไพ่ของลูก →', style: TextStyle(
+                const Text('เปิดไพ่ของคุณ →', style: TextStyle(
                   fontSize: 12, color: JuntraColors.gold,
                   fontWeight: FontWeight.w600,
                 )),
@@ -426,10 +418,10 @@ class _OtherServices extends ConsumerWidget {
     ].where((e) => cfg.isOpen(e.$5)).map((e) => (e.$1, e.$2, e.$3, e.$4)).toList();
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionLabel('บริการดูดวงอื่น ๆ'),
-        const SizedBox(height: 10),
+        const HomeSectionHead(eyebrow: 'More · บริการอื่น', title: 'บริการดูดวงอื่น ๆ'),
+        const SizedBox(height: 12),
         _servicesGrid(items),
       ],
     );
@@ -620,84 +612,7 @@ class _CategoryCard extends StatelessWidget {
   }
 }
 
-class _MaeMorOnlineCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: JuntraColors.mysticHeroGradient,
-        borderRadius: BorderRadius.circular(JuntraRadius.card),
-        border: Border.all(color: JuntraColors.mintGreen.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Stack(
-            alignment: Alignment.bottomRight,
-            children: [
-              ClipOval(
-                child: Image.asset(
-                  JuntraArt.maeMor,
-                  width: 48, height: 48, fit: BoxFit.cover,
-                  // ต้นฉบับ 1536×2752 (~6.7MB) — จำกัดขนาด decode ให้เท่าที่วาดจริง
-                  cacheWidth: (48 * MediaQuery.devicePixelRatioOf(context)).round(),
-                  errorBuilder: (_, _, _) => Container(
-                    width: 48, height: 48,
-                    color: JuntraColors.bgPurple,
-                    alignment: Alignment.center,
-                    child: const Text('🔮', style: TextStyle(fontSize: 24)),
-                  ),
-                ),
-              ),
-              Container(
-                width: 12, height: 12,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: JuntraColors.mintGreen,
-                  border: Border.all(color: JuntraColors.bgPurpleDeep, width: 2),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('แม่หมอจันทรา · ออนไลน์', style: baiJamjuree(size: 14)),
-                const SizedBox(height: 2),
-                const Text(
-                  'พร้อมตอบคำถามด้วย AI · ตอบใน 8 วิ',
-                  style: TextStyle(fontSize: 11, color: JuntraColors.textMuted),
-                ),
-              ],
-            ),
-          ),
-          InkWell(
-            onTap: () => context.push(Routes.chat),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: JuntraColors.goldButtonGradient,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
-                'คุยเลย',
-                style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600,
-                  color: JuntraColors.bgPurpleDeep,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// "ดูดวงล่าสุดของลูก" — pulls the first 3 entries from
+/// "ดูดวงล่าสุดของคุณ" — pulls the first 3 entries from
 /// [fortuneHistoryProvider]. For guests we hide the section entirely
 /// (rather than show a sign-in nag inline) since the home screen has
 /// plenty else to land on. On error / empty we show a one-line nudge to
@@ -723,7 +638,7 @@ class _RecentReadingsSection extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const _SectionLabel('ดูดวงล่าสุดของลูก'),
+            const _SectionLabel('ดูดวงล่าสุดของคุณ'),
             const Spacer(),
             if (topThree.isNotEmpty)
               InkWell(
@@ -778,7 +693,7 @@ class _RecentReadingsSection extends ConsumerWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'ยังไม่มีคำทำนาย · เริ่มเปิดไพ่ใบแรกของลูกได้เลย',
+              'ยังไม่มีคำทำนาย · เริ่มเปิดไพ่ใบแรกของคุณได้เลย',
               style: TextStyle(
                 fontSize: 12, color: JuntraColors.textMuted, height: 1.5,
               ),
@@ -797,12 +712,13 @@ class _RecentReadingTile extends StatelessWidget {
   static const Map<String, (String, String, Color)> _typeMeta = {
     'tarot_single':   ('ไพ่ใบเดียว',  '✦', JuntraColors.gold),
     'tarot_three':    ('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
-    'tarot_love':     ('ความรัก',     '♥', Color(0xFFFF6B9D)),
+    'tarot_quick':    ('ดูไวกับน้องบุษบา', '✦', JuntraColors.roomBusaba),
+    'tarot_love':     ('ความรัก',     '♥', JuntraColors.rose),
     'tarot_career':   ('การงาน-เงิน', '✦', JuntraColors.gold),
     'tarot_decision': ('ทางแยก',      '✧', JuntraColors.purpleBright),
     'tarot_celtic':   ('เซลติกครอส',   '✧', JuntraColors.purpleBright),
     'tarot_year':     ('ดวง 12 เดือน', '☾', JuntraColors.gold),
-    'tarot_kunsai':   ('คุณไสย / โดนของ', '✧', Color(0xFFFFB86B)),
+    'tarot_kunsai':   ('คุณไสย / โดนของ', '✧', JuntraColors.roomKunsai),
     'numerology':     ('เลขศาสตร์',    '⊛', JuntraColors.mintGreen),
     'palmistry':      ('ดูลายมือ',     '✋', JuntraColors.gold),
     'auspicious':     ('ฤกษ์ยาม',     '☼', JuntraColors.cyan),
@@ -817,7 +733,7 @@ class _RecentReadingTile extends StatelessWidget {
     final title = serverTitle.isNotEmpty ? serverTitle : meta.$1;
     final id = (reading['id'] as num?)?.toInt();
     final preview = switch (reading['status']?.toString()) {
-      'pending' || 'working' => 'แม่หมอกำลังอ่านไพ่ชุดนี้...',
+      'pending' || 'working' => 'กำลังอ่านไพ่ชุดนี้...',
       'failed' => 'อ่านไม่สำเร็จ · คืนเครดิตแล้ว',
       _ => plainPreview(reading['preview']?.toString() ?? ''),
     };

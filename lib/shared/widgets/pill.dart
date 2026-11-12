@@ -36,13 +36,18 @@ class Pill extends StatelessWidget {
             IconTheme(data: IconThemeData(size: 12, color: fg), child: icon!),
             const SizedBox(width: 4),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              color: fg,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
+          // ในคอลัมน์แคบ (จอ 320 / ตัวอักษรใหญ่) ตัดเป็น … แทนการล้นขอบ
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: fg,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
             ),
           ),
         ],

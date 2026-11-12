@@ -38,18 +38,18 @@ class JuntraTabBar extends ConsumerWidget {
         ),
         border: Border(top: BorderSide(color: JuntraColors.line)),
       ),
-      padding: EdgeInsets.fromLTRB(16, 6, 16, math.max(16, systemInset + 8)),
+      padding: EdgeInsets.fromLTRB(8, 6, 8, math.max(16, systemInset + 8)),
+      // แต่ละแท็บได้ความกว้างเท่ากัน — จอแคบ/ตัวอักษรใหญ่ ป้ายย่อลงแทนการล้นขอบ
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _TabIcon(icon: Icons.home_filled, label: 'หน้าแรก', selected: currentIndex == 0,
-              onTap: () => _goIfNeeded(context, 0, Routes.home)),
-          _TabIcon(icon: Icons.history, label: 'ประวัติ', selected: currentIndex == 1,
-              onTap: () => _goIfNeeded(context, 1, Routes.history)),
-          _TabIcon(icon: Icons.auto_awesome, label: 'แม่หมอ', selected: currentIndex == 2,
-              onTap: () => _goIfNeeded(context, 2, oracleRoute)),
-          _TabIcon(icon: Icons.person, label: 'โปรไฟล์', selected: currentIndex == 3,
-              onTap: () => _goIfNeeded(context, 3, Routes.profile)),
+          Expanded(child: _TabIcon(icon: Icons.home_filled, label: 'หน้าแรก', selected: currentIndex == 0,
+              onTap: () => _goIfNeeded(context, 0, Routes.home))),
+          Expanded(child: _TabIcon(icon: Icons.history, label: 'ประวัติ', selected: currentIndex == 1,
+              onTap: () => _goIfNeeded(context, 1, Routes.history))),
+          Expanded(child: _TabIcon(icon: Icons.auto_awesome, label: 'แม่หมอ', selected: currentIndex == 2,
+              onTap: () => _goIfNeeded(context, 2, oracleRoute))),
+          Expanded(child: _TabIcon(icon: Icons.person, label: 'โปรไฟล์', selected: currentIndex == 3,
+              onTap: () => _goIfNeeded(context, 3, Routes.profile))),
         ],
       ),
     );
@@ -77,7 +77,7 @@ class _TabIcon extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -92,11 +92,14 @@ class _TabIcon extends StatelessWidget {
               child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(height: 3),
-            Text(label, style: TextStyle(
-              fontSize: 10.5, color: color,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              letterSpacing: 0.3,
-            )),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label, maxLines: 1, style: TextStyle(
+                fontSize: 10.5, color: color,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.3,
+              )),
+            ),
           ],
         ),
       ),
