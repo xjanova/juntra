@@ -17,7 +17,10 @@ class ChatTopicsSheet extends ConsumerWidget {
   /// ชื่อผู้พยากรณ์ของห้องที่เปิดอยู่ — ห้องบุษบาต้องไม่ขึ้นว่า "แม่หมอจะตอบ"
   final String selfName;
 
-  static Future<String?> show(BuildContext context, {String selfName = 'แม่หมอ'}) {
+  static Future<String?> show(
+    BuildContext context, {
+    String selfName = 'แม่หมอ',
+  }) {
     return showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -41,18 +44,26 @@ class ChatTopicsSheet extends ConsumerWidget {
         children: [
           const SizedBox(height: 12),
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: JuntraColors.gold.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           const SizedBox(height: 14),
-          Text('อยากถามเรื่องไหนคะ',
-              style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+          Text(
+            'อยากถามเรื่องไหนคะ',
+            style: baiJamjuree(size: 18, color: JuntraColors.gold),
+          ),
           const SizedBox(height: 4),
-          Text('แตะคำถามที่ตรงใจ $selfNameจะตอบให้เลยค่ะ',
-              style: const TextStyle(fontSize: 12.5, color: JuntraColors.textMuted)),
+          Text(
+            'แตะคำถามที่ตรงใจ $selfNameจะตอบให้เลยค่ะ',
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: JuntraColors.textMuted,
+            ),
+          ),
           const SizedBox(height: 12),
           Expanded(
             child: topics.when(
@@ -65,7 +76,11 @@ class ChatTopicsSheet extends ConsumerWidget {
                   child: Text(
                     'โหลดหมวดคำถามไม่สำเร็จค่ะ\nพิมพ์ถาม$selfNameตรง ๆ ได้เลยนะคะ',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: JuntraColors.textMuted, height: 1.7),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: JuntraColors.textMuted,
+                      height: 1.7,
+                    ),
                   ),
                 ),
               ),
@@ -86,17 +101,28 @@ class ChatTopicsSheet extends ConsumerWidget {
                         padding: const EdgeInsets.only(top: 14, bottom: 8),
                         child: Text(
                           '${t['icon'] ?? ''} ${t['label'] ?? ''}',
-                          style: baiJamjuree(size: 14.5, color: JuntraColors.gold),
+                          style: baiJamjuree(
+                            size: 14.5,
+                            color: JuntraColors.gold,
+                          ),
                         ),
                       ),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
                         children: prompts
-                            .map((p) => _PromptChip(
-                                  text: p,
-                                  onTap: () => Navigator.of(context).pop(p),
-                                ))
+                            .map(
+                              (p) => _PromptChip(
+                                text: p,
+                                onTap: () {
+                                  // แตะซ้ำก่อนแผงปิดเสร็จ = pop หน้าแชทข้างล่างทิ้ง
+                                  if (ModalRoute.of(context)?.isCurrent ??
+                                      false) {
+                                    Navigator.of(context).pop(p);
+                                  }
+                                },
+                              ),
+                            )
                             .toList(),
                       ),
                     ],
@@ -134,10 +160,14 @@ class _PromptChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.3)),
           ),
-          child: Text(text,
-              style: const TextStyle(
-                fontSize: 12.5, color: JuntraColors.textLavender, height: 1.4,
-              )),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: JuntraColors.textLavender,
+              height: 1.4,
+            ),
+          ),
         ),
       ),
     );

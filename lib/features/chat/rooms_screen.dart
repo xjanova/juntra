@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/chat_repository.dart';
+import '../../core/api/app_config_repository.dart';
 import '../../core/api/rooms_repository.dart';
 import '../../core/api/tarot_packages_repository.dart';
 import '../../shared/format/credits.dart';
@@ -31,7 +32,8 @@ class RoomsScreen extends ConsumerStatefulWidget {
   ConsumerState<RoomsScreen> createState() => _RoomsScreenState();
 }
 
-class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingObserver {
+class _RoomsScreenState extends ConsumerState<RoomsScreen>
+    with WidgetsBindingObserver {
   bool _redirected = false;
 
   // ตัวเลขสด — ถามใหม่ตาม refresh_seconds เฉพาะตอนที่หน้านี้อยู่บนจอจริง
@@ -80,12 +82,27 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
     if (_visible && mounted) ref.invalidate(chatLiveStatsProvider);
   }
 
-  void _scheduleLive(ChatLiveStats? stats) {
+  /// เน็ตสะดุด — คงเลขเดิมไว้แล้วถามใหม่ห่าง ๆ (ไม่ใช่เลิกถามทั้งรอบ)
+  static const _liveRetry = Duration(seconds: 30);
+
+  void _onLive(AsyncValue<ChatLiveStats?> next) {
+    if (next.isLoading) return;
+    if (next.hasError) {
+      _scheduleLive(_liveRetry);
+      return;
+    }
+    final stats = next.valueOrNull;
+    // null = เซิร์ฟเวอร์ไม่มีบริการนี้ (404) — ซ่อนป้ายและเลิกถาม จนกว่าจะกลับเข้าหน้านี้ใหม่
+    _scheduleLive(
+      stats == null ? null : Duration(seconds: stats.refreshSeconds),
+    );
+  }
+
+  void _scheduleLive(Duration? after) {
     _liveTimer?.cancel();
     _liveTimer = null;
-    // ได้ null = เซิร์ฟเวอร์เก่า (404) หรือดึงไม่ได้ — ซ่อนป้ายและเลิกถาม จนกว่าจะกลับเข้าหน้านี้ใหม่
-    if (stats == null || !_visible) return;
-    _liveTimer = Timer(Duration(seconds: stats.refreshSeconds), () {
+    if (after == null || !_visible) return;
+    _liveTimer = Timer(after, () {
       if (mounted && _visible) ref.invalidate(chatLiveStatsProvider);
     });
   }
@@ -103,7 +120,10 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
   void _enter(RoomsState state, OracleRoom room) {
     if (!room.open) return;
     final lock = state.lock;
-    if (lock != null && lock.active && lock.room != room.key && state.room(lock.room).open) {
+    if (lock != null &&
+        lock.active &&
+        lock.room != room.key &&
+        state.room(lock.room).open) {
       _showLock(state, lock);
       return;
     }
@@ -114,32 +134,45 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
     final target = state.room(lock.room);
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(
-      content: Text(lock.message ?? 'กำลังทำนายอยู่ในห้อง${target.short} — กลับไปคุยต่อให้จบก่อนนะคะ'),
-      duration: const Duration(seconds: 5),
-      action: SnackBarAction(
-        label: 'ไปห้อง${target.short}',
-        onPressed: () {
-          if (mounted) context.go('${Routes.chat}?room=${target.key}');
-        },
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          lock.message ??
+              'กำลังทำนายอยู่ในห้อง${target.short} — กลับไปคุยต่อให้จบก่อนนะคะ',
+        ),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'ไปห้อง${target.short}',
+          onPressed: () {
+            if (mounted) context.go('${Routes.chat}?room=${target.key}');
+          },
+        ),
       ),
-    ));
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(roomsProvider);
+    final config = ref.watch(appConfigProvider);
+    final enabled = config.valueOrNull?.has('rooms') ?? false;
+    final async = enabled
+        ? ref.watch(roomsProvider)
+        : config.isLoading
+        ? const AsyncLoading<RoomsState>()
+        : AsyncData(RoomsState.legacy);
     // roomsProvider ตกไปห้องสำรองเองแทบทุกกรณี — error จริง (เช่นสร้าง ApiClient ไม่ได้) ก็ถือเป็นห้องเดียว
-    final state = async.valueOrNull ?? (async.hasError ? RoomsState.legacy : null);
+    final state =
+        async.valueOrNull ?? (async.hasError ? RoomsState.legacy : null);
     if (state != null) _redirectIfNoPicker(state);
 
     // ตัวเลขสดถามเฉพาะตอนมีหน้าเลือกห้องจริง (เซิร์ฟเวอร์เก่าไม่มี /chat/live — ไม่ยิงให้เสีย 404)
     final picker = state != null && state.hasPicker;
     ChatLiveStats? live;
     if (picker) {
-      ref.listen<AsyncValue<ChatLiveStats?>>(chatLiveStatsProvider, (_, next) {
-        if (next is AsyncData<ChatLiveStats?>) _scheduleLive(next.value);
-      });
+      ref.listen<AsyncValue<ChatLiveStats?>>(
+        chatLiveStatsProvider,
+        (_, next) => _onLive(next),
+      );
       live = ref.watch(chatLiveStatsProvider).valueOrNull;
     }
 
@@ -156,7 +189,10 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
                     child: SizedBox(
                       width: 26,
                       height: 26,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: JuntraColors.gold),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: JuntraColors.gold,
+                      ),
                     ),
                   )
                 : RefreshIndicator(
@@ -168,7 +204,9 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
                       ref.invalidate(roomsProvider);
                       try {
                         await ref.read(roomsProvider.future);
-                      } catch (_) {/* roomsProvider ตกไปห้องสำรองเอง */}
+                      } catch (_) {
+                        /* roomsProvider ตกไปห้องสำรองเอง */
+                      }
                     },
                     child: _content(state, live),
                   ),
@@ -179,9 +217,11 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
   }
 
   Widget _content(RoomsState state, ChatLiveStats? live) {
-    final packages = ref.watch(tarotPackagesProvider).valueOrNull ?? const <TarotPackage>[];
+    final packages =
+        ref.watch(tarotPackagesProvider).valueOrNull ?? const <TarotPackage>[];
     final lock = state.lock;
-    final lockActive = lock != null && lock.active && state.room(lock.room).open;
+    final lockActive =
+        lock != null && lock.active && state.room(lock.room).open;
     final chatFree = state.freeDaily || (state.chatCost ?? 1) <= 0;
 
     return ListView(
@@ -189,12 +229,18 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
       children: [
         Padding(
-          padding: const EdgeInsets.only(right: StarryBackground.logoReserve - 16),
+          padding: const EdgeInsets.only(
+            right: StarryBackground.logoReserve - 16,
+          ),
           child: Row(
             children: [
               if (context.canPop())
                 IconButton(
-                  icon: const Icon(Icons.chevron_left, color: JuntraColors.gold, size: 28),
+                  icon: const Icon(
+                    Icons.chevron_left,
+                    color: JuntraColors.gold,
+                    size: 28,
+                  ),
                   tooltip: 'ย้อนกลับ',
                   onPressed: () => context.pop(),
                 ),
@@ -202,7 +248,7 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
               IconButton(
                 icon: const Icon(Icons.history, color: JuntraColors.textMuted),
                 tooltip: 'บทสนทนาเก่า',
-                onPressed: () => context.push(Routes.chatConversations),
+                onPressed: () => context.pushOnce(Routes.chatConversations),
               ),
             ],
           ),
@@ -223,14 +269,17 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
         const SizedBox(height: 18),
         for (var i = 0; i < state.rooms.length; i++)
           _RoomCard(
-            room: state.rooms[i],
-            index: i,
-            total: state.rooms.length,
-            packages: roomPackages(state.rooms[i], packages),
-            chatFree: chatFree,
-            current: lockActive && lock.room == state.rooms[i].key,
-            onEnter: () => _enter(state, state.rooms[i]),
-          ).animate().fadeIn(duration: 380.ms, delay: (80 * i).ms).slideY(begin: 0.06),
+                room: state.rooms[i],
+                index: i,
+                total: state.rooms.length,
+                packages: roomPackages(state.rooms[i], packages),
+                chatFree: chatFree,
+                current: lockActive && lock.room == state.rooms[i].key,
+                onEnter: () => _enter(state, state.rooms[i]),
+              )
+              .animate()
+              .fadeIn(duration: 380.ms, delay: (80 * i).ms)
+              .slideY(begin: 0.06),
       ],
     );
   }
@@ -244,8 +293,8 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> with WidgetsBindingOb
     final head = cost <= 0 && limit <= 0
         ? 'คุยฟรีทุกวัน'
         : limit > 0
-            ? 'คุยฟรีวันละ $limit ข้อความ'
-            : 'คุยข้อความละ ${formatCredits(cost)}';
+        ? 'คุยฟรีวันละ $limit ข้อความ'
+        : 'คุยข้อความละ ${formatCredits(cost)}';
     return '$head · อยากให้เปิดไพ่เมื่อไรค่อยเลือก ราคาไพ่หักตอนเปิดไพ่เท่านั้น';
   }
 }
@@ -261,26 +310,45 @@ class _Hero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = (disclosure?.trim().isNotEmpty ?? false) ? disclosure!.trim() : _defaultDisclosure;
+    final text = (disclosure?.trim().isNotEmpty ?? false)
+        ? disclosure!.trim()
+        : _defaultDisclosure;
     return Column(
       children: [
-        Text('CHOOSE YOUR ORACLE', style: cinzel(size: 11, color: JuntraColors.goldMid)),
+        Text(
+          'CHOOSE YOUR ORACLE',
+          style: cinzel(size: 11, color: JuntraColors.goldMid),
+        ),
         const SizedBox(height: 6),
         ShaderMask(
           shaderCallback: (r) => JuntraColors.headlineGradient.createShader(r),
           blendMode: BlendMode.srcIn,
           child: Text.rich(
-            TextSpan(children: [
-              TextSpan(text: 'เลือก ', style: charm(size: 34, color: Colors.white)),
-              TextSpan(text: 'ผู้พยากรณ์', style: charm(size: 38, color: Colors.white)),
-            ]),
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: 'เลือก ',
+                  style: charm(size: 34, color: Colors.white),
+                ),
+                TextSpan(
+                  text: 'ผู้พยากรณ์',
+                  style: charm(size: 38, color: Colors.white),
+                ),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: 8),
-        Text(lede,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13.5, color: JuntraColors.textLavender, height: 1.6)),
+        Text(
+          lede,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 13.5,
+            color: JuntraColors.textLavender,
+            height: 1.6,
+          ),
+        ),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -295,8 +363,14 @@ class _Hero extends StatelessWidget {
               const Padding(padding: EdgeInsets.only(top: 1), child: AiBadge()),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(text,
-                    style: const TextStyle(fontSize: 12.5, color: JuntraColors.textLavender, height: 1.55)),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: JuntraColors.textLavender,
+                    height: 1.55,
+                  ),
+                ),
               ),
             ],
           ),
@@ -325,7 +399,9 @@ class _LiveChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: JuntraColors.mintGreen.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(JuntraRadius.chip),
-          border: Border.all(color: JuntraColors.mintGreen.withValues(alpha: 0.35)),
+          border: Border.all(
+            color: JuntraColors.mintGreen.withValues(alpha: 0.35),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -333,8 +409,14 @@ class _LiveChip extends StatelessWidget {
             const OnlineDot(),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(parts.join(' · '),
-                  style: const TextStyle(fontSize: 12, color: JuntraColors.textLavender, fontWeight: FontWeight.w600)),
+              child: Text(
+                parts.join(' · '),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: JuntraColors.textLavender,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
@@ -344,7 +426,11 @@ class _LiveChip extends StatelessWidget {
 }
 
 class _LockBanner extends StatelessWidget {
-  const _LockBanner({required this.lock, required this.room, required this.onGo});
+  const _LockBanner({
+    required this.lock,
+    required this.room,
+    required this.onGo,
+  });
 
   final RoomLock lock;
   final OracleRoom room;
@@ -365,8 +451,13 @@ class _LockBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              lock.message ?? 'กำลังทำนายอยู่ในห้อง${room.short} — กลับไปคุยต่อให้จบก่อนนะคะ',
-              style: const TextStyle(fontSize: 12.5, color: JuntraColors.textLavender, height: 1.5),
+              lock.message ??
+                  'กำลังทำนายอยู่ในห้อง${room.short} — กลับไปคุยต่อให้จบก่อนนะคะ',
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: JuntraColors.textLavender,
+                height: 1.5,
+              ),
             ),
           ),
           TextButton(onPressed: onGo, child: Text('ไปห้อง${room.short}')),
@@ -413,9 +504,20 @@ class _RoomCard extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: JuntraColors.purpleCardGradient,
           borderRadius: BorderRadius.circular(JuntraRadius.hero),
-          border: Border.all(color: accent.withValues(alpha: current ? 0.95 : (open ? 0.55 : 0.25)), width: current ? 1.6 : 1),
+          border: Border.all(
+            color: accent.withValues(
+              alpha: current ? 0.95 : (open ? 0.55 : 0.25),
+            ),
+            width: current ? 1.6 : 1,
+          ),
           boxShadow: [
-            if (open) BoxShadow(color: accent.withValues(alpha: 0.28), blurRadius: 26, spreadRadius: -8, offset: const Offset(0, 10)),
+            if (open)
+              BoxShadow(
+                color: accent.withValues(alpha: 0.28),
+                blurRadius: 26,
+                spreadRadius: -8,
+                offset: const Offset(0, 10),
+              ),
             ...JuntraShadows.cardDeep,
           ],
         ),
@@ -433,14 +535,21 @@ class _RoomCard extends StatelessWidget {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        RoomImage(roomKey: room.key, imageUrl: room.imageUrl ?? room.media.stillUrl),
+                        RoomImage(
+                          roomKey: room.key,
+                          imageUrl: room.imageUrl ?? room.media.stillUrl,
+                        ),
                         // ภาพจางลงพื้นการ์ด ให้ชื่อห้องอ่านออกบนรูป
                         const DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
-                              colors: [Color(0x000A0612), Color(0x330A0612), Color(0xF20A0612)],
+                              colors: [
+                                Color(0x000A0612),
+                                Color(0x330A0612),
+                                Color(0xF20A0612),
+                              ],
                               stops: [0.35, 0.6, 1],
                             ),
                           ),
@@ -454,7 +563,9 @@ class _RoomCard extends StatelessWidget {
                             runSpacing: 6,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              _Badge(text: '${_two(index + 1)} / ${_two(total)}'),
+                              _Badge(
+                                text: '${_two(index + 1)} / ${_two(total)}',
+                              ),
                               const AiBadge(large: true),
                               if (open)
                                 const _Badge(text: 'ออนไลน์', online: true)
@@ -470,12 +581,31 @@ class _RoomCard extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(room.eyebrow,
-                                  style: TextStyle(fontSize: 11.5, color: accent, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
+                              Text(
+                                room.eyebrow,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: accent,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
                               const SizedBox(height: 2),
-                              Text(room.name, style: charm(size: 28, color: JuntraColors.moon)),
-                              Text(room.title,
-                                  style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender, height: 1.4)),
+                              Text(
+                                room.name,
+                                style: charm(
+                                  size: 28,
+                                  color: JuntraColors.moon,
+                                ),
+                              ),
+                              Text(
+                                room.title,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: JuntraColors.textLavender,
+                                  height: 1.4,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -487,13 +617,15 @@ class _RoomCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('“${room.quote}”',
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontStyle: FontStyle.italic,
-                              color: JuntraColors.textCream,
-                              height: 1.6,
-                            )),
+                        Text(
+                          '“${room.quote}”',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontStyle: FontStyle.italic,
+                            color: JuntraColors.textCream,
+                            height: 1.6,
+                          ),
+                        ),
                         if (room.tags.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           Wrap(
@@ -502,20 +634,34 @@ class _RoomCard extends StatelessWidget {
                             children: [
                               for (final t in room.tags)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: accent.withValues(alpha: 0.10),
-                                    borderRadius: BorderRadius.circular(JuntraRadius.chip),
-                                    border: Border.all(color: accent.withValues(alpha: 0.4)),
+                                    borderRadius: BorderRadius.circular(
+                                      JuntraRadius.chip,
+                                    ),
+                                    border: Border.all(
+                                      color: accent.withValues(alpha: 0.4),
+                                    ),
                                   ),
-                                  child: Text(t, style: const TextStyle(fontSize: 11.5, color: JuntraColors.textLavender)),
+                                  child: Text(
+                                    t,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: JuntraColors.textLavender,
+                                    ),
+                                  ),
                                 ),
                             ],
                           ),
                         ],
                         const SizedBox(height: 12),
                         if (open && packages.isNotEmpty)
-                          for (final p in packages) RoomPackageRow(package: p, accent: accent)
+                          for (final p in packages)
+                            RoomPackageRow(package: p, accent: accent)
                         else if (product != null && product.name.isNotEmpty)
                           // ห้องยังปิด / ไม่รู้แพ็กเกจ — บอกแพ็กเกจประจำห้องใบเดียวแบบเว็บ
                           _ProductRow(product: product, accent: accent),
@@ -530,7 +676,11 @@ class _RoomCard extends StatelessWidget {
                             onPressed: onEnter,
                           )
                         else
-                          const GhostButton(label: 'เร็ว ๆ นี้', full: true, onPressed: null),
+                          const GhostButton(
+                            label: 'เร็ว ๆ นี้',
+                            full: true,
+                            onPressed: null,
+                          ),
                       ],
                     ),
                   ),
@@ -571,16 +721,34 @@ class _ProductRow extends StatelessWidget {
               color: accent.withValues(alpha: 0.14),
               border: Border.all(color: accent.withValues(alpha: 0.55)),
             ),
-            child: Text(product.cards > 0 ? '${product.cards}' : '★',
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: JuntraColors.textCream)),
+            child: Text(
+              product.cards > 0 ? '${product.cards}' : '★',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: JuntraColors.textCream,
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(product.name, style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender)),
+            child: Text(
+              product.name,
+              style: const TextStyle(
+                fontSize: 13,
+                color: JuntraColors.textLavender,
+              ),
+            ),
           ),
           if (price != null)
-            Text(price <= 0 ? 'ฟรี' : formatCredits(price),
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: JuntraColors.gold)),
+            Text(
+              price <= 0 ? 'ฟรี' : formatCredits(price),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: JuntraColors.gold,
+              ),
+            ),
         ],
       ),
     );
@@ -599,14 +767,25 @@ class _Badge extends StatelessWidget {
       decoration: BoxDecoration(
         color: JuntraColors.bgDeepest.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(JuntraRadius.chip),
-        border: Border.all(color: online ? JuntraColors.mintGreen.withValues(alpha: 0.5) : JuntraColors.line),
+        border: Border.all(
+          color: online
+              ? JuntraColors.mintGreen.withValues(alpha: 0.5)
+              : JuntraColors.line,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (online) ...[const OnlineDot(size: 6), const SizedBox(width: 5)],
-          Text(text,
-              style: const TextStyle(fontSize: 11, height: 1.1, color: JuntraColors.textCream, fontWeight: FontWeight.w600)),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 11,
+              height: 1.1,
+              color: JuntraColors.textCream,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );

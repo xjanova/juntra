@@ -12,7 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
-import '../../core/api/api_client.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/app_config_repository.dart';
 import '../../core/api/chat_repository.dart';
@@ -83,7 +82,8 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
+class _ChatScreenState extends ConsumerState<ChatScreen>
+    with WidgetsBindingObserver {
   static const _kSoundPref = 'juntra_room_sound_v1';
 
   /// ถามหาข้อความเจ้าหน้าที่ทุก 4 วิ นานสุด 3 นาทีต่อรอบ (ลูกค้าส่งใหม่ = เริ่มนับใหม่)
@@ -111,9 +111,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // สถานะโควตา/ปุ่มลัด — ซิงก์จากทุก response ของ backend ไม่เดาเอง
   List<ChatSuggestion> _suggestions = const [];
   List<String> _aiSuggestions = const [];
-  bool _awaiting = false;        // ผู้พยากรณ์กำลังรอคำตอบอยู่
-  bool _suggestOpen = false;     // ผู้ใช้กดกางปุ่มลัดตอน awaiting
-  bool _blocked = false;         // คุยต่อไม่ได้ (ครบโควตา / เครดิตหมด)
+  bool _awaiting = false; // ผู้พยากรณ์กำลังรอคำตอบอยู่
+  bool _suggestOpen = false; // ผู้ใช้กดกางปุ่มลัดตอน awaiting
+  bool _blocked = false; // คุยต่อไม่ได้ (ครบโควตา / เครดิตหมด)
   String _blockedReason = '';
   int _dailyLimit = 0;
   int _dailyLeft = 0;
@@ -122,9 +122,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // นาฬิกาถามต่อ / ถามฟรี · บิลค้าง (เวลาทั้งหมดของเซิร์ฟเวอร์)
   ChatClock? _qa;
   ChatClock? _freeAsk;
-  bool _qaExpiredHere = false;   // นับถึงศูนย์บนเครื่องแล้ว (ก่อนเซิร์ฟเวอร์บอก)
-  String? _qaOverMessage;        // ข้อความ "หมดเวลาถามต่อ" ของเซิร์ฟเวอร์
+  bool _qaExpiredHere = false; // นับถึงศูนย์บนเครื่องแล้ว (ก่อนเซิร์ฟเวอร์บอก)
+  String? _qaOverMessage; // ข้อความ "หมดเวลาถามต่อ" ของเซิร์ฟเวอร์
   bool _qaEnding = false;
+  bool _roomGone = false; // 422 room_closed — กำลังพากลับหน้าเลือกห้อง
+  bool _newChatConfirming = false;
+  bool _paymentOpen = false;
   ChatPendingBill? _bill;
 
   // ทีมงานคุมห้อง — ถามหาข้อความใหม่ทาง feed
@@ -134,12 +137,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _feedBusy = false;
 
   // เสียง · ไมค์
-  late final VoiceClipPlayer _voice = VoiceClipPlayer(() => ref.read(apiClientProvider.future));
+  late final VoiceClipPlayer _voice = VoiceClipPlayer();
   final SpeechInput _speech = SpeechInput();
   bool _micHidden = !SpeechInput.platformSupported;
   bool _listening = false;
+  bool _micStarting = false;
   String _micBase = '';
-  bool _soundOn = false;         // เว็บตั้งต้นปิดเสียง
+  bool _soundOn = false; // เว็บตั้งต้นปิดเสียง
   bool _greeted = false;
 
   bool _foreground = true;
@@ -152,7 +156,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _bootstrap();
+    });
   }
 
   @override
@@ -196,6 +202,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _feedTimer = null;
       unawaited(_voice.stop());
       unawaited(_speech.stop());
+      if (mounted) {
+        setState(() {
+          _listening = false;
+          _micStarting = false;
+        });
+      }
     }
   }
 
@@ -212,19 +224,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /* ══════════════════════ ห้อง ══════════════════════ */
 
-  OracleRoom get _room => ref.read(roomsValueProvider).room(_roomKey);
+  OracleRoom get _room =>
+      (_hasRooms ? ref.read(roomsValueProvider) : RoomsState.legacy).room(
+        _roomKey,
+      );
 
   /// คำเรียกตัวเองของผู้พยากรณ์ (บุษบา / แม่หมอ) — ข้อความที่แอพประกอบเองต้องใช้ตามห้อง
   String get _self => _brief?.short ?? _room.short;
 
-  bool get _qaOver => _qa != null && (_qaExpiredHere || _qa!.isOver());
+  bool get _qaOver => _qaExpiredHere || (_qa?.isOver() ?? false);
+
+  /// เสียงคำตอบพรีเมียม (`reply_voice`) — เฉพาะเซิร์ฟเวอร์ที่ประกาศ `features.voice_premium`
+  bool get _voiceOk => ref.read(appConfigValueProvider).has('voice_premium');
 
   String get _qaOverText =>
       _qaOverMessage ??
       'หมดเวลาถามต่อของไพ่ชุดนี้แล้วนะคะ ขอบคุณที่ให้$_selfได้อ่านไพ่ให้ค่ะ 🌙 '
           'อยากคุยเรื่องอื่นต่อ หรือเปิดไพ่ชุดใหม่ กดปุ่มด้านล่างได้เลยค่ะ';
 
-  String get _dailyDoneReason => 'วันนี้คุยครบแล้ว — พรุ่งนี้$_selfรอฟังต่อนะคะ';
+  String get _dailyDoneReason =>
+      'วันนี้คุยครบแล้ว — พรุ่งนี้$_selfรอฟังต่อนะคะ';
 
   /// ล้างทุกอย่างของห้องเดิม (เปิดห้องใหม่ / สลับผู้ใช้ / เปลี่ยนห้อง)
   void _resetRoom(String roomKey) {
@@ -251,10 +270,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _qaExpiredHere = false;
       _qaOverMessage = null;
       _qaEnding = false;
+      _roomGone = false;
       _bill = null;
       _held = false;
       _greeted = false;
       _listening = false;
+      _micStarting = false;
+      _dailyLimit = 0;
+      _dailyLeft = 0;
+      _cost = 0;
     });
   }
 
@@ -281,9 +305,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
 
     final cfg = await _config();
+    if (!mounted || epoch != _epoch) return;
     final prefs = await SharedPreferences.getInstance();
     if (!mounted || epoch != _epoch) return;
     _hasRooms = cfg.has('rooms');
+    if (!_hasRooms) _roomKey = OracleRoom.defaultKey;
     _soundOn = prefs.getBool(_kSoundPref) ?? false;
 
     final readingId = widget.fromReadingId;
@@ -307,8 +333,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   /// สวิตช์ฟีเจอร์ของเซิร์ฟเวอร์ — ปกติโหลดไว้ตั้งแต่เปิดแอพแล้ว รอไม่เกิน 6 วิ
   Future<AppConfig> _config() async {
     try {
-      return await ref.read(appConfigProvider.future).timeout(const Duration(seconds: 6));
+      return await ref
+          .read(appConfigProvider.future)
+          .timeout(const Duration(seconds: 6));
     } catch (_) {
+      if (!mounted) return AppConfig.fallback;
       return ref.read(appConfigValueProvider);
     }
   }
@@ -321,6 +350,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final epoch = _epoch;
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
+      if (!mounted || epoch != _epoch) return;
       final list = await repo.listConversations();
       if (!mounted || epoch != _epoch) return;
       if (list.isNotEmpty) {
@@ -334,11 +364,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     await _startSession();
   }
 
-  Future<void> _startSession({int? readingId, String? room, bool startNew = false}) async {
+  Future<void> _startSession({
+    int? readingId,
+    String? room,
+    bool startNew = false,
+  }) async {
     final epoch = _epoch;
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final res = await repo.startConversation(readingId: readingId, room: room, startNew: startNew);
+      if (!mounted || epoch != _epoch) return;
+      final res = await repo.startConversation(
+        readingId: readingId,
+        room: room,
+        startNew: startNew,
+      );
       if (!mounted || epoch != _epoch) return;
 
       setState(() {
@@ -379,6 +418,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final epoch = _epoch;
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
+      if (!mounted || epoch != _epoch) return;
       final convo = await repo.getConversation(id);
       if (!mounted || epoch != _epoch) return;
 
@@ -393,8 +433,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (kDebugMode) debugPrint('[Chat] resume failed: $e');
       if (!mounted || epoch != _epoch) return;
       setState(() {
-        _messages.add(_Msg.system(
-            '$_selfเปิดบทสนทนาเก่าไม่ได้ค่ะ · กดย้อนกลับแล้วลองอีกครั้งได้นะคะ'));
+        _messages.add(
+          _Msg.system(
+            '$_selfเปิดบทสนทนาเก่าไม่ได้ค่ะ · กดย้อนกลับแล้วลองอีกครั้งได้นะคะ',
+          ),
+        );
         _starting = false;
       });
     }
@@ -402,17 +445,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// ห้องปิดอยู่ (422 room_closed) — บอกเหตุผลแล้วพากลับหน้าเลือกผู้พยากรณ์
   void _roomClosed(String message) {
-    setState(() => _starting = false);
+    setState(() {
+      _starting = false;
+      _roomGone = true;
+    });
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 4)));
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+      );
     context.go(Routes.rooms);
   }
 
   /// กำลังทำนายอยู่อีกห้อง (423 room_locked) — แผงพาไปห้องนั้น
   void _roomLocked(ApiException e) {
     final lock = RoomLock.fromJson(e.body?['lock']);
-    final target = ref.read(roomsValueProvider).room(lock?.room ?? OracleRoom.defaultKey);
+    final target = ref
+        .read(roomsValueProvider)
+        .room(lock?.room ?? OracleRoom.defaultKey);
     setState(() {
       _starting = false;
       _gate = _LockGate(message: e.message, room: target);
@@ -432,7 +482,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _messages
       ..clear()
       ..addAll(c.messages.map(_Msg.fromDto));
-    if (_messages.isEmpty) _messages.add(_Msg.bot(emptyGreeting ?? _room.quote));
+    if (_messages.isEmpty) {
+      _messages.add(_Msg.bot(emptyGreeting ?? _room.quote));
+    }
     _held = c.held;
     _applyQuota(c.quota);
     _applyStatus(c.status);
@@ -463,12 +515,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _applyStatus(ChatRoomStatus s) {
-    _qa = s.qa;
-    _freeAsk = s.freeAsk;
+    final config = ref.read(appConfigValueProvider);
+    _qa = config.has('qa_clock') ? s.qa : null;
+    _freeAsk = config.has('free_ask') ? s.freeAsk : null;
     _qaExpiredHere = false;
     if (_qa == null || !_qa!.isOver()) _qaOverMessage = null;
     // 🛡 Play: ไม่มีบิลพร้อมเพย์ในแอพเด็ดขาด — เซิร์ฟเวอร์ไม่ส่งมาอยู่แล้ว กั้นซ้ำอีกชั้น
-    final bill = s.pendingBill;
+    // บิลค้างเป็นส่วนของระบบห้อง (A4) — เซิร์ฟเวอร์ที่ไม่ประกาศ `rooms` ไม่มีบิลแบบนี้
+    final bill = config.has('rooms') ? s.pendingBill : null;
     _bill = (isPlayChannel || bill == null || bill.isExpired()) ? null : bill;
   }
 
@@ -480,9 +534,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         '${List.generate(4, (_) => r.nextInt(36).toRadixString(36)).join()}';
   }
 
-  bool get _canType => !_typing && !_starting && _gate == null && !_qaOver && (!_blocked || _held);
+  bool get _canType =>
+      !_typing &&
+      !_starting &&
+      !_qaEnding &&
+      _gate == null &&
+      !_qaOver &&
+      (!_blocked || _held);
 
-  Future<void> _send({String? overrideText, String? reuseIdem, _Msg? replacing}) async {
+  Future<void> _send({
+    String? overrideText,
+    String? reuseIdem,
+    _Msg? replacing,
+  }) async {
     final text = (overrideText ?? _controller.text).trim();
     if (text.isEmpty || !_canType) return;
     final epoch = _epoch;
@@ -511,11 +575,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           readingId: widget.fromReadingId,
           room: _hasRooms && widget.fromReadingId == null ? _roomKey : null,
         );
+        // เปิดห้องสำเร็จแทนคำทักออฟไลน์แล้ว ต้องเก็บฟองที่กำลังส่งไว้ด้วย
+        if (mounted && epoch == _epoch && !_messages.contains(mine)) {
+          setState(() => _messages.add(mine));
+        }
       }
       if (!mounted || epoch != _epoch) return;
+      // ห้องถูกล็อก (แผงพาไปห้องที่ทำนายอยู่) / ห้องปิด (กำลังกลับหน้าเลือกห้อง) — ไม่ใช่เน็ตล่ม
+      if (_gate != null || _roomGone) {
+        setState(() => _typing = false);
+        return;
+      }
       if (_conversationId == null) throw StateError('no conversation');
 
       final repo = await ref.read(chatRepositoryProvider.future);
+      if (!mounted || epoch != _epoch) return;
       final res = await repo.send(
         conversationId: _conversationId!,
         text: text,
@@ -536,16 +610,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         // ข้อความของผู้พยากรณ์ + แพ็กเกจที่ยื่น (การ์ดกดเปิดไพ่ได้ในแอพ) — `reply` ที่ต่อรายการเป็น
         // ข้อความไว้ท้ายคำตอบมีไว้ให้แอพรุ่นเก่า รุ่นนี้ใช้ `message` + `offers` แทน
         final content = res.message?.content;
-        final body = ((res.offers.isNotEmpty ? content : null) ?? res.reply).trim();
-        _messages.add(_Msg.bot(
-          body.isEmpty ? _busyReply() : body,
-          id: res.message?.id,
-          offers: res.offers,
-          question: res.question,
-          voiceUrl: res.replyVoiceUrl,
-        ));
+        final body = (content ?? res.reply).trim();
+        _messages.add(
+          _Msg.bot(
+            body.isEmpty ? _busyReply() : body,
+            id: res.message?.id,
+            offers: res.offers,
+            question: res.question,
+            voiceUrl: res.replyVoiceUrl,
+            staff: res.message?.isStaff ?? false,
+          ),
+        );
         // ไม่ได้คำตอบจริง (ระบบแน่น — ไม่คิดเงิน) → ให้กด "ลองส่งใหม่" ด้วยคีย์เดิมได้
-        if (res.degraded || res.message == null && res.offers.isEmpty) mine.failed = true;
+        if (res.degraded || res.message == null && res.offers.isEmpty) {
+          mine.failed = true;
+        }
       });
       _scrollToEnd();
       ref.invalidate(chatConversationsProvider);
@@ -553,8 +632,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         _startFeed();
         return;
       }
-      final voice = res.replyVoiceUrl;
-      if (voice != null && _soundOn) unawaited(_voice.play(voice, auth: true));
+      final voice = _voiceOk ? res.replyVoiceUrl : null;
+      if (voice != null && _soundOn && _foreground && _onTop) {
+        unawaited(_voice.play(voice));
+      }
       if (res.quota.balance != null) {
         ref.read(authControllerProvider.notifier).refresh();
       }
@@ -566,8 +647,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       setState(() {
         _typing = false;
         mine.failed = true;
-        _messages.add(_Msg.system(
-            'เครือข่ายมีปัญหาค่ะ — กด "ลองส่งใหม่" ได้เลย ข้อความจะไม่ถูกส่งซ้ำซ้อน'));
+        _messages.add(
+          _Msg.system(
+            'เครือข่ายมีปัญหาค่ะ — กด "ลองส่งใหม่" ได้เลย ข้อความจะไม่ถูกส่งซ้ำซ้อน',
+          ),
+        );
       });
       _scrollToEnd();
     }
@@ -606,8 +690,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           setState(() {
             _typing = false;
             mine.failed = true;
-            _messages.add(_Msg.system(
-                'พิมพ์เร็วเกินไปนิดนะคะ — รอสักครู่แล้วกด "ลองส่งใหม่" ได้เลย'));
+            _messages.add(
+              _Msg.system(
+                'พิมพ์เร็วเกินไปนิดนะคะ — รอสักครู่แล้วกด "ลองส่งใหม่" ได้เลย',
+              ),
+            );
           });
         }
         _scrollToEnd();
@@ -631,7 +718,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           setState(() {
             _typing = false;
             mine.failed = true;
-            _messages.add(_Msg.system(serverSaid ? e.message : 'ส่งจากอีกเครื่องอยู่ ลองส่งใหม่อีกครั้ง'));
+            _messages.add(
+              _Msg.system(
+                serverSaid
+                    ? e.message
+                    : 'ส่งจากอีกเครื่องอยู่ ลองส่งใหม่อีกครั้ง',
+              ),
+            );
           });
           _scrollToEnd();
           return;
@@ -653,7 +746,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         setState(() {
           _typing = false;
           mine.failed = true;
-          _messages.add(_Msg.system('session หมดอายุค่ะ — กรุณาเข้าสู่ระบบใหม่'));
+          _messages.add(
+            _Msg.system('session หมดอายุค่ะ — กรุณาเข้าสู่ระบบใหม่'),
+          );
         });
         _scrollToEnd();
         return;
@@ -674,6 +769,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final epoch = _epoch;
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
+      if (!mounted || epoch != _epoch) return;
       final convo = await repo.getConversation(id);
       if (!mounted || epoch != _epoch) return;
       setState(() => _applyConversation(convo));
@@ -681,8 +777,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (convo.held) _startFeed();
     } catch (_) {
       if (!mounted || epoch != _epoch) return;
-      setState(() => _messages.add(_Msg.system(
-          'ข้อความก่อนหน้ากำลังส่งอยู่ค่ะ รอสักครู่แล้วแตะ "ดูคำตอบล่าสุด" อีกครั้งนะคะ')));
+      setState(
+        () => _messages.add(
+          _Msg.system(
+            'ข้อความก่อนหน้ากำลังส่งอยู่ค่ะ รอสักครู่แล้วแตะ "ดูคำตอบล่าสุด" อีกครั้งนะคะ',
+          ),
+        ),
+      );
     }
   }
 
@@ -691,7 +792,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   int get _lastId => _messages.fold<int>(0, (m, x) => math.max(m, x.id ?? 0));
 
   void _startFeed() {
-    if (!ref.read(appConfigValueProvider).has('chat_feed') || _conversationId == null) return;
+    if (!ref.read(appConfigValueProvider).has('chat_feed') ||
+        _conversationId == null) {
+      return;
+    }
     _feedUntil = DateTime.now().add(_feedFor);
     _scheduleFeed();
   }
@@ -716,7 +820,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _pollFeed() async {
     final id = _conversationId;
-    if (!mounted || id == null) return;
+    if (!mounted || id == null || !_foreground || !_onTop) return;
     // ระหว่างส่งข้อความอยู่ไม่ถาม — กันฟองเดียวกันขึ้นซ้ำ
     if (_feedBusy || _typing) {
       _scheduleFeed();
@@ -726,10 +830,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _feedBusy = true;
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final feed = await repo.feed(id, after: _lastId);
       if (!mounted || epoch != _epoch) return;
-      final known = {for (final m in _messages) if (m.id != null) m.id!};
-      final fresh = feed.messages.where((m) => m.id != null && !known.contains(m.id)).toList();
+      final feed = await repo.feed(id, after: _lastId);
+      if (!mounted || epoch != _epoch || !_foreground || !_onTop) return;
+      final known = {
+        for (final m in _messages)
+          if (m.id != null) m.id!,
+      };
+      final fresh = feed.messages
+          .where((m) => m.id != null && !known.contains(m.id))
+          .toList();
       setState(() {
         _messages.addAll(fresh.map(_Msg.fromDto));
         _held = feed.held;
@@ -744,6 +854,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         return;
       }
     } on ApiException catch (e) {
+      if (!mounted || epoch != _epoch) return;
       // เซิร์ฟเวอร์ไม่มี feed / ไม่ใช่ห้องของเรา — เลิกถาม
       if (e.statusCode == 404 || e.statusCode == 403) {
         _stopFeed();
@@ -761,33 +872,55 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _confirmEndQa() async {
     final id = _conversationId;
-    if (id == null || _qaEnding) return;
+    if (id == null ||
+        _qaEnding ||
+        !ref.read(appConfigValueProvider).has('qa_clock')) {
+      return;
+    }
+    final epoch = _epoch;
+    setState(() => _qaEnding = true);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('พอแล้วใช่ไหมคะ?', style: baiJamjuree(size: 17, color: JuntraColors.gold)),
+        title: Text(
+          'พอแล้วใช่ไหมคะ?',
+          style: baiJamjuree(size: 17, color: JuntraColors.gold),
+        ),
         content: Text(
           'จบเวลาถามต่อของไพ่ชุดนี้ตอนนี้เลย — หลังจากนี้ถามต่อในห้องนี้ไม่ได้แล้ว '
           'แต่คุยเรื่องอื่นหรือเปิดไพ่ชุดใหม่กับ$_selfได้เสมอค่ะ',
-          style: const TextStyle(color: JuntraColors.textLavender, fontSize: 13, height: 1.55),
+          style: const TextStyle(
+            color: JuntraColors.textLavender,
+            fontSize: 13,
+            height: 1.55,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('ถามต่อก่อน', style: TextStyle(color: JuntraColors.textFaint)),
+            child: const Text(
+              'ถามต่อก่อน',
+              style: TextStyle(color: JuntraColors.textFaint),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('พอแล้ว', style: TextStyle(color: JuntraColors.gold)),
+            child: const Text(
+              'พอแล้ว',
+              style: TextStyle(color: JuntraColors.gold),
+            ),
           ),
         ],
       ),
     );
-    if (ok != true || !mounted || id != _conversationId) return;
-    final epoch = _epoch;
-    setState(() => _qaEnding = true);
+    if (!mounted || epoch != _epoch) return;
+    if (ok != true || id != _conversationId) {
+      setState(() => _qaEnding = false);
+      return;
+    }
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
+      if (!mounted || epoch != _epoch) return;
       final res = await repo.qaEnd(id);
       if (!mounted || epoch != _epoch) return;
       setState(() {
@@ -796,7 +929,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         _qaExpiredHere = true;
         // คำลา (กดซ้ำได้ null — ไม่มีคำลาซ้ำ)
         final bye = res.message;
-        if (bye != null && !_messages.any((m) => m.id != null && m.id == bye.id)) {
+        if (bye != null &&
+            !_messages.any((m) => m.id != null && m.id == bye.id)) {
           _messages.add(_Msg.fromDto(bye));
         }
       });
@@ -832,9 +966,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _payBill() async {
     final bill = _bill;
-    if (bill == null || isPlayChannel) return;
-    final paid = await ChatTopUpSheet.show(context, resume: bill, selfName: _self);
-    if (paid == true && mounted) {
+    if (bill == null || isPlayChannel || _paymentOpen) return;
+    final epoch = _epoch;
+    _paymentOpen = true;
+    bool? paid;
+    try {
+      paid = await ChatTopUpSheet.show(context, resume: bill, selfName: _self);
+    } finally {
+      _paymentOpen = false;
+    }
+    if (paid == true && mounted && epoch == _epoch) {
       setState(() {
         _bill = null;
         _blocked = false;
@@ -852,9 +993,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     setState(() => _soundOn = on);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kSoundPref, on);
-    if (!mounted) return;
+    if (!mounted || on != _soundOn) return;
     if (on) {
-      _greeted = false;
       unawaited(_playGreet());
     } else {
       unawaited(_voice.stop());
@@ -867,11 +1007,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final epoch = _epoch;
     RoomsState rooms;
     try {
-      rooms = await ref.read(roomsProvider.future).timeout(const Duration(seconds: 5));
+      rooms = await ref
+          .read(roomsProvider.future)
+          .timeout(const Duration(seconds: 5));
     } catch (_) {
+      if (!mounted || epoch != _epoch) return;
       rooms = ref.read(roomsValueProvider);
     }
-    if (!mounted || epoch != _epoch || !_soundOn || _greeted) return;
+    if (!mounted ||
+        epoch != _epoch ||
+        !_soundOn ||
+        _greeted ||
+        !_foreground ||
+        !_onTop) {
+      return;
+    }
     final url = rooms.room(_roomKey).media.voiceFor('room_greet');
     if (url == null) return;
     _greeted = true;
@@ -883,35 +1033,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       await _voice.stop();
       return;
     }
-    final ok = await _voice.play(url, auth: true);
+    final ok = await _voice.play(url);
     if (!ok && mounted) _snack('เปิดเสียงไม่ได้ตอนนี้ค่ะ ลองใหม่อีกครั้งนะคะ');
   }
 
   Future<void> _toggleMic() async {
+    if (_micStarting) return;
     if (_listening) {
       await _speech.stop();
       if (mounted) setState(() => _listening = false);
       return;
     }
+    final epoch = _epoch;
+    setState(() => _micStarting = true);
     _micBase = _controller.text.trimRight();
     final result = await _speech.start(
       onText: (words, _) {
-        if (!mounted) return;
+        if (!mounted || epoch != _epoch || !_foreground || !_onTop) return;
         // ข้อความที่ฟังได้วางต่อท้ายที่พิมพ์ไว้ — ลูกค้าตรวจ/แก้ก่อนกดส่งเอง (ไม่ส่งเอง)
-        final text = [_micBase, words.trim()].where((t) => t.isNotEmpty).join(' ');
+        final text = [
+          _micBase,
+          words.trim(),
+        ].where((t) => t.isNotEmpty).join(' ');
         _controller.value = TextEditingValue(
           text: text,
           selection: TextSelection.collapsed(offset: text.length),
         );
       },
       onStopped: () {
-        if (mounted && _listening) setState(() => _listening = false);
+        if (mounted && epoch == _epoch && _listening) {
+          setState(() => _listening = false);
+        }
       },
     );
-    if (!mounted) return;
+    if (!mounted || epoch != _epoch || !_foreground || !_onTop) return;
+    setState(() => _micStarting = false);
     switch (result) {
       case SpeechStart.listening:
-        setState(() => _listening = true);
+        setState(() => _listening = _speech.isListening);
+      case SpeechStart.cancelled:
+        setState(() => _listening = false);
       case SpeechStart.denied:
         _snack('อนุญาตให้ใช้ไมโครโฟนก่อนนะคะ แล้วแตะไมค์อีกครั้ง');
       case SpeechStart.unavailable:
@@ -926,14 +1087,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   void _snack(String text) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 3)));
+      ..showSnackBar(
+        SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
+      );
   }
 
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
       _scroll.animateTo(
-        _scroll.position.maxScrollExtent,   // เดิมบวก 80 = overscroll glow ทุกครั้ง
+        _scroll
+            .position
+            .maxScrollExtent, // เดิมบวก 80 = overscroll glow ทุกครั้ง
         duration: const Duration(milliseconds: 280),
         curve: Curves.easeOut,
       );
@@ -953,7 +1118,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       });
     });
 
-    final rooms = ref.watch(roomsValueProvider);
+    final config = ref.watch(appConfigValueProvider);
+    final rooms = config.has('rooms')
+        ? ref.watch(roomsValueProvider)
+        : RoomsState.legacy;
     final room = rooms.room(_roomKey);
     final brief = _brief;
     final name = brief?.name ?? room.name;
@@ -963,6 +1131,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final qaOver = _qaOver;
     final billBlocks = _bill?.blocks ?? false;
+    final voiceOk = config.has('voice_premium');
 
     return Scaffold(
       bottomNavigationBar: const JuntraTabBar(currentIndex: 2),
@@ -980,12 +1149,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   status: _held
                       ? 'เจ้าหน้าที่ดูแลห้องนี้อยู่ค่ะ'
                       : _typing
-                          ? _busyLine(_roomKey)
-                          : 'พร้อมรับฟังอยู่ค่ะ',
+                      ? _busyLine(_roomKey)
+                      : 'พร้อมรับฟังอยู่ค่ะ',
                   soundAvailable: room.media.voice.isNotEmpty,
                   soundOn: _soundOn,
                   onSound: _toggleSound,
-                  onNewChat: _starting || _gate != null ? null : _confirmNewChat,
+                  onNewChat:
+                      _starting ||
+                          _typing ||
+                          _qaEnding ||
+                          _newChatConfirming ||
+                          _gate != null
+                      ? null
+                      : _confirmNewChat,
                 ),
                 // ฉากผู้พยากรณ์ — ยุบตอนพิมพ์ (คีย์บอร์ดเปิด) ให้เหลือที่ให้ข้อความ
                 AnimatedSize(
@@ -1009,14 +1185,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     busy: _typing,
                     onEnd: _confirmEndQa,
                     onQaExpired: () {
-                      if (mounted && !_qaExpiredHere) setState(() => _qaExpiredHere = true);
+                      if (mounted && !_qaExpiredHere) {
+                        setState(() => _qaExpiredHere = true);
+                      }
                     },
                   ),
                 if (_starting)
                   const LinearProgressIndicator(
                     minHeight: 1.5,
                     backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(JuntraColors.gold),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      JuntraColors.gold,
+                    ),
                   ),
                 if (_bill != null && !isPlayChannel)
                   _BillBanner(
@@ -1026,13 +1206,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                       if (mounted) setState(() => _bill = null);
                     },
                   ),
-                if (_gate == null && (_dailyLimit > 0 || _cost > 0) && !keyboardOpen)
-                  _QuotaBar(dailyLimit: _dailyLimit, dailyLeft: _dailyLeft, cost: _cost),
+                if (_gate == null &&
+                    (_dailyLimit > 0 || _cost > 0) &&
+                    !keyboardOpen)
+                  _QuotaBar(
+                    dailyLimit: _dailyLimit,
+                    dailyLeft: _dailyLeft,
+                    cost: _cost,
+                  ),
                 Expanded(
                   child: _gate != null
                       ? _LockPanel(
                           gate: _gate!,
-                          onGo: () => context.go('${Routes.chat}?room=${_gate!.room.key}'),
+                          onGo: () => context.go(
+                            '${Routes.chat}?room=${_gate!.room.key}',
+                          ),
                           onRooms: () => context.go(Routes.rooms),
                         )
                       : ValueListenableBuilder<String?>(
@@ -1043,7 +1231,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             itemCount: _messages.length + (_typing ? 1 : 0),
                             itemBuilder: (_, i) {
                               if (_typing && i == _messages.length) {
-                                return _TypingBubble(roomKey: _roomKey, imageUrl: imageUrl, accent: accent);
+                                return _TypingBubble(
+                                  roomKey: _roomKey,
+                                  imageUrl: imageUrl,
+                                  accent: accent,
+                                );
                               }
                               final m = _messages[i];
                               final ai = !m.fromUser && !m.isSystem && !m.staff;
@@ -1059,19 +1251,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                 onOffer: _openOffer,
                                 // รายงานได้เฉพาะคำตอบของ AI (Google Play: AI-Generated Content policy)
                                 onReport: ai && m.id != null
-                                    ? () => ReportContentSheet.show(context,
-                                        subject: ReportSubject.chatMessage, subjectId: m.id!)
+                                    ? () => ReportContentSheet.show(
+                                        context,
+                                        subject: ReportSubject.chatMessage,
+                                        subjectId: m.id!,
+                                      )
                                     : null,
                                 onRetry: m.failed && !qaOver
                                     ? () => _send(
-                                          overrideText: m.text,
-                                          reuseIdem: m.idempotencyKey,
-                                          replacing: m,
-                                        )
+                                        overrideText: m.text,
+                                        reuseIdem: m.idempotencyKey,
+                                        replacing: m,
+                                      )
                                     : null,
-                                onCopy: m.fromUser || m.isSystem ? null : () => _copy(m.text),
-                                voicePlaying: m.voiceUrl != null && playing == m.voiceUrl,
-                                onVoice: m.voiceUrl == null ? null : () => _toggleReplyVoice(m.voiceUrl!),
+                                onCopy: m.fromUser || m.isSystem
+                                    ? null
+                                    : () => _copy(m.text),
+                                voicePlaying:
+                                    voiceOk &&
+                                    m.voiceUrl != null &&
+                                    playing == m.voiceUrl,
+                                onVoice: !voiceOk || m.voiceUrl == null
+                                    ? null
+                                    : () => _toggleReplyVoice(m.voiceUrl!),
                               );
                             },
                           ),
@@ -1113,11 +1315,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     lockedReason: qaOver
                         ? 'หมดเวลาถามต่อของไพ่ชุดนี้แล้วค่ะ'
                         : (_blocked && !_held)
-                            ? _blockedReason
-                            : null,
+                        ? _blockedReason
+                        : null,
                     showMic: !_micHidden && !qaOver,
                     listening: _listening,
-                    onMic: _toggleMic,
+                    onMic: _micStarting ? () {} : _toggleMic,
                   ),
               ],
             ),
@@ -1129,10 +1331,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// สถานะ "กำลังตอบ" ของแต่ละห้อง (config/chat_rooms.php → busy) — ไม่อ้างเวลาตอบที่ระบบไม่ได้รับประกัน
   static String _busyLine(String room) => switch (room) {
-        'busaba' => 'บุษบากำลังดูไพ่ให้อยู่น้า…',
-        'kunsai' => 'แม่หมอกำลังส่องดูอยู่ ตั้งสติรอก่อนนะคะ…',
-        _ => 'แม่หมอกำลังเพ่งไพ่ให้คุณอยู่…',
-      };
+    'busaba' => 'บุษบากำลังดูไพ่ให้อยู่น้า…',
+    'kunsai' => 'แม่หมอกำลังส่องดูอยู่ ตั้งสติรอก่อนนะคะ…',
+    _ => 'แม่หมอกำลังเพ่งไพ่ให้คุณอยู่…',
+  };
 
   /// กางหมวดคำถาม 24 ข้อ — เลือกแล้วส่งเป็นข้อความทันที
   Future<void> _showTopics() async {
@@ -1143,26 +1345,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// เติมเครดิตจบในแชท — สำเร็จแล้วปลดล็อกช่องพิมพ์ทันทีไม่ต้องออกจากหน้า
   Future<void> _showTopUpFlow() async {
-    // แอพบน Google Play เติมเครดิตผ่าน Google Play Billing เท่านั้น (ห้ามพร้อมเพย์ในแอพ Play)
-    if (isPlayChannel) {
-      var credited = false;
-      await showPlayCreditsSheet(context, onCredited: () => credited = true);
-      if (credited && mounted) {
+    if (_paymentOpen) return;
+    final epoch = _epoch;
+    _paymentOpen = true;
+    try {
+      // แอพบน Google Play เติมเครดิตผ่าน Google Play Billing เท่านั้น (ห้ามพร้อมเพย์ในแอพ Play)
+      if (isPlayChannel) {
+        var credited = false;
+        await showPlayCreditsSheet(context, onCredited: () => credited = true);
+        if (credited && mounted && epoch == _epoch) {
+          setState(() {
+            _blocked = false;
+            _blockedReason = '';
+          });
+          ref.read(authControllerProvider.notifier).refresh();
+        }
+        return;
+      }
+      final paid = await ChatTopUpSheet.show(context, selfName: _self);
+      if (paid == true && mounted && epoch == _epoch) {
         setState(() {
           _blocked = false;
           _blockedReason = '';
         });
         ref.read(authControllerProvider.notifier).refresh();
       }
-      return;
-    }
-    final paid = await ChatTopUpSheet.show(context, selfName: _self);
-    if (paid == true && mounted) {
-      setState(() {
-        _blocked = false;
-        _blockedReason = '';
-      });
-      ref.read(authControllerProvider.notifier).refresh();
+    } finally {
+      _paymentOpen = false;
     }
   }
 
@@ -1170,13 +1379,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   void _openOffer(ChatOffer o, String? question) {
     if (o.locked || (_bill?.blocks ?? false)) return;
     if (o.kind == 'deep') {
-      if (ref.read(appConfigValueProvider).isOpen('deep')) context.push(Routes.deep);
+      if (ref.read(appConfigValueProvider).isOpen('deep')) {
+        context.pushOnce(Routes.deep);
+      }
       return;
     }
     final spread = o.spread;
     if (spread == null || spread.isEmpty) return;
-    final q = question == null || question.trim().isEmpty ? '' : '&q=${Uri.encodeQueryComponent(question.trim())}';
-    context.push('${Routes.shuffle}?spread=${Uri.encodeQueryComponent(spread)}$q');
+    final q = question == null || question.trim().isEmpty
+        ? ''
+        : '&q=${Uri.encodeQueryComponent(question.trim())}';
+    context.pushOnce(
+      '${Routes.shuffle}?spread=${Uri.encodeQueryComponent(spread)}$q',
+    );
   }
 
   Future<void> _copy(String text) async {
@@ -1192,27 +1407,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   Future<void> _confirmNewChat() async {
+    if (_newChatConfirming || _typing || _starting) return;
+    final epoch = _epoch;
+    setState(() => _newChatConfirming = true);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('เริ่มบทสนทนาใหม่?', style: baiJamjuree(size: 17, color: JuntraColors.gold)),
+        title: Text(
+          'เริ่มบทสนทนาใหม่?',
+          style: baiJamjuree(size: 17, color: JuntraColors.gold),
+        ),
         content: const Text(
           'บทสนทนาปัจจุบันจะถูกเก็บไว้ในประวัติ เปิดกลับมาอ่านได้ตลอดค่ะ',
-          style: TextStyle(color: JuntraColors.textLavender, fontSize: 13, height: 1.5),
+          style: TextStyle(
+            color: JuntraColors.textLavender,
+            fontSize: 13,
+            height: 1.5,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('ยกเลิก', style: TextStyle(color: JuntraColors.textFaint)),
+            child: const Text(
+              'ยกเลิก',
+              style: TextStyle(color: JuntraColors.textFaint),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('เริ่มใหม่', style: TextStyle(color: JuntraColors.gold)),
+            child: const Text(
+              'เริ่มใหม่',
+              style: TextStyle(color: JuntraColors.gold),
+            ),
           ),
         ],
       ),
     );
-    if (ok != true || !mounted) return;
+    if (!mounted) return;
+    setState(() => _newChatConfirming = false);
+    if (ok != true || epoch != _epoch) return;
 
     // เปิดห้องใหม่ในที่เดิม (ห้องเดิมของผู้พยากรณ์คนเดิม) — เซิร์ฟเวอร์เก่าได้ห้องแม่หมอใหม่แบบเดิม
     final key = _roomKey;
@@ -1268,15 +1501,36 @@ class _Msg {
   /// บรรทัดเล็กใต้ข้อความ (เช่น "ยังไม่ได้ส่ง — หมดเวลาถามต่อแล้ว")
   String? note;
 
-  factory _Msg.user(String t, {int? id}) => _Msg(text: t, fromUser: true, id: id);
-  factory _Msg.bot(String t,
-          {int? id, List<ChatOffer> offers = const [], String? question, String? voiceUrl, bool staff = false}) =>
-      _Msg(text: t, fromUser: false, id: id, offers: offers, question: question, voiceUrl: voiceUrl, staff: staff);
-  factory _Msg.system(String t) => _Msg(text: t, fromUser: false, isSystem: true);
+  factory _Msg.user(String t, {int? id}) =>
+      _Msg(text: t, fromUser: true, id: id);
+  factory _Msg.bot(
+    String t, {
+    int? id,
+    List<ChatOffer> offers = const [],
+    String? question,
+    String? voiceUrl,
+    bool staff = false,
+  }) => _Msg(
+    text: t,
+    fromUser: false,
+    id: id,
+    offers: offers,
+    question: question,
+    voiceUrl: voiceUrl,
+    staff: staff,
+  );
+  factory _Msg.system(String t) =>
+      _Msg(text: t, fromUser: false, isSystem: true);
 
   factory _Msg.fromDto(ChatMessageDto m) => m.fromUser
       ? _Msg.user(m.content, id: m.id)
-      : _Msg.bot(m.content, id: m.id, offers: m.offers, staff: m.isStaff);
+      : _Msg.bot(
+          m.content,
+          id: m.id,
+          offers: m.offers,
+          staff: m.isStaff,
+          voiceUrl: m.replyVoiceUrl,
+        );
 }
 
 /// ห้องถูกล็อกระหว่างทำนายอยู่อีกห้อง (423)
@@ -1317,16 +1571,28 @@ class _ChatHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(2, 6, 4, 6),
       decoration: BoxDecoration(
         color: JuntraColors.bgDeepest.withValues(alpha: 0.4),
-        border: Border(bottom: BorderSide(color: accent.withValues(alpha: 0.25))),
+        border: Border(
+          bottom: BorderSide(color: accent.withValues(alpha: 0.25)),
+        ),
       ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.chevron_left, color: JuntraColors.gold, size: 28),
+            icon: const Icon(
+              Icons.chevron_left,
+              color: JuntraColors.gold,
+              size: 28,
+            ),
             tooltip: 'ย้อนกลับ',
-            onPressed: () => context.canPop() ? context.pop() : context.go(Routes.home),
+            onPressed: () =>
+                context.canPop() ? context.pop() : context.go(Routes.home),
           ),
-          RoomAvatar(roomKey: roomKey, imageUrl: imageUrl, size: 38, accent: accent),
+          RoomAvatar(
+            roomKey: roomKey,
+            imageUrl: imageUrl,
+            size: 38,
+            accent: accent,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1335,10 +1601,12 @@ class _ChatHeader extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: baiJamjuree(size: 15.5)),
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: baiJamjuree(size: 15.5),
+                      ),
                     ),
                     const SizedBox(width: 6),
                     const AiBadge(),
@@ -1350,10 +1618,15 @@ class _ChatHeader extends StatelessWidget {
                     const OnlineDot(),
                     const SizedBox(width: 5),
                     Flexible(
-                      child: Text(status,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10.5, color: JuntraColors.textMuted)),
+                      child: Text(
+                        status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: JuntraColors.textMuted,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1362,23 +1635,34 @@ class _ChatHeader extends StatelessWidget {
           ),
           if (soundAvailable)
             IconButton(
-              icon: Icon(soundOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                  color: soundOn ? JuntraColors.gold : JuntraColors.textMuted, size: 20),
+              icon: Icon(
+                soundOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                color: soundOn ? JuntraColors.gold : JuntraColors.textMuted,
+                size: 20,
+              ),
               tooltip: soundOn ? 'ปิดเสียงห้อง' : 'เปิดเสียงห้อง',
               visualDensity: VisualDensity.compact,
               onPressed: onSound,
             ),
           IconButton(
-            icon: const Icon(Icons.add_comment_outlined, color: JuntraColors.textMuted, size: 20),
+            icon: const Icon(
+              Icons.add_comment_outlined,
+              color: JuntraColors.textMuted,
+              size: 20,
+            ),
             tooltip: 'เริ่มบทสนทนาใหม่',
             visualDensity: VisualDensity.compact,
             onPressed: onNewChat,
           ),
           IconButton(
-            icon: const Icon(Icons.history, color: JuntraColors.textMuted, size: 21),
+            icon: const Icon(
+              Icons.history,
+              color: JuntraColors.textMuted,
+              size: 21,
+            ),
             tooltip: 'บทสนทนาเก่า',
             visualDensity: VisualDensity.compact,
-            onPressed: () => context.push(Routes.chatConversations),
+            onPressed: () => context.pushOnce(Routes.chatConversations),
           ),
           const SizedBox(width: StarryBackground.logoReserve),
         ],
@@ -1389,7 +1673,12 @@ class _ChatHeader extends StatelessWidget {
 
 /// แถบฉากผู้พยากรณ์ใต้หัวห้อง — คลิป idle / ภาพนิ่งหายใจ + คำโปรยของห้อง
 class _StageStrip extends StatelessWidget {
-  const _StageStrip({required this.room, required this.imageUrl, required this.accent, required this.active});
+  const _StageStrip({
+    required this.room,
+    required this.imageUrl,
+    required this.accent,
+    required this.active,
+  });
 
   final OracleRoom room;
   final String? imageUrl;
@@ -1405,7 +1694,13 @@ class _StageStrip extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(JuntraRadius.card),
         border: Border.all(color: accent.withValues(alpha: 0.45)),
-        boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.22), blurRadius: 22, spreadRadius: -6)],
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.22),
+            blurRadius: 22,
+            spreadRadius: -6,
+          ),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(JuntraRadius.card),
@@ -1422,10 +1717,17 @@ class _StageStrip extends StatelessWidget {
               left: 14,
               right: 14,
               bottom: 8,
-              child: Text(room.eyebrow,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: accent, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
+              child: Text(
+                room.eyebrow,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: accent,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                ),
+              ),
             ),
           ],
         ),
@@ -1470,11 +1772,19 @@ class _ClockRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [JuntraColors.purple, JuntraColors.magenta]),
+                gradient: const LinearGradient(
+                  colors: [JuntraColors.purple, JuntraColors.magenta],
+                ),
                 borderRadius: BorderRadius.circular(JuntraRadius.chip),
               ),
-              child: const Text('🎙️ พรีเมียม',
-                  style: TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w700)),
+              child: const Text(
+                '🎙️ พรีเมียม',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           if (qa != null && !qaOver)
             OutlinedButton(
@@ -1482,10 +1792,16 @@ class _ClockRow extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: JuntraColors.goldLight,
                 side: const BorderSide(color: JuntraColors.line),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 4,
+                ),
                 minimumSize: const Size(0, 30),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               child: Text(ending ? 'กำลังจบ…' : 'พอแล้ว'),
             ),
@@ -1498,7 +1814,11 @@ class _ClockRow extends StatelessWidget {
 
 /// บิลเติมเงินค้างของห้อง (เว็บ "บิลเลขที่ …") — ช่อง APK เท่านั้น
 class _BillBanner extends StatelessWidget {
-  const _BillBanner({required this.bill, required this.onPay, required this.onExpired});
+  const _BillBanner({
+    required this.bill,
+    required this.onPay,
+    required this.onExpired,
+  });
 
   final ChatPendingBill bill;
   final VoidCallback onPay;
@@ -1516,39 +1836,61 @@ class _BillBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.receipt_long_outlined, color: JuntraColors.gold, size: 20),
+          const Icon(
+            Icons.receipt_long_outlined,
+            color: JuntraColors.gold,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ยอดที่ต้องโอนจริง (มีเศษสตางค์ไว้จับคู่ SMS) — ตรงกับที่เว็บโชว์บนบิลเดียวกัน
-                Text('บิลเลขที่ ${bill.ref} · ฿${bill.payableAmount.toStringAsFixed(2)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12.5, color: JuntraColors.textCream, fontWeight: FontWeight.w600)),
+                Text(
+                  'บิลเลขที่ ${bill.ref} · ฿${bill.payableAmount.toStringAsFixed(2)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: JuntraColors.textCream,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 if (bill.expiresAt != null)
                   SecondTicker(
                     builder: (context, now) {
                       final left = bill.secondsLeft(now) ?? 0;
                       if (left <= 0) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) => onExpired());
+                        WidgetsBinding.instance.addPostFrameCallback(
+                          (_) => onExpired(),
+                        );
                       }
                       return Text(
                         bill.hasSlip
                             ? 'ได้รับสลิปแล้ว กำลังตรวจสอบให้นะคะ'
                             : 'จ่ายได้อีก ${ChatClock.format(left)}',
-                        style: const TextStyle(fontSize: 11, color: JuntraColors.textMuted,
-                            fontFeatures: [FontFeature.tabularFigures()]),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: JuntraColors.textMuted,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       );
                     },
                   )
                 else if (bill.hasSlip)
-                  const Text('ได้รับสลิปแล้ว กำลังตรวจสอบให้นะคะ',
-                      style: TextStyle(fontSize: 11, color: JuntraColors.textMuted)),
+                  const Text(
+                    'ได้รับสลิปแล้ว กำลังตรวจสอบให้นะคะ',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: JuntraColors.textMuted,
+                    ),
+                  ),
                 if (bill.blocks)
-                  const Text('จ่ายบิลนี้ให้เสร็จก่อน แล้วเปิดไพ่ต่อได้เลยค่ะ',
-                      style: TextStyle(fontSize: 11, color: JuntraColors.goldMid)),
+                  const Text(
+                    'จ่ายบิลนี้ให้เสร็จก่อน แล้วเปิดไพ่ต่อได้เลยค่ะ',
+                    style: TextStyle(fontSize: 11, color: JuntraColors.goldMid),
+                  ),
               ],
             ),
           ),
@@ -1559,7 +1901,10 @@ class _BillBanner extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: JuntraColors.gold,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               child: const Text('ดู QR จ่ายต่อ'),
             ),
@@ -1571,7 +1916,11 @@ class _BillBanner extends StatelessWidget {
 
 /// ป้ายโควตาคุยฟรี / เครดิต — ให้ตรงกับแถบเดียวกันบนเว็บ
 class _QuotaBar extends StatelessWidget {
-  const _QuotaBar({required this.dailyLimit, required this.dailyLeft, required this.cost});
+  const _QuotaBar({
+    required this.dailyLimit,
+    required this.dailyLeft,
+    required this.cost,
+  });
 
   final int dailyLimit;
   final int dailyLeft;
@@ -1587,7 +1936,9 @@ class _QuotaBar extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       decoration: BoxDecoration(
-        color: (low ? JuntraColors.goldMid : JuntraColors.gold).withValues(alpha: 0.08),
+        color: (low ? JuntraColors.goldMid : JuntraColors.gold).withValues(
+          alpha: 0.08,
+        ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: JuntraColors.gold.withValues(alpha: low ? 0.5 : 0.2),
@@ -1596,15 +1947,21 @@ class _QuotaBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(free ? Icons.auto_awesome : Icons.account_balance_wallet_outlined,
-              size: 14, color: JuntraColors.gold),
+          Icon(
+            free ? Icons.auto_awesome : Icons.account_balance_wallet_outlined,
+            size: 14,
+            color: JuntraColors.gold,
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               free
                   ? 'คุยฟรีวันนี้ $dailyLeft / $dailyLimit ข้อความ · รีเซ็ตทุกเที่ยงคืน'
                   : 'หักครั้งละ ${formatCredits(cost)} ต่อข้อความ',
-              style: const TextStyle(fontSize: 11.5, color: JuntraColors.textLavender),
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: JuntraColors.textLavender,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1616,7 +1973,11 @@ class _QuotaBar extends StatelessWidget {
 
 /// แผงแทนแชทเมื่อห้องถูกล็อก (กำลังทำนายอยู่อีกห้อง)
 class _LockPanel extends StatelessWidget {
-  const _LockPanel({required this.gate, required this.onGo, required this.onRooms});
+  const _LockPanel({
+    required this.gate,
+    required this.onGo,
+    required this.onRooms,
+  });
 
   final _LockGate gate;
   final VoidCallback onGo;
@@ -1630,15 +1991,30 @@ class _LockPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RoomAvatar(roomKey: gate.room.key, imageUrl: gate.room.imageUrl, size: 76, accent: gate.room.accent),
+            RoomAvatar(
+              roomKey: gate.room.key,
+              imageUrl: gate.room.imageUrl,
+              size: 76,
+              accent: gate.room.accent,
+            ),
             const SizedBox(height: 16),
             Icon(Icons.lock_clock_outlined, color: gate.room.accent, size: 26),
             const SizedBox(height: 10),
-            Text(gate.message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: JuntraColors.textLavender, height: 1.6)),
+            Text(
+              gate.message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: JuntraColors.textLavender,
+                height: 1.6,
+              ),
+            ),
             const SizedBox(height: 20),
-            GoldButton(label: 'ไปห้อง${gate.room.short}', icon: const Icon(Icons.arrow_forward), onPressed: onGo),
+            GoldButton(
+              label: 'ไปห้อง${gate.room.short}',
+              icon: const Icon(Icons.arrow_forward),
+              onPressed: onGo,
+            ),
             const SizedBox(height: 10),
             GhostButton(label: 'กลับไปเลือกผู้พยากรณ์', onPressed: onRooms),
           ],
@@ -1661,7 +2037,9 @@ class _HeldLine extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: JuntraColors.cyan.withValues(alpha: 0.18))),
+        border: Border(
+          top: BorderSide(color: JuntraColors.cyan.withValues(alpha: 0.18)),
+        ),
       ),
       child: Row(
         children: [
@@ -1669,14 +2047,19 @@ class _HeldLine extends StatelessWidget {
             const SizedBox(
               width: 12,
               height: 12,
-              child: CircularProgressIndicator(strokeWidth: 1.6, color: JuntraColors.cyan),
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                color: JuntraColors.cyan,
+              ),
             )
           else
             const Icon(Icons.support_agent, size: 15, color: JuntraColors.cyan),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text('ส่งถึงเจ้าหน้าที่แล้วค่ะ · รอคำตอบสักครู่นะคะ',
-                style: TextStyle(fontSize: 12, color: JuntraColors.textMuted)),
+            child: Text(
+              'ส่งถึงเจ้าหน้าที่แล้วค่ะ · รอคำตอบสักครู่นะคะ',
+              style: TextStyle(fontSize: 12, color: JuntraColors.textMuted),
+            ),
           ),
           TextButton(
             onPressed: onRefresh,
@@ -1715,19 +2098,40 @@ class _QaOverPanel extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: JuntraColors.gold.withValues(alpha: 0.12))),
+        border: Border(
+          top: BorderSide(color: JuntraColors.gold.withValues(alpha: 0.12)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(message, style: const TextStyle(fontSize: 12.5, color: JuntraColors.textLavender, height: 1.55)),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: JuntraColors.textLavender,
+              height: 1.55,
+            ),
+          ),
           const SizedBox(height: 8),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              _Chip(icon: '🔮', label: 'เปิดไพ่ชุดใหม่', strong: true, onTap: onPackages),
-              _Chip(icon: '💬', label: 'คุยเรื่องอื่นกับ$roomShort', strong: true, onTap: onFresh),
-            ]),
+            child: Row(
+              children: [
+                _Chip(
+                  icon: '🔮',
+                  label: 'เปิดไพ่ชุดใหม่',
+                  strong: true,
+                  onTap: onPackages,
+                ),
+                _Chip(
+                  icon: '💬',
+                  label: 'คุยเรื่องอื่นกับ$roomShort',
+                  strong: true,
+                  onTap: onFresh,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1799,22 +2203,45 @@ class _Bubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
-        crossAxisAlignment: msg.fromUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: msg.fromUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           if (speaker)
             Padding(
               padding: const EdgeInsets.only(left: 36, bottom: 2),
               child: msg.staff
-                  ? const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.verified_user_outlined, size: 11, color: JuntraColors.cyan),
-                      SizedBox(width: 3),
-                      Text('เจ้าหน้าที่',
-                          style: TextStyle(fontSize: 10.5, color: JuntraColors.cyan, fontWeight: FontWeight.w700)),
-                    ])
-                  : Text(roomName, style: TextStyle(fontSize: 10.5, color: accent.withValues(alpha: 0.9))),
+                  ? const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified_user_outlined,
+                          size: 11,
+                          color: JuntraColors.cyan,
+                        ),
+                        SizedBox(width: 3),
+                        Text(
+                          'เจ้าหน้าที่',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: JuntraColors.cyan,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      roomName,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: accent.withValues(alpha: 0.9),
+                      ),
+                    ),
             ),
           Row(
-            mainAxisAlignment: msg.fromUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: msg.fromUser
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (speaker) ...[
@@ -1825,16 +2252,31 @@ class _Bubble extends StatelessWidget {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: JuntraColors.cyan.withValues(alpha: 0.14),
-                          border: Border.all(color: JuntraColors.cyan.withValues(alpha: 0.6)),
+                          border: Border.all(
+                            color: JuntraColors.cyan.withValues(alpha: 0.6),
+                          ),
                         ),
-                        child: const Icon(Icons.support_agent, size: 16, color: JuntraColors.cyan),
+                        child: const Icon(
+                          Icons.support_agent,
+                          size: 16,
+                          color: JuntraColors.cyan,
+                        ),
                       )
-                    : RoomAvatar(roomKey: roomKey, imageUrl: imageUrl, size: 28, accent: accent, ring: false),
+                    : RoomAvatar(
+                        roomKey: roomKey,
+                        imageUrl: imageUrl,
+                        size: 28,
+                        accent: accent,
+                        ring: false,
+                      ),
                 const SizedBox(width: 6),
               ],
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   constraints: BoxConstraints(maxWidth: maxW),
                   decoration: BoxDecoration(
                     color: bg,
@@ -1848,7 +2290,14 @@ class _Bubble extends StatelessWidget {
                   ),
                   // คำตอบของผู้พยากรณ์ใช้ **ตัวหนา** และ bullet เป็นปกติ
                   child: msg.fromUser || msg.isSystem
-                      ? Text(msg.text, style: TextStyle(fontSize: 13.5, color: fg, height: 1.55))
+                      ? Text(
+                          msg.text,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: fg,
+                            height: 1.55,
+                          ),
+                        )
                       : MarkdownBody(
                           data: msg.text,
                           selectable: true,
@@ -1860,8 +2309,18 @@ class _Bubble extends StatelessWidget {
           ),
           if (msg.note != null)
             Padding(
-              padding: EdgeInsets.only(top: 3, right: msg.fromUser ? 4 : 0, left: indent),
-              child: Text(msg.note!, style: const TextStyle(fontSize: 10.5, color: JuntraColors.textFaint)),
+              padding: EdgeInsets.only(
+                top: 3,
+                right: msg.fromUser ? 4 : 0,
+                left: indent,
+              ),
+              child: Text(
+                msg.note!,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: JuntraColors.textFaint,
+                ),
+              ),
             ),
           if (msg.offers.isNotEmpty && onOffer != null)
             Padding(
@@ -1872,23 +2331,40 @@ class _Bubble extends StatelessWidget {
                   for (final o in msg.offers)
                     _OfferCard(
                       offer: o,
-                      disabledReason: o.locked ? 'เปิดได้อีก ${o.lockedUntil}' : offersDisabledReason,
+                      disabledReason: o.locked
+                          ? 'เปิดได้อีก ${o.lockedUntil}'
+                          : offersDisabledReason,
                       onTap: () => onOffer!(o, msg.question),
                     ),
                 ],
               ),
             ),
-          if (onRetry != null || onCopy != null || onReport != null || onVoice != null)
+          if (onRetry != null ||
+              onCopy != null ||
+              onReport != null ||
+              onVoice != null)
             Padding(
-              padding: EdgeInsets.only(top: 2, left: indent, right: msg.fromUser ? 2 : 0),
+              padding: EdgeInsets.only(
+                top: 2,
+                left: indent,
+                right: msg.fromUser ? 2 : 0,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (onVoice != null)
                     TextButton.icon(
                       onPressed: onVoice,
-                      icon: Icon(voicePlaying ? Icons.stop_circle_outlined : Icons.volume_up_rounded, size: 15),
-                      label: Text(voicePlaying ? 'หยุดเสียง' : 'ฟังเสียง', style: const TextStyle(fontSize: 11.5)),
+                      icon: Icon(
+                        voicePlaying
+                            ? Icons.stop_circle_outlined
+                            : Icons.volume_up_rounded,
+                        size: 15,
+                      ),
+                      label: Text(
+                        voicePlaying ? 'หยุดเสียง' : 'ฟังเสียง',
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
                       style: TextButton.styleFrom(
                         foregroundColor: JuntraColors.gold,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1900,7 +2376,10 @@ class _Bubble extends StatelessWidget {
                     TextButton.icon(
                       onPressed: onRetry,
                       icon: const Icon(Icons.refresh, size: 14),
-                      label: const Text('ลองส่งใหม่', style: TextStyle(fontSize: 11.5)),
+                      label: const Text(
+                        'ลองส่งใหม่',
+                        style: TextStyle(fontSize: 11.5),
+                      ),
                       style: TextButton.styleFrom(
                         foregroundColor: JuntraColors.gold,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1915,7 +2394,10 @@ class _Bubble extends StatelessWidget {
                       color: JuntraColors.textFaint,
                       tooltip: 'คัดลอก',
                       visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
+                      constraints: const BoxConstraints(
+                        minWidth: 30,
+                        minHeight: 26,
+                      ),
                     ),
                   if (onReport != null)
                     IconButton(
@@ -1924,7 +2406,10 @@ class _Bubble extends StatelessWidget {
                       color: JuntraColors.textFaint,
                       tooltip: 'รายงานข้อความนี้',
                       visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
+                      constraints: const BoxConstraints(
+                        minWidth: 30,
+                        minHeight: 26,
+                      ),
                     ),
                 ],
               ),
@@ -1935,21 +2420,31 @@ class _Bubble extends StatelessWidget {
   }
 
   MarkdownStyleSheet _markdownStyle(Color fg) => MarkdownStyleSheet(
-        p: TextStyle(fontSize: 13.5, color: fg, height: 1.55),
-        strong: const TextStyle(fontWeight: FontWeight.w700, color: JuntraColors.textCream),
-        em: const TextStyle(fontStyle: FontStyle.italic, color: JuntraColors.purpleBright),
-        listBullet: TextStyle(fontSize: 13.5, color: fg),
-        h1: baiJamjuree(size: 17, color: JuntraColors.gold),
-        h2: baiJamjuree(size: 15.5, color: JuntraColors.gold),
-        h3: baiJamjuree(size: 14.5, color: JuntraColors.gold),
-        blockquote: TextStyle(fontSize: 13, color: fg.withValues(alpha: 0.8)),
-        code: const TextStyle(fontSize: 12.5, color: JuntraColors.textCream),
-        blockSpacing: 7,
-      );
+    p: TextStyle(fontSize: 13.5, color: fg, height: 1.55),
+    strong: const TextStyle(
+      fontWeight: FontWeight.w700,
+      color: JuntraColors.textCream,
+    ),
+    em: const TextStyle(
+      fontStyle: FontStyle.italic,
+      color: JuntraColors.purpleBright,
+    ),
+    listBullet: TextStyle(fontSize: 13.5, color: fg),
+    h1: baiJamjuree(size: 17, color: JuntraColors.gold),
+    h2: baiJamjuree(size: 15.5, color: JuntraColors.gold),
+    h3: baiJamjuree(size: 14.5, color: JuntraColors.gold),
+    blockquote: TextStyle(fontSize: 13, color: fg.withValues(alpha: 0.8)),
+    code: const TextStyle(fontSize: 12.5, color: JuntraColors.textCream),
+    blockSpacing: 7,
+  );
 }
 
 class _TypingBubble extends StatelessWidget {
-  const _TypingBubble({required this.roomKey, required this.imageUrl, required this.accent});
+  const _TypingBubble({
+    required this.roomKey,
+    required this.imageUrl,
+    required this.accent,
+  });
 
   final String roomKey;
   final String? imageUrl;
@@ -1961,7 +2456,13 @@ class _TypingBubble extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
         children: [
-          RoomAvatar(roomKey: roomKey, imageUrl: imageUrl, size: 28, accent: accent, ring: false),
+          RoomAvatar(
+            roomKey: roomKey,
+            imageUrl: imageUrl,
+            size: 28,
+            accent: accent,
+            ring: false,
+          ),
           const SizedBox(width: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1974,18 +2475,19 @@ class _TypingBubble extends StatelessWidget {
               children: List.generate(3, (i) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: JuntraColors.gold.withValues(alpha: 0.8),
-                      shape: BoxShape.circle,
-                    ),
-                  )
-                      .animate(onPlay: (c) => c.repeat())
-                      .fadeOut(duration: 600.ms, delay: (i * 200).ms)
-                      .then()
-                      .fadeIn(duration: 400.ms),
+                  child:
+                      Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: JuntraColors.gold.withValues(alpha: 0.8),
+                              shape: BoxShape.circle,
+                            ),
+                          )
+                          .animate(onPlay: (c) => c.repeat())
+                          .fadeOut(duration: 600.ms, delay: (i * 200).ms)
+                          .then()
+                          .fadeIn(duration: 400.ms),
                 );
               }),
             ),
@@ -2037,30 +2539,66 @@ class _SuggestionStrip extends ConsumerWidget {
     // ปุ่มทางออกไปบริการอื่น — เฉพาะที่หลังบ้านยังเปิดขาย (ปิดแล้วกดไปก็เจอหน้าปิดปรับปรุง)
     final cfg = ref.watch(appConfigValueProvider);
     if (blocked) {
-      return _wrap(context, SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(children: [
-          // เติมเครดิตจบในแชทเหมือนเว็บ ไม่พาลูกค้าออกไปหน้าอื่นแล้วหลงทาง
-          _Chip(icon: '💳', label: 'เติมเครดิตที่นี่', strong: true, onTap: onTopUp),
-          const _ExitChip(icon: '🔮', label: 'เปิดไพ่ยิปซี', route: Routes.spreads, strong: true),
-          if (cfg.isOpen('deep'))
-            const _ExitChip(icon: '🌟', label: 'ดูดวงเชิงลึก', route: Routes.deep, strong: true),
-          if (cfg.isOpen('horoscope'))
-            const _ExitChip(icon: '🌙', label: 'ดวงรายวัน', route: Routes.horoscope),
-          if (cfg.isOpen('numerology'))
-            const _ExitChip(icon: '🔢', label: 'เลขศาสตร์', route: Routes.numerology),
-          if (cfg.isOpen('auspicious'))
-            const _ExitChip(icon: '📿', label: 'ฤกษ์ยาม', route: Routes.auspicious),
-        ]),
-      ), label: blockedReason.isEmpty ? 'ลองทางนี้ต่อได้เลยค่ะ' : blockedReason);
+      return _wrap(
+        context,
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              // เติมเครดิตจบในแชทเหมือนเว็บ ไม่พาลูกค้าออกไปหน้าอื่นแล้วหลงทาง
+              _Chip(
+                icon: '💳',
+                label: 'เติมเครดิตที่นี่',
+                strong: true,
+                onTap: onTopUp,
+              ),
+              const _ExitChip(
+                icon: '🔮',
+                label: 'เปิดไพ่ยิปซี',
+                route: Routes.spreads,
+                strong: true,
+              ),
+              if (cfg.isOpen('deep'))
+                const _ExitChip(
+                  icon: '🌟',
+                  label: 'ดูดวงเชิงลึก',
+                  route: Routes.deep,
+                  strong: true,
+                ),
+              if (cfg.isOpen('horoscope'))
+                const _ExitChip(
+                  icon: '🌙',
+                  label: 'ดวงรายวัน',
+                  route: Routes.horoscope,
+                ),
+              if (cfg.isOpen('numerology'))
+                const _ExitChip(
+                  icon: '🔢',
+                  label: 'เลขศาสตร์',
+                  route: Routes.numerology,
+                ),
+              if (cfg.isOpen('auspicious'))
+                const _ExitChip(
+                  icon: '📿',
+                  label: 'ฤกษ์ยาม',
+                  route: Routes.auspicious,
+                ),
+            ],
+          ),
+        ),
+        label: blockedReason.isEmpty ? 'ลองทางนี้ต่อได้เลยค่ะ' : blockedReason,
+      );
     }
 
     if (awaiting && !open) {
       if (aiSuggestions.isNotEmpty) {
         return _wrap(
           context,
-          _row([for (final q in aiSuggestions) _Chip(label: q, ai: true, onTap: busy ? null : () => onPick(q))]),
+          _row([
+            for (final q in aiSuggestions)
+              _Chip(label: q, ai: true, onTap: busy ? null : () => onPick(q)),
+          ]),
           label: '💬 ตอบ$selfNameได้เลย หรือพิมพ์เองก็ได้ค่ะ',
         );
       }
@@ -2069,13 +2607,20 @@ class _SuggestionStrip extends ConsumerWidget {
         context,
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(children: [
-            Expanded(
-              child: Text('💬 $selfNameกำลังรอคำตอบของคุณอยู่ค่ะ',
-                  style: const TextStyle(fontSize: 12, color: JuntraColors.textMuted)),
-            ),
-            _Chip(label: 'ดูคำถามแนะนำ', onTap: onOpen),
-          ]),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '💬 $selfNameกำลังรอคำตอบของคุณอยู่ค่ะ',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: JuntraColors.textMuted,
+                  ),
+                ),
+              ),
+              _Chip(label: 'ดูคำถามแนะนำ', onTap: onOpen),
+            ],
+          ),
         ),
       );
     }
@@ -2083,8 +2628,23 @@ class _SuggestionStrip extends ConsumerWidget {
     // ระหว่างผู้พยากรณ์พิมพ์ ชิปยังอยู่ที่เดิมแต่กดไม่ได้ (จางลง)
     // เลย์เอาต์จึงไม่กระโดดและผู้ใช้ไม่งงว่าปุ่มหายไปไหน
     final chips = aiSuggestions.isNotEmpty
-        ? [for (final q in aiSuggestions) _Chip(icon: '✨', label: q, ai: true, onTap: busy ? null : () => onPick(q))]
-        : [for (final s in suggestions) _Chip(icon: s.icon, label: s.label, onTap: busy ? null : () => onPick(s.prompt))];
+        ? [
+            for (final q in aiSuggestions)
+              _Chip(
+                icon: '✨',
+                label: q,
+                ai: true,
+                onTap: busy ? null : () => onPick(q),
+              ),
+          ]
+        : [
+            for (final s in suggestions)
+              _Chip(
+                icon: s.icon,
+                label: s.label,
+                onTap: busy ? null : () => onPick(s.prompt),
+              ),
+          ];
     if (chips.isEmpty) return const SizedBox.shrink();
     return _wrap(
       context,
@@ -2098,16 +2658,18 @@ class _SuggestionStrip extends ConsumerWidget {
   }
 
   Widget _row(List<Widget> children) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(children: children),
-      );
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Row(children: children),
+  );
 
   Widget _wrap(BuildContext context, Widget child, {String? label}) {
     return Container(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: JuntraColors.gold.withValues(alpha: 0.10))),
+        border: Border(
+          top: BorderSide(color: JuntraColors.gold.withValues(alpha: 0.10)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2115,7 +2677,13 @@ class _SuggestionStrip extends ConsumerWidget {
           if (label != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
-              child: Text(label, style: const TextStyle(fontSize: 11, color: JuntraColors.textFaint)),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: JuntraColors.textFaint,
+                ),
+              ),
             ),
           child,
         ],
@@ -2125,7 +2693,13 @@ class _SuggestionStrip extends ConsumerWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({this.icon, required this.label, this.onTap, this.strong = false, this.ai = false});
+  const _Chip({
+    this.icon,
+    required this.label,
+    this.onTap,
+    this.strong = false,
+    this.ai = false,
+  });
 
   final String? icon;
   final String label;
@@ -2151,10 +2725,14 @@ class _Chip extends StatelessWidget {
             borderRadius: BorderRadius.circular(JuntraRadius.chip),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.8),
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(context).width * 0.8,
+              ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(JuntraRadius.chip),
-                border: Border.all(color: edge.withValues(alpha: strong ? 0.65 : 0.3)),
+                border: Border.all(
+                  color: edge.withValues(alpha: strong ? 0.65 : 0.3),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -2164,14 +2742,18 @@ class _Chip extends StatelessWidget {
                     const SizedBox(width: 6),
                   ],
                   Flexible(
-                    child: Text(label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: strong ? JuntraColors.textCream : JuntraColors.textLavender,
-                          fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
-                        )),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: strong
+                            ? JuntraColors.textCream
+                            : JuntraColors.textLavender,
+                        fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -2202,7 +2784,7 @@ class _ExitChip extends StatelessWidget {
       icon: icon,
       label: label,
       strong: strong,
-      onTap: () => context.push(route),
+      onTap: () => context.pushOnce(route),
     );
   }
 }
@@ -2238,7 +2820,9 @@ class _InputBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
       decoration: BoxDecoration(
         color: JuntraColors.bgDeepest.withValues(alpha: 0.85),
-        border: Border(top: BorderSide(color: JuntraColors.gold.withValues(alpha: 0.2))),
+        border: Border(
+          top: BorderSide(color: JuntraColors.gold.withValues(alpha: 0.2)),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -2249,7 +2833,10 @@ class _InputBar extends StatelessWidget {
                 controller: controller,
                 // ไมค์กำลังฟัง = ช่องพิมพ์ยังเปิดอยู่ ลูกค้าเห็นข้อความที่ได้ทันที
                 enabled: !locked,
-                style: const TextStyle(color: JuntraColors.textCream, fontSize: 14),
+                style: const TextStyle(
+                  color: JuntraColors.textCream,
+                  fontSize: 14,
+                ),
                 cursorColor: JuntraColors.gold,
                 minLines: 1,
                 maxLines: 4,
@@ -2258,11 +2845,19 @@ class _InputBar extends StatelessWidget {
                 onSubmitted: (_) => enabled ? onSend() : null,
                 decoration: InputDecoration(
                   counterText: '',
-                  hintText: locked ? lockedReason : (listening ? 'กำลังฟังอยู่ค่ะ… พูดได้เลย' : hint),
-                  hintStyle: const TextStyle(color: JuntraColors.textFaint, fontSize: 13),
+                  hintText: locked
+                      ? lockedReason
+                      : (listening ? 'กำลังฟังอยู่ค่ะ… พูดได้เลย' : hint),
+                  hintStyle: const TextStyle(
+                    color: JuntraColors.textFaint,
+                    fontSize: 13,
+                  ),
                   filled: true,
                   fillColor: JuntraColors.bgPurpleDeep.withValues(alpha: 0.6),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
@@ -2287,7 +2882,9 @@ class _InputBar extends StatelessWidget {
               IconButton(
                 onPressed: onMic,
                 tooltip: listening ? 'หยุดฟัง' : 'พูดแทนพิมพ์',
-                icon: Icon(listening ? Icons.stop_rounded : Icons.mic_none_rounded),
+                icon: Icon(
+                  listening ? Icons.stop_rounded : Icons.mic_none_rounded,
+                ),
                 color: listening ? JuntraColors.rose : JuntraColors.goldLight,
                 style: IconButton.styleFrom(
                   backgroundColor: listening
@@ -2314,7 +2911,9 @@ class _InputBar extends StatelessWidget {
                   ),
                   child: Icon(
                     locked ? Icons.lock_outline : Icons.send_rounded,
-                    color: enabled ? JuntraColors.bgPurpleDeep : JuntraColors.textFaint,
+                    color: enabled
+                        ? JuntraColors.bgPurpleDeep
+                        : JuntraColors.textFaint,
                     size: 20,
                   ),
                 ),
@@ -2328,7 +2927,11 @@ class _InputBar extends StatelessWidget {
 }
 
 class _OfferCard extends StatelessWidget {
-  const _OfferCard({required this.offer, required this.onTap, this.disabledReason});
+  const _OfferCard({
+    required this.offer,
+    required this.onTap,
+    this.disabledReason,
+  });
 
   final ChatOffer offer;
   final VoidCallback onTap;
@@ -2348,42 +2951,81 @@ class _OfferCard extends StatelessWidget {
           onTap: disabled ? null : onTap,
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.74),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.74,
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: JuntraColors.purpleCardGradient,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: JuntraColors.gold.withValues(alpha: disabled ? 0.2 : 0.45)),
+              border: Border.all(
+                color: JuntraColors.gold.withValues(
+                  alpha: disabled ? 0.2 : 0.45,
+                ),
+              ),
             ),
             child: Row(
               children: [
-                Icon(disabled ? Icons.lock_clock_outlined : Icons.style_outlined, color: JuntraColors.gold, size: 20),
+                Icon(
+                  disabled ? Icons.lock_clock_outlined : Icons.style_outlined,
+                  color: JuntraColors.gold,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(offer.label,
-                          style: const TextStyle(fontSize: 13, color: JuntraColors.textCream, fontWeight: FontWeight.w600)),
+                      Text(
+                        offer.label,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: JuntraColors.textCream,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       if (disabledReason != null)
-                        Text(disabledReason!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11, color: JuntraColors.goldMid, height: 1.4))
+                        Text(
+                          disabledReason!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: JuntraColors.goldMid,
+                            height: 1.4,
+                          ),
+                        )
                       else if (offer.blurb != null && offer.blurb!.isNotEmpty)
-                        Text(offer.blurb!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11, color: JuntraColors.textMuted, height: 1.4)),
+                        Text(
+                          offer.blurb!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: JuntraColors.textMuted,
+                            height: 1.4,
+                          ),
+                        ),
                     ],
                   ),
                 ),
                 if (price != null) ...[
                   const SizedBox(width: 8),
-                  Text(price <= 0 ? 'ฟรี' : formatCredits(price),
-                      style: const TextStyle(fontSize: 12, color: JuntraColors.gold, fontWeight: FontWeight.w700)),
+                  Text(
+                    price <= 0 ? 'ฟรี' : formatCredits(price),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: JuntraColors.gold,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
-                if (!disabled) const Icon(Icons.chevron_right, color: JuntraColors.gold, size: 18),
+                if (!disabled)
+                  const Icon(
+                    Icons.chevron_right,
+                    color: JuntraColors.gold,
+                    size: 18,
+                  ),
               ],
             ),
           ),

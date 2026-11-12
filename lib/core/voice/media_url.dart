@@ -7,7 +7,9 @@ String mediaUrl(String url) {
   const thai = 'จันทรา.online';
   const ascii = 'xn--82c4af5bzdj.online';
   if (!url.contains(thai)) return url;
-  return url.replaceFirst('://$thai', '://$ascii').replaceFirst('://www.$thai', '://www.$ascii');
+  return url
+      .replaceFirst('://$thai', '://$ascii')
+      .replaceFirst('://www.$thai', '://www.$ascii');
 }
 
 /// URL นี้อยู่บนโฮสต์เดียวกับ API ไหม — ส่ง bearer ได้เฉพาะโฮสต์ของเราเท่านั้น

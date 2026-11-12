@@ -17,12 +17,28 @@ class SecondTicker extends StatefulWidget {
   State<SecondTicker> createState() => _SecondTickerState();
 }
 
-class _SecondTickerState extends State<SecondTicker> {
+class _SecondTickerState extends State<SecondTicker> with WidgetsBindingObserver {
   Timer? _timer;
+  bool _foreground = true;
+  bool _onTop = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _sync();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _onTop = TickerMode.valuesOf(context).enabled;
+    _sync();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
     _sync();
   }
 
@@ -34,7 +50,7 @@ class _SecondTickerState extends State<SecondTicker> {
 
   void _sync() {
     _timer?.cancel();
-    _timer = widget.running
+    _timer = widget.running && _foreground && _onTop
         ? Timer.periodic(const Duration(seconds: 1), (_) {
             if (mounted) setState(() {});
           })
@@ -43,6 +59,7 @@ class _SecondTickerState extends State<SecondTicker> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }
@@ -57,7 +74,12 @@ class _SecondTickerState extends State<SecondTicker> {
 /// เริ่มแล้ว = "เหลือเวลาถามต่อ mm:ss" (สีเตือนเมื่อเหลือ ≤ warn นาที) · หมด = "หมดเวลาถามต่อแล้ว"
 /// [onExpired] ถูกเรียกครั้งเดียวเมื่อนับถึงศูนย์บนเครื่อง (หน้าแชทปิดช่องพิมพ์ตาม)
 class ChatClockChip extends StatefulWidget {
-  const ChatClockChip({super.key, required this.clock, this.free = false, this.onExpired});
+  const ChatClockChip({
+    super.key,
+    required this.clock,
+    this.free = false,
+    this.onExpired,
+  });
 
   final ChatClock clock;
   final bool free;
@@ -79,18 +101,22 @@ class _ChatClockChipState extends State<ChatClockChip> {
   @override
   Widget build(BuildContext context) {
     final c = widget.clock;
-    final running = c.started && !c.over;
+    final running = c.started && !c.isOver();
     return SecondTicker(
       running: running,
       builder: (context, now) {
         final over = c.isOver(now);
-        if (over && running && !_fired) {
+        if (over && !_fired) {
           _fired = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) widget.onExpired?.call();
+            if (!mounted) return;
+            setState(() {}); // หยุด timer แม้เป็นนาฬิกาถามฟรีที่ไม่มี callback
+            widget.onExpired?.call();
           });
         }
-        final low = !widget.free ? c.isLow(now: now) : c.isLow(now: now, warnSeconds: 60);
+        final low = !widget.free
+            ? c.isLow(now: now)
+            : c.isLow(now: now, warnSeconds: 60);
         final String label;
         if (over) {
           label = widget.free ? 'ถามฟรีครบแล้ว' : 'หมดเวลาถามต่อแล้ว';
@@ -105,8 +131,8 @@ class _ChatClockChipState extends State<ChatClockChip> {
         final color = over
             ? JuntraColors.textDim
             : low
-                ? JuntraColors.rose
-                : JuntraColors.goldLight;
+            ? JuntraColors.rose
+            : JuntraColors.goldLight;
         return Semantics(
           label: label,
           liveRegion: false,
@@ -116,7 +142,9 @@ class _ChatClockChipState extends State<ChatClockChip> {
             decoration: BoxDecoration(
               color: color.withValues(alpha: low ? 0.16 : 0.09),
               borderRadius: BorderRadius.circular(JuntraRadius.chip),
-              border: Border.all(color: color.withValues(alpha: low ? 0.7 : 0.4)),
+              border: Border.all(
+                color: color.withValues(alpha: low ? 0.7 : 0.4),
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -124,15 +152,17 @@ class _ChatClockChipState extends State<ChatClockChip> {
                 Icon(Icons.hourglass_bottom_rounded, size: 13, color: color),
                 const SizedBox(width: 5),
                 Flexible(
-                  child: Text(label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: color,
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      )),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ),
               ],
             ),

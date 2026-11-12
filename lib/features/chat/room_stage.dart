@@ -33,9 +33,12 @@ class RoomStage extends StatefulWidget {
   State<RoomStage> createState() => _RoomStageState();
 }
 
-class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  late final AnimationController _breath =
-      AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat(reverse: true);
+class _RoomStageState extends State<RoomStage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late final AnimationController _breath = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 6),
+  )..repeat(reverse: true);
 
   VideoPlayerController? _video;
   int _index = 0;
@@ -57,7 +60,7 @@ class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMix
   @override
   void didUpdateWidget(RoomStage old) {
     super.didUpdateWidget(old);
-    if (!_sameList(old.loops, widget.loops)) {
+    if (old.roomKey != widget.roomKey || !_sameList(old.loops, widget.loops)) {
       _disposeVideo();
       _failures = 0;
       if (widget.loops.isNotEmpty) _load(0);
@@ -101,6 +104,7 @@ class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMix
   }
 
   void _disposeVideo() {
+    _gen++; // คลิปเก่าที่ initialize ค้างอยู่ห้ามกลับมาแทนห้องใหม่
     final v = _video;
     _video = null;
     v?.removeListener(_onTick);
@@ -111,16 +115,18 @@ class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMix
     final gen = ++_gen;
     final loops = widget.loops;
     if (loops.isEmpty) return;
-    final next = VideoPlayerController.networkUrl(
-      Uri.parse(mediaUrl(loops[index % loops.length])),
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-    );
+    VideoPlayerController? next;
     try {
+      // URL เพี้ยนจากเซิร์ฟเวอร์ต้องตกไปคลิปถัดไป ไม่ใช่ error หลุดออกจาก future ที่ไม่มีใคร await
+      next = VideoPlayerController.networkUrl(
+        Uri.parse(mediaUrl(loops[index % loops.length])),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      );
       await next.initialize();
       await next.setVolume(0);
       await next.setLooping(loops.length == 1);
     } catch (_) {
-      await next.dispose();
+      await next?.dispose();
       if (!mounted || gen != _gen) return;
       // คลิปนี้เสีย — ข้ามไปคลิปถัดไป · เสียครบทุกคลิป = เหลือภาพนิ่ง
       _failures++;
@@ -148,8 +154,11 @@ class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMix
     final v = _video;
     if (v == null || widget.loops.length < 2 || _advancing) return;
     final value = v.value;
-    final done = value.isCompleted ||
-        (value.duration > Duration.zero && value.position >= value.duration && !value.isPlaying);
+    final done =
+        value.isCompleted ||
+        (value.duration > Duration.zero &&
+            value.position >= value.duration &&
+            !value.isPlaying);
     if (!done) return;
     _advancing = true;
     _load(_index + 1).whenComplete(() => _advancing = false);
@@ -178,7 +187,9 @@ class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMix
         AnimatedBuilder(
           animation: _breath,
           builder: (_, child) => Transform.scale(
-            scale: ready ? 1 : 1 + 0.025 * Curves.easeInOut.transform(_breath.value),
+            scale: ready
+                ? 1
+                : 1 + 0.025 * Curves.easeInOut.transform(_breath.value),
             child: child,
           ),
           child: RoomImage(roomKey: widget.roomKey, imageUrl: widget.posterUrl),
@@ -208,7 +219,11 @@ class _RoomStageState extends State<RoomStage> with SingleTickerProviderStateMix
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0x000A0612), Color(0x000A0612), JuntraColors.bgDeepest],
+                colors: [
+                  Colors.transparent,
+                  Colors.transparent,
+                  JuntraColors.bgDeepest,
+                ],
                 stops: [0, 0.55, 1],
               ),
             ),

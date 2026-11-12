@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
+import 'api_exceptions.dart';
 import 'endpoints.dart';
 import 'rooms_repository.dart';
 import '../auth/session.dart';
@@ -36,7 +37,11 @@ class ChatRepository {
   /// `AppConfig.has('rooms')` (ผู้เรียกเป็นคนเช็ค)
   ///
   /// 422 `room_closed` · 423 `room_locked` (+ `lock`) โยนเป็น [ApiException]
-  Future<ChatStart> startConversation({int? readingId, String? room, bool startNew = false}) async {
+  Future<ChatStart> startConversation({
+    int? readingId,
+    String? room,
+    bool startNew = false,
+  }) async {
     final body = <String, dynamic>{
       'reading_id': ?readingId,
       if (readingId == null && room != null) 'room': room,
@@ -50,7 +55,9 @@ class ChatRepository {
   }
 
   /// List the user's recent conversations (max 50) — [room] กรองตามห้อง (เซิร์ฟเวอร์เก่าเมินพารามิเตอร์นี้)
-  Future<List<ChatConversationSummary>> listConversations({String? room}) async {
+  Future<List<ChatConversationSummary>> listConversations({
+    String? room,
+  }) async {
     final res = await _api.get<Map<String, dynamic>>(
       Api.chatConversations,
       query: {'room': ?room},
@@ -58,7 +65,9 @@ class ChatRepository {
     final list = (res['data'] as List?) ?? const [];
     return list
         .whereType<Map>()
-        .map((m) => ChatConversationSummary.fromJson(Map<String, dynamic>.from(m)))
+        .map(
+          (m) => ChatConversationSummary.fromJson(Map<String, dynamic>.from(m)),
+        )
         .where((c) => c.id > 0)
         .toList();
   }
@@ -66,7 +75,11 @@ class ChatRepository {
   /// Fetch a full conversation by id (includes all messages + room state).
   Future<ChatConversation> getConversation(int id) async {
     final res = await _api.get<Map<String, dynamic>>(Api.chatConversation(id));
-    return ChatConversation.fromJson(_data(res), receivedAt: DateTime.now(), fallbackId: id);
+    return ChatConversation.fromJson(
+      _data(res),
+      receivedAt: DateTime.now(),
+      fallbackId: id,
+    );
   }
 
   /// Send a user message.
@@ -92,7 +105,9 @@ class ChatRepository {
 
   /// "พอแล้ว" — จบเวลาถามต่อก่อนกำหนด (ไม่คิดเงิน · กดซ้ำได้ `message: null`)
   Future<ChatQaEndResult> qaEnd(int conversationId) async {
-    final res = await _api.post<Map<String, dynamic>>(Api.chatQaEnd(conversationId));
+    final res = await _api.post<Map<String, dynamic>>(
+      Api.chatQaEnd(conversationId),
+    );
     return ChatQaEndResult.fromJson(_data(res), receivedAt: DateTime.now());
   }
 
@@ -116,17 +131,19 @@ class ChatRepository {
     return inner is Map<String, dynamic>
         ? inner
         : inner is Map
-            ? Map<String, dynamic>.from(inner)
-            : res;
+        ? Map<String, dynamic>.from(inner)
+        : res;
   }
 }
 
 /* ══════════════════════ models ══════════════════════ */
 
 int? _int(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}');
-double? _double(Object? v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+double? _double(Object? v) =>
+    v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
 String? _str(Object? v) => (v is String && v.trim().isNotEmpty) ? v : null;
-Map<String, dynamic>? _map(Object? v) => v is Map ? Map<String, dynamic>.from(v) : null;
+Map<String, dynamic>? _map(Object? v) =>
+    v is Map ? Map<String, dynamic>.from(v) : null;
 
 /// ส่วนต่างนาฬิกา = เวลาเซิร์ฟเวอร์ − เวลาเครื่อง ณ ตอนได้คำตอบ
 ///
@@ -179,7 +196,11 @@ class ChatClock {
   final bool premium;
   final Duration skew;
 
-  static ChatClock? fromJson(Object? raw, {Duration skew = Duration.zero, int defaultWarn = 3}) {
+  static ChatClock? fromJson(
+    Object? raw, {
+    Duration skew = Duration.zero,
+    int defaultWarn = 3,
+  }) {
     final j = _map(raw);
     if (j == null) return null;
     final minutes = _int(j['minutes']) ?? 0;
@@ -200,18 +221,22 @@ class ChatClock {
 
   /// วินาทีที่เหลือตอนนี้ — ตามนาฬิกาเซิร์ฟเวอร์ (ชดเชย [skew] แล้ว)
   int secondsLeft([DateTime? now]) {
-    if (over) return 0;
+    if (over || ended) return 0;
     final end = endsAt;
     if (!started || end == null) return minutes * 60;
-    final serverNowMs = (now ?? DateTime.now()).millisecondsSinceEpoch + skew.inMilliseconds;
+    final serverNowMs =
+        (now ?? DateTime.now()).millisecondsSinceEpoch + skew.inMilliseconds;
     return math.max(0, ((end * 1000 - serverNowMs) / 1000).ceil());
   }
 
-  bool isOver([DateTime? now]) => over || (started && endsAt != null && secondsLeft(now) <= 0);
+  bool isOver([DateTime? now]) =>
+      over || ended || (started && endsAt != null && secondsLeft(now) <= 0);
 
   /// ใกล้หมด (ขึ้นสีเตือน)
   bool isLow({DateTime? now, int? warnSeconds}) =>
-      started && !isOver(now) && secondsLeft(now) <= (warnSeconds ?? warnMinutes * 60);
+      started &&
+      !isOver(now) &&
+      secondsLeft(now) <= (warnSeconds ?? warnMinutes * 60);
 
   /// mm:ss (ชั่วโมงขึ้นไป = h:mm:ss)
   static String format(int seconds) {
@@ -219,7 +244,9 @@ class ChatClock {
     final h = s ~/ 3600;
     final m = (s % 3600) ~/ 60;
     final ss = (s % 60).toString().padLeft(2, '0');
-    return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$ss' : '${m.toString().padLeft(2, '0')}:$ss';
+    return h > 0
+        ? '$h:${m.toString().padLeft(2, '0')}:$ss'
+        : '${m.toString().padLeft(2, '0')}:$ss';
   }
 }
 
@@ -257,7 +284,10 @@ class ChatPendingBill {
   final bool blocks;
   final Duration skew;
 
-  static ChatPendingBill? fromJson(Object? raw, {Duration skew = Duration.zero}) {
+  static ChatPendingBill? fromJson(
+    Object? raw, {
+    Duration skew = Duration.zero,
+  }) {
     final j = _map(raw);
     if (j == null) return null;
     final id = _int(j['id']);
@@ -279,7 +309,8 @@ class ChatPendingBill {
   int? secondsLeft([DateTime? now]) {
     final end = expiresAt;
     if (end == null) return null;
-    final serverNowMs = (now ?? DateTime.now()).millisecondsSinceEpoch + skew.inMilliseconds;
+    final serverNowMs =
+        (now ?? DateTime.now()).millisecondsSinceEpoch + skew.inMilliseconds;
     return math.max(0, ((end * 1000 - serverNowMs) / 1000).ceil());
   }
 
@@ -323,7 +354,9 @@ class ChatOffer {
     if (label == null) return null;
     final price = m['price'];
     return ChatOffer(
-      kind: _str(m['kind']) ?? ((m['spread'] ?? m['key']) == 'deep' ? 'deep' : 'tarot'),
+      kind:
+          _str(m['kind']) ??
+          ((m['spread'] ?? m['key']) == 'deep' ? 'deep' : 'tarot'),
       label: label,
       key: _str(m['key']),
       spread: _str(m['spread']),
@@ -342,7 +375,11 @@ class ChatOffer {
 /// ปุ่มคำถามลัด (`suggestions` — ChatSuggestions ของเว็บ)
 @immutable
 class ChatSuggestion {
-  const ChatSuggestion({required this.label, required this.prompt, this.icon = '✨'});
+  const ChatSuggestion({
+    required this.label,
+    required this.prompt,
+    this.icon = '✨',
+  });
 
   final String label;
   final String prompt;
@@ -396,7 +433,8 @@ class ChatRoomBrief {
   }
 
   /// ห้องในเครื่อง (ใช้กับเซิร์ฟเวอร์เก่า / ก่อนเปิดห้องเสร็จ)
-  factory ChatRoomBrief.local(String? key) => ChatRoomBrief.fromJson(null, persona: key);
+  factory ChatRoomBrief.local(String? key) =>
+      ChatRoomBrief.fromJson(null, persona: key);
 }
 
 /// ข้อความหนึ่งฟองจากเซิร์ฟเวอร์
@@ -411,6 +449,7 @@ class ChatMessageDto {
     this.offerTopic,
     this.offers = const [],
     this.createdAt,
+    this.replyVoiceUrl,
   });
 
   final int? id;
@@ -423,6 +462,7 @@ class ChatMessageDto {
   final String? offerTopic;
   final List<ChatOffer> offers;
   final DateTime? createdAt;
+  final String? replyVoiceUrl;
 
   bool get fromUser => role == 'user';
 
@@ -441,6 +481,7 @@ class ChatMessageDto {
       offerTopic: _str(m['offer_topic']),
       offers: ChatOffer.listFrom(m['offers']),
       createdAt: DateTime.tryParse('${m['created_at'] ?? ''}'),
+      replyVoiceUrl: httpsOrNull(_map(m['reply_voice'])?['url']),
     );
   }
 
@@ -469,7 +510,10 @@ class ChatRoomStatus {
   final List<ChatOffer> menu;
   final Duration skew;
 
-  factory ChatRoomStatus.fromJson(Map<String, dynamic> j, {required DateTime receivedAt}) {
+  factory ChatRoomStatus.fromJson(
+    Map<String, dynamic> j, {
+    required DateTime receivedAt,
+  }) {
     final skew = clockSkew(j['server_time'], receivedAt);
     return ChatRoomStatus(
       qa: ChatClock.fromJson(j['qa'], skew: skew),
@@ -524,7 +568,11 @@ class ChatQuota {
       awaiting: j['awaiting'] is bool ? j['awaiting'] as bool : null,
       suggestions: sugg.isEmpty ? null : sugg,
       aiSuggestions: ai is List
-          ? ai.whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+          ? ai
+                .whereType<String>()
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList()
           : null,
     );
   }
@@ -563,8 +611,12 @@ class ChatConversation {
 
   String get persona => room.key;
 
-  factory ChatConversation.fromJson(Map<String, dynamic> j,
-      {required DateTime receivedAt, int? fallbackId, Map<String, dynamic>? outer}) {
+  factory ChatConversation.fromJson(
+    Map<String, dynamic> j, {
+    required DateTime receivedAt,
+    int? fallbackId,
+    Map<String, dynamic>? outer,
+  }) {
     // start: quota อยู่ชั้นนอก ห้อง/นาฬิกาอยู่ใน conversation · show: อยู่ชั้นเดียวกันหมด
     final quotaSource = {...j, ...?outer};
     return ChatConversation(
@@ -575,7 +627,10 @@ class ChatConversation {
       room: ChatRoomBrief.fromJson(j['room'], persona: j['persona']),
       personaKnown: _str(j['persona']) != null || j['room'] is Map,
       messages: ChatMessageDto.listFrom(j['messages']),
-      status: ChatRoomStatus.fromJson({...?outer, ...j}, receivedAt: receivedAt),
+      status: ChatRoomStatus.fromJson({
+        ...?outer,
+        ...j,
+      }, receivedAt: receivedAt),
       quota: ChatQuota.fromJson(quotaSource),
       held: j['held'] == true,
     );
@@ -590,11 +645,18 @@ class ChatStart {
 
   ChatQuota get quota => conversation.quota;
 
-  factory ChatStart.fromJson(Map<String, dynamic> j, {required DateTime receivedAt}) {
+  factory ChatStart.fromJson(
+    Map<String, dynamic> j, {
+    required DateTime receivedAt,
+  }) {
     final convo = _map(j['conversation']) ?? const <String, dynamic>{};
     final outer = Map<String, dynamic>.from(j)..remove('conversation');
     return ChatStart(
-      conversation: ChatConversation.fromJson(convo, receivedAt: receivedAt, outer: outer),
+      conversation: ChatConversation.fromJson(
+        convo,
+        receivedAt: receivedAt,
+        outer: outer,
+      ),
     );
   }
 }
@@ -626,7 +688,7 @@ class ChatSendResult {
   final List<ChatOffer> offers;
   final String? question;
 
-  /// เสียงคำตอบ (พรีเมียม) — ต้องโหลดด้วย bearer
+  /// เสียงคำตอบ (พรีเมียม) — URL สาธารณะของ Thaiprompt/R2 โหลดโดยไม่แนบ bearer เด็ดขาด
   final String? replyVoiceUrl;
 
   /// ทีมงานคุมห้องอยู่ — ข้อความถึงทีมงานแล้ว คำตอบมาทาง feed (ไม่มีฟองคำตอบจากบอท)
@@ -637,7 +699,10 @@ class ChatSendResult {
   final ChatRoomStatus status;
   final ChatQuota quota;
 
-  factory ChatSendResult.fromJson(Map<String, dynamic> j, {required DateTime receivedAt}) {
+  factory ChatSendResult.fromJson(
+    Map<String, dynamic> j, {
+    required DateTime receivedAt,
+  }) {
     final voice = _map(j['reply_voice']);
     final kind = _str(j['kind']) ?? 'reply';
     return ChatSendResult(
@@ -665,7 +730,10 @@ class ChatQaEndResult {
   /// คำลา — null เมื่อกดซ้ำ (ไม่มีคำลาซ้ำ)
   final ChatMessageDto? message;
 
-  factory ChatQaEndResult.fromJson(Map<String, dynamic> j, {required DateTime receivedAt}) {
+  factory ChatQaEndResult.fromJson(
+    Map<String, dynamic> j, {
+    required DateTime receivedAt,
+  }) {
     final skew = clockSkew(j['server_time'], receivedAt);
     return ChatQaEndResult(
       qa: ChatClock.fromJson(j['qa'], skew: skew),
@@ -743,7 +811,8 @@ class ChatConversationSummary {
   final DateTime? updatedAt;
   final ChatRoomBrief room;
 
-  factory ChatConversationSummary.fromJson(Map<String, dynamic> j) => ChatConversationSummary(
+  factory ChatConversationSummary.fromJson(Map<String, dynamic> j) =>
+      ChatConversationSummary(
         id: _int(j['id']) ?? 0,
         title: _str(j['title']),
         readingId: _int(j['reading_id']),
@@ -764,28 +833,41 @@ final chatRepositoryProvider = FutureProvider<ChatRepository>((ref) async {
 /// Conversation list — feeds ConversationListScreen. Key = ห้องที่กรอง (null = ทุกห้อง)
 /// `ref.invalidate(chatConversationsProvider)` ล้างทุกตัวกรองพร้อมกัน — เรียกหลังเปิดห้อง/ส่งข้อความ
 final chatConversationsProvider =
-    FutureProvider.family<List<ChatConversationSummary>, String?>((ref, room) async {
-  ref.watch(sessionUserIdProvider); // ข้อมูลส่วนตัว — ล้างทิ้งเมื่อสลับผู้ใช้
-  final repo = await ref.watch(chatRepositoryProvider.future);
-  return repo.listConversations(room: room);
-});
+    FutureProvider.family<List<ChatConversationSummary>, String?>((
+      ref,
+      room,
+    ) async {
+      final userId = ref.watch(
+        sessionUserIdProvider,
+      ); // ข้อมูลส่วนตัว — ล้างทิ้งเมื่อสลับผู้ใช้
+      if (userId == null) return const [];
+      final repo = await ref.watch(chatRepositoryProvider.future);
+      return repo.listConversations(room: room);
+    });
 
 /// Single conversation detail — keyed by id.
-final chatConversationProvider =
-    FutureProvider.family<ChatConversation, int>((ref, id) async {
+final chatConversationProvider = FutureProvider.family<ChatConversation, int>((
+  ref,
+  id,
+) async {
   ref.watch(sessionUserIdProvider);
   final repo = await ref.watch(chatRepositoryProvider.future);
   return repo.getConversation(id);
 });
 
 /// ตัวเลขสดหน้าเลือกห้อง — ผู้เรียกเป็นคนสั่งรีเฟรช (invalidate) ตาม refresh_seconds
-/// ขณะหน้าจอเปิดอยู่ · ได้ null = ไม่มีบริการนี้ (เซิร์ฟเวอร์เก่า 404) หรือดึงไม่ได้ → ซ่อนป้าย
-final chatLiveStatsProvider = FutureProvider.autoDispose<ChatLiveStats?>((ref) async {
+/// ขณะหน้าจอเปิดอยู่
+/// - ได้ null = เซิร์ฟเวอร์ไม่มีบริการนี้ (เซิร์ฟเวอร์เก่า 404) → ซ่อนป้ายและเลิกถาม
+/// - error อื่น (เน็ตสะดุด) โยนต่อ → หน้าจอคงเลขเดิมไว้แล้วลองใหม่ทีหลัง
+final chatLiveStatsProvider = FutureProvider.autoDispose<ChatLiveStats?>((
+  ref,
+) async {
   final repo = await ref.watch(chatRepositoryProvider.future);
   try {
     return await repo.live();
-  } catch (e) {
+  } on ApiException catch (e) {
     if (kDebugMode) debugPrint('[ChatLive] $e');
-    return null;
+    if (e.statusCode == 404) return null;
+    rethrow;
   }
 });

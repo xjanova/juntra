@@ -41,7 +41,12 @@ String? packagePriceLabel(TarotPackage p) {
 
 /// หนึ่งแถวแพ็กเกจ (เว็บ `.room-product`) — จำนวนใบ · ชื่อ · ราคา
 class RoomPackageRow extends StatelessWidget {
-  const RoomPackageRow({super.key, required this.package, required this.accent, this.onTap});
+  const RoomPackageRow({
+    super.key,
+    required this.package,
+    required this.accent,
+    this.onTap,
+  });
 
   final TarotPackage package;
   final Color accent;
@@ -63,20 +68,38 @@ class RoomPackageRow extends StatelessWidget {
               color: accent.withValues(alpha: 0.14),
               border: Border.all(color: accent.withValues(alpha: 0.55)),
             ),
-            child: Text('${package.cards}',
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: JuntraColors.textCream)),
+            child: Text(
+              '${package.cards}',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: JuntraColors.textCream,
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(package.nameTh,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender, height: 1.35)),
+            child: Text(
+              package.nameTh,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: JuntraColors.textLavender,
+                height: 1.35,
+              ),
+            ),
           ),
           if (price != null) ...[
             const SizedBox(width: 8),
-            Text(price,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: JuntraColors.gold)),
+            Text(
+              price,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: JuntraColors.gold,
+              ),
+            ),
           ],
           if (onTap != null) ...[
             const SizedBox(width: 4),
@@ -130,7 +153,9 @@ class RoomPackagesSheet extends ConsumerWidget {
     final list = roomPackages(room, async.valueOrNull ?? const []);
     return SafeArea(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
           child: Column(
@@ -145,11 +170,16 @@ class RoomPackagesSheet extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              Text('เปิดไพ่ชุดใหม่กับ${room.short}', style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+              Text(
+                'เปิดไพ่ชุดใหม่กับ${room.short}',
+                style: baiJamjuree(size: 18, color: JuntraColors.gold),
+              ),
               const SizedBox(height: 4),
-              const Text('เลือกแบบไพ่ที่อยากเปิด — ราคาไพ่หักตอนเปิดไพ่เท่านั้น',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12.5, color: JuntraColors.textMuted)),
+              const Text(
+                'เลือกแบบไพ่ที่อยากเปิด — ราคาไพ่หักตอนเปิดไพ่เท่านั้น',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12.5, color: JuntraColors.textMuted),
+              ),
               const SizedBox(height: 14),
               if (async.isLoading && list.isEmpty)
                 const Padding(
@@ -157,15 +187,24 @@ class RoomPackagesSheet extends ConsumerWidget {
                   child: SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: JuntraColors.gold),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: JuntraColors.gold,
+                    ),
                   ),
                 )
               else if (list.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('ตอนนี้ห้องนี้ยังไม่มีแบบไพ่เปิดขายค่ะ ลองใหม่อีกครั้งภายหลังนะคะ',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: JuntraColors.textMuted, height: 1.6)),
+                  child: Text(
+                    'ตอนนี้ห้องนี้ยังไม่มีแบบไพ่เปิดขายค่ะ ลองใหม่อีกครั้งภายหลังนะคะ',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: JuntraColors.textMuted,
+                      height: 1.6,
+                    ),
+                  ),
                 )
               else
                 Flexible(
@@ -177,10 +216,16 @@ class RoomPackagesSheet extends ConsumerWidget {
                           package: p,
                           accent: room.accent,
                           onTap: () {
+                            // แตะซ้ำก่อนแผงปิดเสร็จ = pop หน้าแชทข้างล่างทิ้ง + สับไพ่ซ้อนสองหน้า
+                            if (!(ModalRoute.of(context)?.isCurrent ?? false)) {
+                              return;
+                            }
                             // จับ router ไว้ก่อนปิดแผง — context ของแผงใช้ไม่ได้แล้วหลัง pop
                             final router = GoRouter.of(context);
                             Navigator.of(context).pop();
-                            router.push('${Routes.shuffle}?spread=${Uri.encodeQueryComponent(p.key)}');
+                            router.push(
+                              '${Routes.shuffle}?spread=${Uri.encodeQueryComponent(p.key)}',
+                            );
                           },
                         ),
                     ],

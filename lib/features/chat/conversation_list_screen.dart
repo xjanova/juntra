@@ -8,6 +8,8 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/chat_repository.dart';
+import '../../core/api/app_config_repository.dart';
+import '../../core/api/rooms_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 import 'room_visuals.dart';
@@ -20,13 +22,26 @@ import 'room_visuals.dart';
 ///
 /// A floating action button starts a fresh conversation (same as the
 /// pre-existing `/chat` entry without a query param).
-class ConversationListScreen extends ConsumerWidget {
+class ConversationListScreen extends ConsumerStatefulWidget {
   const ConversationListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ConversationListScreen> createState() =>
+      _ConversationListScreenState();
+}
+
+class _ConversationListScreenState
+    extends ConsumerState<ConversationListScreen> {
+  String? _room;
+
+  @override
+  Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
-    final async = ref.watch(chatConversationsProvider(null));
+    final hasRooms = ref.watch(appConfigValueProvider).has('rooms');
+    final picker = hasRooms && ref.watch(roomsValueProvider).hasPicker;
+    // สวิตช์ห้องถูกปิดระหว่างเปิดหน้า → กลับไปดูทั้งหมด โดยไม่ส่ง filter เก่าค้างไว้
+    final filter = picker ? _room : null;
+    final async = ref.watch(chatConversationsProvider(filter));
 
     return Scaffold(
       body: Stack(
@@ -36,6 +51,33 @@ class ConversationListScreen extends ConsumerWidget {
             child: Column(
               children: [
                 _header(context, ref),
+                if (picker && auth is AuthAuthenticated)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        for (final key in <String?>[
+                          null,
+                          'busaba',
+                          'maemor',
+                          'kunsai',
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(
+                                key == null
+                                    ? 'ทั้งหมด'
+                                    : OracleRoom.builtIn(key).short,
+                              ),
+                              selected: filter == key,
+                              onSelected: (_) => setState(() => _room = key),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: auth is! AuthAuthenticated
                       ? _guestPrompt(context)
@@ -43,11 +85,13 @@ class ConversationListScreen extends ConsumerWidget {
                           loading: () => const Center(
                             child: CircularProgressIndicator(
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                  JuntraColors.gold),
+                                JuntraColors.gold,
+                              ),
                             ),
                           ),
                           error: (e, _) => _errorState(context, ref, e),
-                          data: (rows) => _renderList(context, ref, rows),
+                          data: (rows) =>
+                              _renderList(context, ref, rows, filter),
                         ),
                 ),
               ],
@@ -59,10 +103,18 @@ class ConversationListScreen extends ConsumerWidget {
           ? FloatingActionButton.extended(
               backgroundColor: JuntraColors.gold,
               foregroundColor: JuntraColors.bgPurpleDeep,
-              onPressed: () => context.push(Routes.chat),
+              onPressed: () => context.pushOnce(
+                filter != null
+                    ? '${Routes.chat}?room=$filter&new=1'
+                    : picker
+                    ? Routes.rooms
+                    : '${Routes.chat}?room=maemor&new=1',
+              ),
               icon: const Icon(Icons.add),
-              label: const Text('สนทนาใหม่',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
+              label: const Text(
+                'สนทนาใหม่',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             )
           : null,
     );
@@ -74,16 +126,21 @@ class ConversationListScreen extends ConsumerWidget {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.chevron_left,
-                color: JuntraColors.gold, size: 28),
+            icon: const Icon(
+              Icons.chevron_left,
+              color: JuntraColors.gold,
+              size: 28,
+            ),
             onPressed: () =>
                 context.canPop() ? context.pop() : context.go(Routes.home),
           ),
-          Expanded(
-              child: Text('บทสนทนาของฉัน', style: baiJamjuree(size: 19))),
+          Expanded(child: Text('บทสนทนาของฉัน', style: baiJamjuree(size: 19))),
           IconButton(
-            icon: const Icon(Icons.refresh,
-                color: JuntraColors.textFaint, size: 22),
+            icon: const Icon(
+              Icons.refresh,
+              color: JuntraColors.textFaint,
+              size: 22,
+            ),
             tooltip: 'รีเฟรช',
             onPressed: () => ref.invalidate(chatConversationsProvider),
           ),
@@ -102,14 +159,18 @@ class ConversationListScreen extends ConsumerWidget {
           children: [
             const Text('🔐', style: TextStyle(fontSize: 56)),
             const SizedBox(height: 16),
-            Text('เข้าสู่ระบบเพื่อดูบทสนทนา',
-                style: baiJamjuree(size: 18, color: JuntraColors.gold)),
+            Text(
+              'เข้าสู่ระบบเพื่อดูบทสนทนา',
+              style: baiJamjuree(size: 18, color: JuntraColors.gold),
+            ),
             const SizedBox(height: 8),
             const Text(
               'บทสนทนาของคุณกับผู้พยากรณ์จะถูกเก็บไว้บนเซิร์ฟเวอร์อย่างปลอดภัย — เข้าสู่ระบบเพื่อดูได้ทุกเมื่อ',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 13, color: JuntraColors.textMuted, height: 1.5,
+                fontSize: 13,
+                color: JuntraColors.textMuted,
+                height: 1.5,
               ),
             ),
             const SizedBox(height: 18),
@@ -125,8 +186,10 @@ class ConversationListScreen extends ConsumerWidget {
                   ),
                 ),
                 onPressed: () => context.push(Routes.login),
-                child: const Text('เข้าสู่ระบบ',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text(
+                  'เข้าสู่ระบบ',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ],
@@ -142,23 +205,33 @@ class ConversationListScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off,
-                color: JuntraColors.textFaint, size: 48),
+            const Icon(
+              Icons.cloud_off,
+              color: JuntraColors.textFaint,
+              size: 48,
+            ),
             const SizedBox(height: 12),
-            const Text('โหลดบทสนทนาไม่สำเร็จ',
-                style: TextStyle(
-                  fontSize: 14, color: JuntraColors.textCream,
-                  fontWeight: FontWeight.w600,
-                )),
+            const Text(
+              'โหลดบทสนทนาไม่สำเร็จ',
+              style: TextStyle(
+                fontSize: 14,
+                color: JuntraColors.textCream,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 6),
             // เดิมโชว์ e.toString() ซึ่งเป็นข้อความ exception ดิบ (มี URL /
             // ชื่อคลาสภายใน) ให้ผู้ใช้ทั่วไปเห็น — เผยโครงสร้างระบบและอ่านไม่รู้เรื่อง
             Text(
-              e is ApiException ? e.message : 'ตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่อีกครั้งนะคะ',
-              maxLines: 2, overflow: TextOverflow.ellipsis,
+              e is ApiException
+                  ? e.message
+                  : 'ตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่อีกครั้งนะคะ',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 11, color: JuntraColors.textFaint,
+                fontSize: 11,
+                color: JuntraColors.textFaint,
               ),
             ),
             const SizedBox(height: 16),
@@ -176,22 +249,32 @@ class ConversationListScreen extends ConsumerWidget {
     );
   }
 
-  Widget _renderList(BuildContext context, WidgetRef ref, List<ChatConversationSummary> rows) {
-    if (rows.isEmpty) {
-      return _emptyState(context);
-    }
+  Widget _renderList(
+    BuildContext context,
+    WidgetRef ref,
+    List<ChatConversationSummary> rows,
+    String? filter,
+  ) {
     return RefreshIndicator(
       color: JuntraColors.gold,
       backgroundColor: JuntraColors.bgPurpleDeep,
       onRefresh: () async {
-        ref.invalidate(chatConversationsProvider);
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+        // รอ request จริง และเก็บรายการเดิมไว้ระหว่าง refresh
+        try {
+          ref.invalidate(chatConversationsProvider(filter));
+          await ref.read(chatConversationsProvider(filter).future);
+        } catch (_) {
+          /* แสดง error ผ่าน provider */
+        }
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-        itemCount: rows.length,
-        itemBuilder: (_, i) => _ConversationTile(convo: rows[i]),
-      ),
+      child: rows.isEmpty
+          ? _emptyState(context)
+          : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+              itemCount: rows.length,
+              itemBuilder: (_, i) => _ConversationTile(convo: rows[i]),
+            ),
     );
   }
 
@@ -210,19 +293,27 @@ class ConversationListScreen extends ConsumerWidget {
                 // คนละรูปคนละสีทุกยี่ห้อ คุมโทนทอง-ม่วงไม่ได้เลย
                 ClipRRect(
                   borderRadius: BorderRadius.circular(90),
-                  child: Image.asset(JuntraArt.chat,
-                      width: 180, height: 112, fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                  child: Image.asset(
+                    JuntraArt.chat,
+                    width: 180,
+                    height: 112,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                Text('ยังไม่มีบทสนทนา',
-                    style: baiJamjuree(size: 16, color: JuntraColors.gold)),
+                Text(
+                  'ยังไม่มีบทสนทนา',
+                  style: baiJamjuree(size: 16, color: JuntraColors.gold),
+                ),
                 const SizedBox(height: 8),
                 const Text(
                   'เริ่มคุยกับผู้พยากรณ์ครั้งแรกของคุณ · ทุกการพูดคุยจะถูกบันทึกเก็บไว้ให้ค่ะ',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 13, color: JuntraColors.textMuted, height: 1.5,
+                    fontSize: 13,
+                    color: JuntraColors.textMuted,
+                    height: 1.5,
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -231,7 +322,7 @@ class ConversationListScreen extends ConsumerWidget {
                     backgroundColor: JuntraColors.gold,
                     foregroundColor: JuntraColors.bgPurpleDeep,
                   ),
-                  onPressed: () => context.push(Routes.chat),
+                  onPressed: () => context.pushOnce(Routes.chat),
                   child: const Text('เริ่มสนทนา'),
                 ),
               ],
@@ -265,13 +356,15 @@ class _ConversationTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(JuntraRadius.card),
           onTap: id == null
               ? null
-              : () => context.push('${Routes.chat}?id=$id'),
+              : () => context.pushOnce('${Routes.chat}?id=$id'),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: JuntraColors.bgPurpleDeep.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(JuntraRadius.card),
-              border: Border.all(color: JuntraColors.gold.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: JuntraColors.gold.withValues(alpha: 0.2),
+              ),
             ),
             child: Row(
               children: [
@@ -292,33 +385,42 @@ class _ConversationTile extends StatelessWidget {
                           Expanded(
                             child: Text(
                               title,
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                                 color: JuntraColors.textCream,
                               ),
                             ),
                           ),
                           if (relative != null)
-                            Text(relative,
-                                style: const TextStyle(
-                                  fontSize: 10, color: JuntraColors.textFaint,
-                                )),
+                            Text(
+                              relative,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: JuntraColors.textFaint,
+                              ),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '${room.name} · $count ข้อความ',
                         style: const TextStyle(
-                          fontSize: 11, color: JuntraColors.textMuted,
+                          fontSize: 11,
+                          color: JuntraColors.textMuted,
                         ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 6),
-                const Icon(Icons.chevron_right,
-                    color: JuntraColors.gold, size: 18),
+                const Icon(
+                  Icons.chevron_right,
+                  color: JuntraColors.gold,
+                  size: 18,
+                ),
               ],
             ),
           ),
