@@ -53,14 +53,21 @@ class WalletRepository {
   /// [idempotencyKey] — RetryInterceptor ยิง POST ซ้ำเองเมื่อ timeout/5xx
   /// ถ้าไม่ส่งคีย์ สัญญาณตกครั้งเดียวได้รายการ pending ซ้ำหลายใบ ยอดสตางค์
   /// คนละค่า ลูกค้าไม่รู้ว่าต้องโอนใบไหน และไปกินเพดาน pending จนสร้างใหม่ไม่ได้
+  ///
+  /// [method] = `promptpay` (ค่าเริ่มต้น) หรือ `kbank` (โอนเข้าบัญชี) เหมือนเว็บ —
+  /// เซิร์ฟเวอร์เก่าไม่รู้จักคีย์นี้และถือเป็น PromptPay จึงส่งเฉพาะตอนเป็น kbank
   Future<Map<String, dynamic>> startPromptPayTopup({
     required double amount,
     String? idempotencyKey,
+    String method = 'promptpay',
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.walletTopupPromptpay,
       idempotencyKey: idempotencyKey,
-      data: {'amount': amount},
+      data: {
+        'amount': amount,
+        if (method != 'promptpay') 'method': method,
+      },
     );
     return _data(res);
   }
@@ -111,6 +118,79 @@ class WalletRepository {
   }
 }
 
+/// บัญชีธนาคารสำหรับโอนตรง (`topup.kbank`)
+class KbankAccount {
+  const KbankAccount({required this.bank, required this.name, required this.number});
+  final String bank;
+  final String name;
+  final String number;
+
+  static KbankAccount? fromJson(Object? j) {
+    if (j is! Map) return null;
+    final number = (j['number'] ?? '').toString().trim();
+    if (number.isEmpty) return null;
+    return KbankAccount(
+      bank: (j['bank'] ?? 'กสิกรไทย').toString(),
+      name: (j['name'] ?? '').toString(),
+      number: number,
+    );
+  }
+}
+
+/// กติกาเติมเงินจาก `GET /v1/wallet` → `topup` (ชุดเดียวกับหน้าเติมเงินของเว็บ)
+///
+/// เซิร์ฟเวอร์ละ `topup` ทิ้งเมื่อแอพส่ง `X-App-Channel: play` (นโยบาย Play) และ
+/// เซิร์ฟเวอร์เก่าไม่มีคีย์นี้ — ทั้งสองกรณีได้ [fallback] ที่ตรงกับแอพ 0.6.0
+class WalletTopupConfig {
+  const WalletTopupConfig({
+    required this.bundles,
+    required this.min,
+    required this.max,
+    required this.channels,
+    this.kbank,
+    this.fromServer = false,
+  });
+
+  final List<int> bundles;
+  final num min;
+  final num max;
+
+  /// `promptpay` · `kbank` — ช่องทางที่เปิดอยู่
+  final List<String> channels;
+  final KbankAccount? kbank;
+  final bool fromServer;
+
+  bool get hasKbank => channels.contains('kbank') && kbank != null;
+
+  static const fallback = WalletTopupConfig(
+    bundles: [50, 100, 200, 500, 1000, 2000],
+    min: 20,
+    max: 50000,
+    channels: ['promptpay'],
+  );
+
+  static WalletTopupConfig fromJson(Object? j) {
+    if (j is! Map) return fallback;
+    final bundles = <int>[
+      if (j['bundles'] is List)
+        for (final b in j['bundles'] as List)
+          if (num.tryParse('$b') case final n? when n > 0) n.toInt(),
+    ];
+    final channels = <String>[
+      if (j['channels'] is List)
+        for (final c in j['channels'] as List) c.toString(),
+    ];
+    return WalletTopupConfig(
+      bundles: bundles.isEmpty ? fallback.bundles : bundles,
+      min: num.tryParse('${j['min']}') ?? fallback.min,
+      max: num.tryParse('${j['max']}') ?? fallback.max,
+      channels: channels.isEmpty ? fallback.channels : channels,
+      kbank: KbankAccount.fromJson(j['kbank']),
+      fromServer: true,
+    );
+  }
+}
+
 final walletRepositoryProvider = FutureProvider<WalletRepository>((ref) async {
   final api = await ref.watch(apiClientProvider.future);
   return WalletRepository(api);
@@ -135,4 +215,13 @@ final walletPricingProvider = FutureProvider<Map<String, num>>((ref) async {
     };
   }
   return const {};
+});
+
+/// ชุดยอดเติม/ช่องทางจาก `GET /v1/wallet` → `topup` — ช่อง play ไม่ใช้ provider นี้
+/// (ไม่มี UI จ่ายนอก Play) แต่ถ้าถูกอ่านก็ได้ [WalletTopupConfig.fallback] เฉย ๆ
+final walletTopupConfigProvider = FutureProvider<WalletTopupConfig>((ref) async {
+  ref.watch(sessionUserIdProvider);
+  final repo = await ref.watch(walletRepositoryProvider.future);
+  final data = await repo.overview();
+  return WalletTopupConfig.fromJson(data['topup']);
 });
