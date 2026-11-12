@@ -103,6 +103,13 @@ Same limits/throttle as web `/chat/transcribe`.
   `voice_premium: {offerable, price, qa_minutes}`, `rooms: true`,
   `free_reading: {enabled}`, `push: {fcm: bool}`, `features.*` flags for every
   new block below (so the app hides what the server does not have).
+  Fixed key names (`true` = the endpoint exists on this server):
+  `rooms` (A1–A3), `qa_clock` (A4 qa + A6), `free_ask`, `chat_feed` (A7),
+  `chat_transcribe` (A8), `voice_premium` (C1 + C5), `reading_share` (C3),
+  `reading_review` (C4), `deep_async` (C6), `free_reading` (D), `daily_luck`
+  (E1–E2), `collection` (E3), `testimonials` (E4), `account_profile` (F),
+  `push` (G). The app shows a new block only when its flag is `true`; a missing
+  key = hidden (old server).
 - `/v1/wallet` `pricing` adds `tarot_quick`, `tarot_kunsai`, `voice_premium`, `deep`;
   adds `topup: {bundles: [50,100,200,500,1000,2000], min: 20, max: 50000, channels: ["promptpay","kbank"], kbank: {bank, name, number}|null}`
   (omitted for `X-App-Channel: play`).
