@@ -12,6 +12,7 @@ import 'package:juntra/core/api/app_config_repository.dart';
 import 'package:juntra/core/api/endpoints.dart';
 import 'package:juntra/core/api/push_repository.dart';
 import 'package:juntra/core/api/wallet_repository.dart';
+import 'package:juntra/core/app_channel.dart';
 import 'package:juntra/core/auth/session.dart';
 import 'package:juntra/core/push/push_bootstrap.dart';
 
@@ -230,7 +231,8 @@ void main() {
     expect(pushRoute({'url': 'https://evil.test/reading/42'}), isNull);
     expect(
       pushRoute({'url': 'https://xn--82c4af5bzdj.online/wallet/topup/42', 'type': 'bill'}),
-      isNull,
+      // Play ห้ามชี้ไปเติมเงินช่องทางอื่น · APK เปิดวอลเลตได้
+      isPlayChannel ? isNull : equals('/wallet'),
     );
   });
 

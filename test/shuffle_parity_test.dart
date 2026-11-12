@@ -12,6 +12,7 @@ import 'package:juntra/core/api/idempotency.dart';
 import 'package:juntra/core/api/rooms_repository.dart';
 import 'package:juntra/core/api/tarot_catalog_repository.dart';
 import 'package:juntra/core/api/tarot_packages_repository.dart';
+import 'package:juntra/core/app_channel.dart';
 import 'package:juntra/features/shuffle/shuffle_pricing.dart';
 import 'package:juntra/features/spreads/package_groups.dart';
 
@@ -93,11 +94,11 @@ void main() {
       expect(confirmTotal(price: 39, premium: offer, premiumOn: true), 139);
       expect(
         confirmPriceSuffix(price: 39, premium: offer, premiumOn: true),
-        ' · 139 เครดิต',
+        isPlayChannel ? ' · 139 เครดิต' : ' · ฿139',
       );
       expect(
         confirmPriceSuffix(price: null, premium: offer, premiumOn: true),
-        ' · +100 เครดิต',
+        isPlayChannel ? ' · +100 เครดิต' : ' · +฿100',
       );
       expect(voicePremiumLabel(offer), contains('ถามต่อ 20 นาที'));
     },
