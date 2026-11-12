@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/session.dart';
 import 'api_client.dart';
+import 'app_config_repository.dart';
 import 'api_exceptions.dart';
 import 'endpoints.dart';
 
@@ -367,6 +368,8 @@ class RoomsRepository {
 /// ห้องทั้งหมด — ผูกกับผู้ใช้ที่ล็อกอิน เพราะ `meta.lock` เป็นของแต่ละคน
 final roomsProvider = FutureProvider<RoomsState>((ref) async {
   ref.watch(sessionUserIdProvider);
+  final cfg = await ref.watch(appConfigProvider.future);
+  if (!cfg.has('rooms')) return RoomsState.legacy;
   final api = await ref.watch(apiClientProvider.future);
   return RoomsRepository(api).load();
 });

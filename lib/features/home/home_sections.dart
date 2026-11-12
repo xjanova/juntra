@@ -14,7 +14,6 @@ import '../../core/api/testimonials_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/data/juntra_art.dart';
 import '../../shared/format/credits.dart';
-import '../../shared/widgets/art_banner.dart';
 import '../../shared/widgets/gold_button.dart';
 
 /// หัวข้อแต่ละส่วนแบบ `.section-head` ของเว็บ: eyebrow ตัวเอียงทอง · หัวข้อ Charm ไล่สี ·
@@ -38,10 +37,11 @@ class HomeSectionHead extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           eyebrow.toUpperCase(),
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           style: cinzel(size: 12, color: JuntraColors.gold).copyWith(letterSpacing: 3),
         ),
         const SizedBox(height: 6),
@@ -50,17 +50,16 @@ class HomeSectionHead extends StatelessWidget {
           shaderCallback: (r) => JuntraColors.headlineGradient.createShader(r),
           child: Text(
             title,
-            textAlign: TextAlign.center,
-            style: charm(size: 25, color: Colors.white).copyWith(height: 1.3),
+            textAlign: TextAlign.start,
+            style: baiJamjuree(size: 19, color: Colors.white).copyWith(height: 1.3, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 4),
-        const ThaiDivider(height: 22),
         if (sub != null) ...[
           const SizedBox(height: 6),
           Text(
             sub!,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
             style: const TextStyle(fontSize: 13, color: JuntraColors.textLavender, height: 1.7),
           ),
         ],
@@ -173,18 +172,18 @@ class HomeRoomsStrip extends ConsumerWidget {
     final rooms = state.hasPicker ? state.rooms : [state.room(OracleRoom.defaultKey)];
     final w = MediaQuery.sizeOf(context).width;
     final single = rooms.length == 1;
-    final cardW = single ? w - 32 : w * 0.66;
+    final cardW = single ? w - 32 : ((w - 56) / 3).clamp(88.0, 200.0);
 
     return Column(
       children: [
-        HomeSectionHead(
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: HomeSectionHead(
           eyebrow: single ? 'Oracle · ผู้พยากรณ์' : 'Oracle Rooms · ${state.openRooms.length} ห้อง',
           title: single ? 'คุยกับแม่หมอจันทรา' : 'เลือกผู้พยากรณ์ของท่าน',
           sub: state.lede ?? 'เล่าเรื่องที่ค้างใจได้ก่อน พร้อมเมื่อไหร่ค่อยให้เปิดไพ่ — หักเครดิตเมื่อเปิดไพ่เท่านั้น',
-        ),
+        )),
         const SizedBox(height: 14),
         SizedBox(
-          height: single ? 230 : 300,
+          height: single ? 230 : (cardW * 1.5).clamp(150.0, 280.0),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -269,27 +268,28 @@ class _RoomCard extends StatelessWidget {
                 child: _Badge(label: room.open ? 'AI' : 'เร็ว ๆ นี้', color: accent),
               ),
               Positioned(
-                left: 14, right: 14, bottom: 14,
+                left: wide ? 14 : 6, right: wide ? 14 : 6, bottom: wide ? 14 : 8,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    if (wide) Text(
                       room.eyebrow,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 10.5, letterSpacing: 0.8, color: accent),
                     ),
                     const SizedBox(height: 2),
-                    Text(room.name, style: charm(size: 24, color: JuntraColors.goldLight)),
+                    Text(room.short, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: baiJamjuree(size: wide ? 24 : 14, color: JuntraColors.goldLight)),
                     Text(
                       room.title,
-                      maxLines: wide ? 1 : 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12.5, color: JuntraColors.textPrimary, height: 1.45),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    if (wide) const SizedBox(height: 8),
+                    if (wide) Row(
                       children: [
                         Expanded(
                           child: Wrap(
@@ -362,7 +362,7 @@ class HomePackages extends ConsumerWidget {
     final packages = all.where((p) => !p.webOnly).toList();
     if (packages.isEmpty) return const SizedBox.shrink();
     final w = MediaQuery.sizeOf(context).width;
-    final cardW = w * 0.7;
+    final cardW = (w * .4).clamp(140.0, 180.0);
 
     return Column(
       children: [
@@ -374,7 +374,7 @@ class HomePackages extends ConsumerWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: cardW * 9 / 16 + 150,
+          height: cardW * 9 / 16 + 160,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -465,6 +465,7 @@ class _PackageCard extends StatelessWidget {
                         const Spacer(),
                         Text(
                           'เปิดไพ่กับ$reader →',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: room.accent),
                         ),
                       ],
@@ -588,7 +589,7 @@ class HomeTestimonials extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: list.length,
             separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, i) => _TestimonialCard(t: list[i], width: w * 0.78),
+            itemBuilder: (context, i) => _TestimonialCard(t: list[i], width: (w * .56).clamp(180.0, 260.0)),
           ),
         ),
       ],

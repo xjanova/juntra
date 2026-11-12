@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
+import 'ayanamsa.dart';
 
 /// Birth data — same shape as the React handoff's BirthData struct.
 class BirthData {
@@ -103,7 +104,10 @@ class NatalChart {
   final List<NatalPosition> planets;
   final List<NatalAspect> aspectsTo;
 
-  factory NatalChart.compute(BirthData b) {
+  factory NatalChart.compute(BirthData b, {ZodiacSystem zodiac = ZodiacSystem.thaiSidereal}) {
+    final instant = DateTime.utc(b.year, b.month, b.day, b.hour, b.minute)
+      .subtract(Duration(microseconds: (b.tzOffsetHours * 3600000000).round()));
+    final ayanamsa = zodiac == ZodiacSystem.thaiSidereal ? thaiAyanamsa(instant) : 0.0;
     final jd = _julianDay(b.year, b.month, b.day, b.hour, b.minute,
         b.tzOffsetHours);
     // Schlyter's day number: days (incl. fraction) since 1999-12-31 00:00 UT.
@@ -116,7 +120,7 @@ class NatalChart {
     final ascLon = _ascendant(_localSiderealTime(jd, b.lng) * 15, b.lat, obliquity);
 
     NatalPosition pos(double lon, {String glyph = '', String label = '', Color color = JuntraColors.gold}) {
-      final n = _mod360(lon);
+      final n = _mod360(lon - ayanamsa);
       final idx = (n / 30).floor() % 12;
       final s = _signs[idx];
       return NatalPosition(

@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:juntra/app/theme.dart';
 import 'package:juntra/core/api/testimonials_repository.dart';
+import 'package:juntra/core/api/rooms_repository.dart';
+import 'package:juntra/core/api/tarot_packages_repository.dart';
 import 'package:juntra/features/home/home_hero.dart';
 import 'package:juntra/features/home/home_screen.dart';
 
@@ -14,6 +16,13 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(ProviderScope(
+      overrides: [
+        roomsProvider.overrideWith((ref) async => RoomsState(rooms: OracleRoom.keys.map(OracleRoom.builtIn).toList(), fromServer: true)),
+        tarotPackagesProvider.overrideWith((ref) async => [TarotPackage.fromJson(const {
+          'key': 'three', 'name_th': 'ไพ่สามใบ', 'cards': 3, 'positions': ['อดีต', 'ปัจจุบัน', 'อนาคต'],
+          'price': 39, 'room': 'busaba', 'reader_name': 'บุษบา', 'tagline': 'คำทำนายทั้งรัก งาน เงิน และสุขภาพ',
+        })]),
+      ],
       child: MaterialApp(theme: JuntraTheme.dark(), home: const HomeScreen()),
     ));
     await tester.pump(const Duration(milliseconds: 200));

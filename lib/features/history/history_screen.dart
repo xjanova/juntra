@@ -30,6 +30,8 @@ class HistoryScreen extends ConsumerStatefulWidget {
 const Map<String, _TypeMeta> _typeMeta = {
   'tarot_single':   _TypeMeta('ไพ่ใบเดียว',  '✦', JuntraColors.gold),
   'tarot_three':    _TypeMeta('ทาโรต์ 3 ใบ', '✦', JuntraColors.gold),
+  'tarot_quick':    _TypeMeta('ดูไวกับบุษบา', '✦', JuntraColors.cyan),
+  'tarot_free':     _TypeMeta('ไพ่ฟรี', '✦', JuntraColors.mintGreen),
   'tarot_love':     _TypeMeta('ความรัก',     '♥', Color(0xFFFF6B9D)),
   'tarot_career':   _TypeMeta('การงาน-เงิน', '✦', JuntraColors.gold),
   'tarot_decision': _TypeMeta('ทางแยก',      '✧', JuntraColors.purpleBright),
@@ -306,9 +308,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ClipOval(
+                ClipRRect(borderRadius: BorderRadius.circular(20),
                   child: Image.asset(JuntraArt.stateNoReading,
-                      width: 150, height: 150, fit: BoxFit.cover,
+                      width: 200, height: 150, fit: BoxFit.contain,
                       errorBuilder: (_, _, _) => const SizedBox.shrink()),
                 ),
                 const SizedBox(height: 16),
@@ -351,6 +353,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       (null, 'ทั้งหมด'),
       ('tarot_single', 'ไพ่ใบเดียว'),
       ('tarot_three', 'ทาโรต์ 3 ใบ'),
+      ('tarot_quick', 'ดูไวกับบุษบา'),
+      ('tarot_free', 'ไพ่ฟรี'),
+      ('tarot_kunsai', 'คุณไสย / โดนของ'),
       ('tarot_love', 'ความรัก'),
       ('tarot_career', 'การงาน-เงิน'),
       ('tarot_decision', 'ทางแยก'),

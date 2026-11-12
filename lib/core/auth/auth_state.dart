@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../api/endpoints.dart';
+import '../push/push_service.dart';
 
 /// Auth state machine — boots on app start, transitions on login/logout.
 ///
@@ -150,6 +151,7 @@ class AuthController extends StateNotifier<AuthState> {
   Future<void> deleteAccount({required String password}) async {
     final api = await _ref.read(apiClientProvider.future);
     await api.post<Map<String, dynamic>>(Api.accountDelete, data: {'password': password});
+    await _ref.read(pushServiceProvider).unregister();
     await api.clearToken();
     state = const AuthGuest();
   }
@@ -216,6 +218,7 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> signOut() async {
     final api = await _ref.read(apiClientProvider.future);
+    await _ref.read(pushServiceProvider).unregister();
     try {
       await api.post(Api.authLogout);
     } catch (_) {/* tolerate offline logout */}

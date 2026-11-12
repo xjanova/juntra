@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../shared/format/credits.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
@@ -149,14 +150,18 @@ class _HomeHeroState extends State<HomeHero> {
   Widget build(BuildContext context) {
     final slides = _slides;
     final media = MediaQuery.of(context);
-    final top = media.padding.top;
     final w = media.size.width;
     // สูงพอให้เห็นตัวละครครึ่งตัว + คำโปรย แต่ไม่ดันเนื้อหาหายไปทั้งจอ
-    final h = top + (w * 1.12).clamp(400.0, 560.0);
+    final h = (w * .72).clamp(260.0, 380.0);
     final slide = slides[_index % slides.length];
 
-    return SizedBox(
+    return Column(children: [
+      const SafeArea(bottom: false, child: Padding(padding: EdgeInsets.fromLTRB(16, 10, 16, 14), child: _HeroTopBar())),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: Container(
       height: h,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: JuntraColors.gold.withValues(alpha: .45))),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -177,11 +182,11 @@ class _HomeHeroState extends State<HomeHero> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
                   colors: [
-                    Color(0x8C0A0612), Color(0x000A0612), Color(0x000A0612),
-                    Color(0xB30A0612), JuntraColors.bgDeepest,
+                    Color(0xF20A0612), Color(0xE60A0612), Color(0xB30A0612),
+                    Color(0x330A0612), Color(0x000A0612),
                   ],
                   stops: [0.0, 0.2, 0.42, 0.76, 1.0],
                 ),
@@ -189,11 +194,7 @@ class _HomeHeroState extends State<HomeHero> {
             ),
           ),
           Positioned(
-            top: top + 8, left: 16, right: 8,
-            child: const _HeroTopBar(),
-          ),
-          Positioned(
-            left: 18, right: 18, bottom: 14,
+            left: 14, width: (w - 32) * .53, bottom: 18,
             child: IgnorePointer(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -226,7 +227,7 @@ class _HomeHeroState extends State<HomeHero> {
           ),
         ],
       ),
-    );
+    )), ]);
   }
 }
 
@@ -269,27 +270,27 @@ class _Caption extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _Eyebrow(slide.eyebrow),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Wrap(
           crossAxisAlignment: WrapCrossAlignment.end,
           spacing: 8,
           children: [
-            _GradientText(slide.lead, style: charm(size: 34), gradient: _titleFill),
+            _GradientText(slide.lead, style: charm(size: 25), gradient: _titleFill),
             _GradientText(
               slide.accent,
-              style: charm(size: 34).copyWith(fontStyle: FontStyle.italic),
+              style: charm(size: 25).copyWith(fontStyle: FontStyle.italic),
               gradient: _accentFill,
             ),
           ],
         ),
-        _GradientText(slide.tail, style: charm(size: 28), gradient: _titleFill),
+        _GradientText(slide.tail, style: charm(size: 20), gradient: _titleFill),
         const SizedBox(height: 8),
         Text(
           slide.sub,
-          maxLines: 3,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontSize: 13.5, height: 1.65,
+            fontSize: 12, height: 1.5,
             color: JuntraColors.textPrimary, shadows: _shadow,
           ),
         ),
@@ -326,6 +327,7 @@ class _GradientText extends StatelessWidget {
       shaderCallback: (r) => gradient.createShader(r),
       child: Text(
         text,
+        maxLines: 1, overflow: TextOverflow.ellipsis,
         style: style.copyWith(
           color: Colors.white,
           height: 1.25,
@@ -424,30 +426,17 @@ class _HeroTopBar extends ConsumerWidget {
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'สวัสดี · ${_weekday()}',
-                style: const TextStyle(
-                  fontSize: 11, letterSpacing: 0.8,
-                  color: JuntraColors.textLavender,
-                  shadows: [Shadow(color: Color(0xCC0A0612), blurRadius: 8)],
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: charm(size: 22, color: JuntraColors.goldLight).copyWith(
-                  shadows: const [Shadow(color: Color(0xCC0A0612), blurRadius: 10)],
-                ),
-              ),
-            ],
-          ),
+          child: Align(alignment: Alignment.centerLeft,
+            child: Tooltip(message: 'สวัสดี $name · ${_weekday()}', child: Image.asset(
+              JuntraArt.logo, width: 150, height: 54, fit: BoxFit.contain,
+              cacheWidth: (150 * dpr).round()))),
         ),
+        if (signedIn) Flexible(child: ActionChip(
+          avatar: const Icon(Icons.account_balance_wallet_outlined, size: 16),
+          label: Text(auth.walletBalance == null ? 'วอลเลต' : formatCredits(auth.walletBalance!),
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+          onPressed: () => context.push(Routes.wallet))),
+        const SizedBox(width: 8),
         InkWell(
           onTap: () => context.push(signedIn ? Routes.profile : Routes.login),
           customBorder: const CircleBorder(),
@@ -465,14 +454,6 @@ class _HeroTopBar extends ConsumerWidget {
                   ))
                 : const Icon(Icons.person_outline, color: JuntraColors.goldLight, size: 20),
           ),
-        ),
-        const SizedBox(width: 8),
-        Image.asset(
-          JuntraArt.logoMark,
-          width: 48,
-          fit: BoxFit.contain,
-          cacheWidth: (48 * dpr).round(),
-          errorBuilder: (_, _, _) => const SizedBox(width: 48),
         ),
       ],
     );

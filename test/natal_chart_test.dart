@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:juntra/core/astronomy/natal_chart.dart';
+import 'package:juntra/core/astronomy/ayanamsa.dart';
 
 /// UT birth data (tz 0) for a given instant — keeps the astronomy in UT so
 /// it can be checked against published ephemerides.
@@ -20,7 +21,7 @@ void main() {
     // solstices — independent, textbook astronomy.
     void check(String label, BirthData when, double expected) {
       test(label, () {
-        final lon = NatalChart.compute(when).sun.lon;
+        final lon = NatalChart.compute(when, zodiac: ZodiacSystem.tropical).sun.lon;
         expect(_sep(lon, expected), lessThan(1.5),
             reason: 'Sun at $label was $lon°, expected ≈$expected°');
       });
@@ -34,7 +35,7 @@ void main() {
 
   group('Great Conjunctions of Jupiter & Saturn', () {
     test('2000-05-28 — conjunction in Taurus (~52°)', () {
-      final c = NatalChart.compute(_ut(2000, 5, 28, 16));
+      final c = NatalChart.compute(_ut(2000, 5, 28, 16), zodiac: ZodiacSystem.tropical);
       final jup = c.planets[5].lon;
       final sat = c.planets[6].lon;
       expect(_sep(jup, sat), lessThan(2.0),
@@ -44,7 +45,7 @@ void main() {
     });
 
     test('2020-12-21 — the "great" conjunction (~300°, < 0.5°)', () {
-      final c = NatalChart.compute(_ut(2020, 12, 21, 18));
+      final c = NatalChart.compute(_ut(2020, 12, 21, 18), zodiac: ZodiacSystem.tropical);
       final jup = c.planets[5].lon;
       final sat = c.planets[6].lon;
       expect(_sep(jup, sat), lessThan(1.0));
@@ -61,7 +62,7 @@ void main() {
         for (var doy = 1; doy <= 360; doy += 29) {
           final month = ((doy - 1) ~/ 30) + 1;
           final day = ((doy - 1) % 30) + 1;
-          final c = NatalChart.compute(_ut(year, month, day, 12));
+          final c = NatalChart.compute(_ut(year, month, day, 12), zodiac: ZodiacSystem.tropical);
           final sun = c.sun.lon;
           expect(_sep(c.planets[2].lon, sun), lessThan(29.0),
               reason: 'Mercury elongation $year-$month-$day');
@@ -73,7 +74,7 @@ void main() {
   });
 
   group('Structural invariants', () {
-    final c = NatalChart.compute(_ut(1995, 11, 14, 1, 30));
+    final c = NatalChart.compute(_ut(1995, 11, 14, 1, 30), zodiac: ZodiacSystem.tropical);
 
     test('every body has a normalized longitude and matching sign', () {
       for (final p in [c.sun, c.moon, c.ascendant, ...c.planets]) {
@@ -101,7 +102,7 @@ void main() {
     // Mercury (e≈0.21) is the toughest Kepler case — just make sure the
     // longitude is finite and normalized on a spread of dates.
     for (var d = 0; d < 88; d += 7) {
-      final lon = NatalChart.compute(_ut(2010, 1, 1 + d % 27, 0)).planets[2].lon;
+      final lon = NatalChart.compute(_ut(2010, 1, 1 + d % 27, 0), zodiac: ZodiacSystem.tropical).planets[2].lon;
       expect(lon.isFinite, isTrue);
       expect(lon, inInclusiveRange(0, 360));
     }

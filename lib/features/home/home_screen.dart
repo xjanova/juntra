@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/almanac_repository.dart';
+import '../../core/api/account_repository.dart';
 import '../../core/api/fortune_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/data/fortune_categories.dart';
@@ -25,6 +26,7 @@ import '../../core/api/app_config_repository.dart';
 import '../../core/api/rooms_repository.dart';
 import 'home_hero.dart';
 import 'home_sections.dart';
+import '../daily_luck/daily_luck_screen.dart';
 
 /// Screen 2 — Home, laid out like the web's home page (juntra-payakorn, 2026-11):
 /// full-bleed hero slideshow → wallet → daily card → oracle rooms → tarot
@@ -44,6 +46,9 @@ class HomeScreen extends ConsumerWidget {
         children: [
           // hero ทับมุมขวาบน — โลโก้จึงอยู่ใน hero แทน
           const StarryBackground(density: 50, intensity: 0.6, showMoon: false),
+          Positioned.fill(child: IgnorePointer(child: Opacity(opacity: .38,
+            child: Image.asset(JuntraArt.homeBg, fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const SizedBox.shrink())))),
           ListView(
             padding: const EdgeInsets.only(bottom: 100),
             children: [
@@ -51,6 +56,7 @@ class HomeScreen extends ConsumerWidget {
               const Padding(padding: _pad, child: _HeroActions()),
               const SizedBox(height: 18),
               Padding(padding: _pad, child: _QuickStatsRow()),
+              const Padding(padding: _pad, child: _HomeDailyLuck()),
               const SizedBox(height: 14),
               Padding(padding: _pad, child: _DailyCardHero()),
               const SizedBox(height: 14),
@@ -93,6 +99,20 @@ class HomeScreen extends ConsumerWidget {
 }
 
 /// ปุ่มใต้ hero แบบ `.hero-cta` ของเว็บ: เปิดไพ่ (หลัก) · คุยกับผู้พยากรณ์ (รอง)
+class _HomeDailyLuck extends ConsumerWidget {
+  const _HomeDailyLuck();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(appConfigValueProvider).has('daily_luck')) return const SizedBox.shrink();
+    final auth = ref.watch(authControllerProvider);
+    if (auth is! AuthAuthenticated) return const SizedBox.shrink();
+    final luck = ref.watch(dailyLuckProvider).valueOrNull;
+    if (luck == null) return const SizedBox.shrink();
+    return Padding(padding: const EdgeInsets.only(top: 14), child: DailyLuckCard(
+      key: ValueKey(auth.userId), luck: luck));
+  }
+}
+
 class _HeroActions extends ConsumerWidget {
   const _HeroActions();
 

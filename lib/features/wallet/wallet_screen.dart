@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +19,6 @@ import '../../app/theme.dart';
 import '../../core/app_channel.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/wallet_repository.dart';
-import '../../core/payments/promptpay_qr.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/starry_background.dart';
@@ -48,6 +48,7 @@ class WalletScreen extends ConsumerStatefulWidget {
 }
 
 class _WalletScreenState extends ConsumerState<WalletScreen> {
+  String _topupMethod = 'promptpay';
   Future<Map<String, dynamic>>? _overview;
 
   /// กันกดปุ่มจำนวนเงินรัว ๆ — ระหว่างรอ POST ไม่มี feedback ใด ๆ ผู้ใช้จึงกด
@@ -136,6 +137,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                             PlayCreditsPanel(onCredited: _refresh)
                           else
                             _TopupRow(
+                              config: WalletTopupConfig.fromJson(data['topup']),
+                              method: _topupMethod,
+                              onMethod: (method) => setState(() => _topupMethod = method),
                               enabled: !_startingTopup,
                               onPick: (amount) => _startTopup(amount),
                             ),
@@ -179,7 +183,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
   }
 
   Future<void> _startTopup(double amount) async {
-    if (_startingTopup) return;
+    if (_startingTopup || isPlayChannel) return;
     setState(() => _startingTopup = true);
 
     final Map<String, dynamic> initiated;
@@ -187,8 +191,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       final repo = await ref.read(walletRepositoryProvider.future);
       initiated = await repo.startPromptPayTopup(
         amount: amount,
+        method: _topupMethod,
         // ยอดเดียวกัน = รายการเดียวกัน ถึง dio จะ retry ให้เองก็ไม่เกิดใบซ้ำ
-        idempotencyKey: _topupAttempt.begin('topup-${amount.toStringAsFixed(2)}'),
+        idempotencyKey: _topupAttempt.begin('topup-$_topupMethod-${amount.toStringAsFixed(2)}'),
       );
     } on ApiException catch (e) {
       if (mounted) {
@@ -229,6 +234,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       txId: txId,
       amount: payable,
       promptpay: promptpay,
+      kbank: initiated['channel'] == 'kbank' ? KbankAccount.fromJson(initiated['kbank']) : null,
       slipUploadUrl: initiated['slip_upload_url']?.toString(),
       // qr_payload is nested INSIDE promptpay (data.promptpay.qr_payload), not
       // top-level — read it from there so the backend's exact reserved-amount
@@ -247,6 +253,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
     required int txId,
     required double amount,
     required Map<String, dynamic> promptpay,
+    KbankAccount? kbank,
     String? slipUploadUrl,
     String? qrPayload,
     String? instructions,
@@ -266,6 +273,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
         amount: amount,
         promptpayId: promptpay['id']?.toString() ?? '',
         promptpayName: promptpay['name']?.toString() ?? '',
+        kbank: kbank,
         webFallbackUrl: slipUploadUrl,
         qrPayload: qrPayload,
         instructions: instructions,
@@ -309,6 +317,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
       txId: txId,
       amount: payable,
       promptpay: promptpay,
+      kbank: show['channel'] == 'kbank' ? KbankAccount.fromJson(show['kbank']) : null,
       slipUploadUrl: show['slip_upload_url']?.toString(),
       // topupShow now returns the promptpay/QR block — render it on re-upload.
       qrPayload: promptpay['qr_payload']?.toString(),
@@ -442,14 +451,20 @@ class _BalanceCard extends StatelessWidget {
 }
 
 class _TopupRow extends StatelessWidget {
-  const _TopupRow({required this.onPick, this.enabled = true});
+  const _TopupRow({required this.onPick, required this.config,
+    required this.method, required this.onMethod, this.enabled = true});
+  final WalletTopupConfig config;
+  final String method;
+  final ValueChanged<String> onMethod;
   final ValueChanged<double> onPick;
   final bool enabled;
   // Matches config/pricing.php `topup_bundles` on the backend.
-  static const _options = <double>[50, 100, 200, 500, 1000, 2000];
 
   @override
   Widget build(BuildContext context) {
+    final methods = [if (config.channels.contains('promptpay')) 'promptpay', if (config.hasKbank) 'kbank'];
+    if (methods.isEmpty) return const Text('ยังไม่มีช่องทางเติมเครดิตที่พร้อมใช้งาน');
+    final selected = methods.contains(method) ? method : methods.first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -459,18 +474,22 @@ class _TopupRow extends StatelessWidget {
               color: JuntraColors.textCream,
             )),
         const SizedBox(height: 8),
+        Wrap(spacing: 8, children: [for (final option in methods) ChoiceChip(
+          label: Text(option == 'kbank' ? 'โอนธนาคาร' : 'พร้อมเพย์'), selected: selected == option,
+          onSelected: enabled ? (_) => onMethod(option) : null)]),
+        const SizedBox(height: 8),
         LayoutBuilder(
           builder: (_, c) {
             final tileW = (c.maxWidth - 16) / 3; // 3 per row, 8px gaps
             return Wrap(
               spacing: 8, runSpacing: 8,
               children: [
-                for (final amt in _options)
+                for (final amt in config.bundles.where((a) => a >= config.min && a <= config.max))
                   SizedBox(
                     width: tileW,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(JuntraRadius.card),
-                      onTap: enabled ? () => onPick(amt) : null,
+                      onTap: enabled ? () { onMethod(selected); onPick(amt.toDouble()); } : null,
                       child: Opacity(
                         opacity: enabled ? 1 : 0.45,
                         child: Container(
@@ -494,9 +513,14 @@ class _TopupRow extends StatelessWidget {
           },
         ),
         const SizedBox(height: 6),
-        const Text(
-          'โอนตามจำนวนให้ตรงเป๊ะ ๆ · เติมขั้นต่ำ ฿20 · ระบบเครดิตอัตโนมัติเมื่อเงินเข้า หรืออัปโหลดสลิปให้แอดมินอนุมัติ',
-          style: TextStyle(fontSize: 11, color: JuntraColors.textFaint, height: 1.5),
+        TextButton(onPressed: !enabled ? null : () async {
+          final amount = await showDialog<double>(context: context,
+            builder: (_) => _TopupAmountDialog(min: config.min, max: config.max));
+          if (amount != null && context.mounted) { onMethod(selected); onPick(amount); }
+        }, child: const Text('ระบุจำนวนเอง')),
+        Text(
+          'โอนตามยอดในรายการ · ขั้นต่ำ ฿${config.min} สูงสุด ฿${config.max} · อัปโหลดสลิปเพื่อตรวจสอบ',
+          style: const TextStyle(fontSize: 11, color: JuntraColors.textFaint, height: 1.5),
         ),
       ],
     );
@@ -519,8 +543,10 @@ class _TopupSheet extends ConsumerStatefulWidget {
     this.qrPayload,
     this.instructions,
     this.autoConfirm = false,
+    this.kbank,
   });
   final int txId;
+  final KbankAccount? kbank;
   final double amount;
   final String promptpayId;
   final String promptpayName;
@@ -705,7 +731,8 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
                   style: baiJamjuree(size: 18, color: JuntraColors.gold)),
             ),
             const SizedBox(height: 16),
-            _PromptPayInfoCard(
+            if (widget.kbank case final bank?) _BankInfoCard(bank: bank, amount: widget.amount)
+            else _PromptPayInfoCard(
               id: widget.promptpayId,
               name: widget.promptpayName,
               amount: widget.amount,
@@ -888,6 +915,51 @@ class _TopupSheetState extends ConsumerState<_TopupSheet> {
   }
 }
 
+class _TopupAmountDialog extends StatefulWidget {
+  const _TopupAmountDialog({required this.min, required this.max});
+  final num min, max;
+  @override
+  State<_TopupAmountDialog> createState() => _TopupAmountDialogState();
+}
+
+class _TopupAmountDialogState extends State<_TopupAmountDialog> {
+  final _amount = TextEditingController();
+  String? _error;
+  @override
+  void dispose() { _amount.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => AlertDialog(title: const Text('จำนวนเครดิต'),
+    content: TextField(controller: _amount, autofocus: true,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(hintText: '${widget.min} – ${widget.max}', errorText: _error)),
+    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+      FilledButton(onPressed: () {
+        final amount = double.tryParse(_amount.text.trim());
+        if (amount == null || !amount.isFinite || amount < widget.min || amount > widget.max ||
+            (amount * 100 - (amount * 100).round()).abs() > .00001) {
+          setState(() => _error = 'ระบุยอด ${widget.min} – ${widget.max} บาท ไม่เกิน 2 ทศนิยม');
+          return;
+        }
+        Navigator.pop(context, amount);
+      }, child: const Text('ดำเนินการ'))]);
+}
+
+class _BankInfoCard extends StatelessWidget {
+  const _BankInfoCard({required this.bank, required this.amount});
+  final KbankAccount bank;
+  final double amount;
+  @override
+  Widget build(BuildContext context) => Card(child: Padding(padding: const EdgeInsets.all(16),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text(bank.bank, style: baiJamjuree(size: 16)),
+      Text(bank.name),
+      Row(children: [Expanded(child: SelectableText(bank.displayNumber ?? bank.number)),
+        IconButton(tooltip: 'คัดลอกเลขบัญชี', icon: const Icon(Icons.copy),
+          onPressed: () => Clipboard.setData(ClipboardData(text: bank.number)))]),
+      Text('ยอดโอน ฿${amount.toStringAsFixed(2)}', style: baiJamjuree(size: 18)),
+    ])));
+}
+
 class _PromptPayInfoCard extends StatelessWidget {
   const _PromptPayInfoCard({
     required this.id, required this.name, required this.amount, this.qrPayload,
@@ -906,7 +978,7 @@ class _PromptPayInfoCard extends StatelessWidget {
     // the backend didn't supply it and the receiver id is set + well-formed.
     final payload = (qrPayload != null && qrPayload!.trim().isNotEmpty)
         ? qrPayload!.trim()
-        : (id.isEmpty ? null : PromptPayQr.build(proxyId: id, amount: amount));
+        : null;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -928,8 +1000,10 @@ class _PromptPayInfoCard extends StatelessWidget {
             Center(child: _QrBlock(payload: payload)),
             const SizedBox(height: 12),
           ],
+          if (payload == null) const Padding(padding: EdgeInsets.all(12),
+            child: Text('ยังไม่ได้รับคิวอาร์ กรุณาปิดแล้วเปิดรายการใหม่')),
           const SizedBox(height: 8),
-          _row('ผู้รับ', name.isEmpty ? '— กรุณาตั้งค่าใน /admin/wallet-settings —' : name),
+          _row('ผู้รับ', name.isEmpty ? 'ยังไม่พร้อมใช้งาน' : name),
           const SizedBox(height: 4),
           _row('PromptPay ID', id.isEmpty ? '— ยังไม่ได้ตั้งค่า —' : id, mono: true),
           const SizedBox(height: 4),

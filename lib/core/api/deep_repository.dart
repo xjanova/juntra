@@ -30,11 +30,13 @@ class DeepRepository {
     required List<String> questions,
     String? birthDate,
     required String idempotencyKey,
+    bool async = false,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.deepReading,
       data: {
         'questions': questions,
+        if (async) 'mode': 'async',
         if (birthDate != null && birthDate.isNotEmpty) 'birth_date': birthDate,
       },
       idempotencyKey: idempotencyKey,

@@ -12,6 +12,7 @@ import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
 import '../../core/api/deep_repository.dart';
+import '../../core/api/app_config_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../shared/format/credits.dart';
@@ -31,9 +32,9 @@ class DeepScreen extends ConsumerStatefulWidget {
 }
 
 class _DeepScreenState extends ConsumerState<DeepScreen> {
-  static const _maxQuestions = 3;
+  int get _maxQuestions => (int.tryParse('${ref.read(deepInfoProvider).valueOrNull?['max_questions']}') ?? 3).clamp(1, 20);
 
-  final _controllers = List.generate(_maxQuestions, (_) => TextEditingController());
+  final _controllers = List.generate(3, (_) => TextEditingController());
   DateTime? _birthDate;
   bool _sending = false;
   String? _error;
@@ -57,6 +58,7 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
   }
 
   List<String> get _questions => _controllers
+      .take(_maxQuestions)
       .map((c) => c.text.trim())
       .where((t) => t.isNotEmpty)
       .toList();
@@ -87,6 +89,7 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
                 '${_birthDate!.month.toString().padLeft(2, '0')}-'
                 '${_birthDate!.day.toString().padLeft(2, '0')}',
         idempotencyKey: _pendingKey!,
+        async: ref.read(appConfigValueProvider).has('deep_async'),
       );
       if (!mounted) return;
 
@@ -96,7 +99,12 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
       ref.invalidate(fortuneHistoryProvider);
       ref.read(authControllerProvider.notifier).refresh();
 
-      await _showResult(res);
+      final readingId = int.tryParse('${res['id'] ?? res['reading_id']}');
+      if (readingId != null) {
+        context.pushReplacement('${Routes.reading}?id=$readingId');
+      } else {
+        await _showResult(res);
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.statusCode == 402) {
@@ -261,6 +269,7 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
   @override
   Widget build(BuildContext context) {
     final info = ref.watch(deepInfoProvider);
+    while (_controllers.length < _maxQuestions) { _controllers.add(TextEditingController()); }
 
     return Scaffold(
       body: Stack(
@@ -357,7 +366,7 @@ class _DeepScreenState extends ConsumerState<DeepScreen> {
                           maxLength: 500,
                           maxLines: 2,
                           minLines: 1,
-                          onChanged: (_) => setState(() {}),
+                          onChanged: (_) => setState(() { _pendingKey = null; }),
                           style: const TextStyle(
                             color: JuntraColors.textCream, fontSize: 14,
                           ),

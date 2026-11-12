@@ -202,10 +202,6 @@ class _HoroscopeScreenState extends ConsumerState<HoroscopeScreen> {
             Row(
               children: [
                 _lucky('เลขนำโชค', h['lucky_number']?.toString() ?? '—'),
-                const SizedBox(width: 8),
-                _lucky('สีมงคล', h['lucky_color']?.toString() ?? '—'),
-                const SizedBox(width: 8),
-                _lucky('ไพ่ประจำวัน', h['lucky_card']?.toString() ?? '—'),
               ],
             ),
           ],

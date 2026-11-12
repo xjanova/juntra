@@ -120,10 +120,11 @@ class WalletRepository {
 
 /// บัญชีธนาคารสำหรับโอนตรง (`topup.kbank`)
 class KbankAccount {
-  const KbankAccount({required this.bank, required this.name, required this.number});
+  const KbankAccount({required this.bank, required this.name, required this.number, this.displayNumber});
   final String bank;
   final String name;
   final String number;
+  final String? displayNumber;
 
   static KbankAccount? fromJson(Object? j) {
     if (j is! Map) return null;
@@ -133,6 +134,7 @@ class KbankAccount {
       bank: (j['bank'] ?? 'กสิกรไทย').toString(),
       name: (j['name'] ?? '').toString(),
       number: number,
+      displayNumber: j['display_number']?.toString(),
     );
   }
 }
@@ -181,10 +183,10 @@ class WalletTopupConfig {
         for (final c in j['channels'] as List) c.toString(),
     ];
     return WalletTopupConfig(
-      bundles: bundles.isEmpty ? fallback.bundles : bundles,
+      bundles: j['bundles'] is List ? bundles : fallback.bundles,
       min: num.tryParse('${j['min']}') ?? fallback.min,
       max: num.tryParse('${j['max']}') ?? fallback.max,
-      channels: channels.isEmpty ? fallback.channels : channels,
+      channels: j['channels'] is List ? channels : fallback.channels,
       kbank: KbankAccount.fromJson(j['kbank']),
       fromServer: true,
     );

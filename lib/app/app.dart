@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/billing/play_billing_bootstrap.dart';
 import '../core/update/update_observer.dart';
+import '../core/push/push_bootstrap.dart';
 import 'router.dart';
 import 'theme.dart';
 
@@ -32,7 +33,7 @@ class JuntraApp extends ConsumerWidget {
       // while the app was closed (Play channel only).
       builder: (context, child) {
         return PlayBillingBootstrap(
-          child: UpdateObserver(child: child ?? const SizedBox.shrink()),
+          child: PushBootstrap(child: UpdateObserver(child: child ?? const SizedBox.shrink())),
         );
       },
     );

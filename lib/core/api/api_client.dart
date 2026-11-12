@@ -65,14 +65,16 @@ class ApiClient {
     // a stale credential forever.
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await storage.read(key: _kTokenKey);
+        final token = options.extra['sessionToken'] as String? ?? await storage.read(key: _kTokenKey);
+        options.extra['sentToken'] = token;
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         handler.next(options);
       },
       onResponse: (response, handler) async {
-        if (response.statusCode == 401) {
+        if (response.statusCode == 401 &&
+            await storage.read(key: _kTokenKey) == response.requestOptions.extra['sentToken']) {
           await storage.delete(key: _kTokenKey);
         }
         handler.next(response);
@@ -158,15 +160,17 @@ class ApiClient {
     dynamic data,
     Map<String, dynamic>? query,
     String? idempotencyKey,
+    String? sessionToken,
   }) async {
     try {
       final res = await dio.post(
         path,
         data: data,
         queryParameters: query,
-        options: idempotencyKey == null
+        options: idempotencyKey == null && sessionToken == null
             ? null
-            : Options(headers: {'Idempotency-Key': idempotencyKey}),
+            : Options(headers: {'Idempotency-Key': ?idempotencyKey},
+                extra: {'sessionToken': ?sessionToken}),
       );
       return _decode<T>(res);
     } on DioException catch (e) {
@@ -183,9 +187,18 @@ class ApiClient {
     }
   }
 
-  Future<T> delete<T>(String path, {dynamic data, Map<String, dynamic>? query}) async {
+  Future<T> patch<T>(String path, {dynamic data}) async {
     try {
-      final res = await dio.delete(path, data: data, queryParameters: query);
+      return _decode<T>(await dio.patch(path, data: data));
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<T> delete<T>(String path, {dynamic data, Map<String, dynamic>? query, String? sessionToken}) async {
+    try {
+      final res = await dio.delete(path, data: data, queryParameters: query,
+        options: sessionToken == null ? null : Options(extra: {'sessionToken': sessionToken}));
       return _decode<T>(res);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);

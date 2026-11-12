@@ -76,8 +76,12 @@ class _TabIcon extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
-      child: Padding(
+      child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(18),
+          gradient: selected ? JuntraColors.purpleCardGradient : null,
+          border: selected ? Border.all(color: JuntraColors.purpleBright.withValues(alpha: .5)) : null),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
