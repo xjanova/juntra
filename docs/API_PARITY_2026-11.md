@@ -148,6 +148,17 @@ Same limits/throttle as web `/chat/transcribe`.
 - G2 `GET|PUT /v1/push/preferences` — same fields as web push preferences.
 - Server sends FCM HTTP v1 next to Web Push when `FCM_*` credentials exist; silently off otherwise.
 
+## Deviations reported by the juntraweb side (binding for the app)
+- A4 `admin_as` is only ever `"admin"` or `null` — never `"oracle"`. Staff typing
+  *as* the oracle arrive as a plain assistant message (the web hides it on
+  purpose). Draw the staff label only when `admin_as == "admin"` (= `from_admin`).
+- A5 follow-up clock over → 409 `qa_over` (the web uses 403; the API uses 409).
+- A6 a repeat `qa/end` returns `message: null` (no second farewell); `qa` is full.
+- A5 extra keys: `ai_suggestions` (chips the oracle wrote for this conversation,
+  same as the web) next to `suggestions`; new 409 `busy_other` (the same user is
+  sending from another device/tab — nothing charged, show "ลองส่งใหม่");
+  422 `room_closed` when the conversation's room was closed since it started.
+
 ## Natal (app only)
 The app keeps its on-device natal chart but switches to the web's zodiac:
 sidereal = tropical − `ThaiAstro::ayanamsa` (Lahiri). The Dart port is pinned
