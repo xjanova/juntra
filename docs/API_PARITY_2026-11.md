@@ -202,6 +202,24 @@ Second batch (juntraweb chat API written, 2026-11-12):
   (contact number from the astrology form); F2 never edits email/phone.
 - Validation 422 = `{message, reason_code: "validation_failed", errors}`.
 
+Third batch (config, wallet, push, readings, free card — 2026-11-12):
+- `/v1/app/config`: `features.*` carries all 15 keys; `voice_premium`, `rooms`,
+  `free_reading`, `push` sit at the top level of `data`.
+- `/v1/wallet` `topup.kbank` = `{bank, name, number, display_number, bank_code}` — copy
+  `number` (digits), show `display_number`. No KBank account → `channels: ["promptpay"]`,
+  `kbank: null`. With `X-App-Channel: play` the `topup` key is absent.
+- `POST /v1/wallet/topup/promptpay` adds `channel` + `kbank`; `kbank` without an account
+  → 422 `kbank_unavailable`. Play: top-up and slip → 403 `play_billing_only`.
+- G: `POST /v1/push/devices` `{token, platform?, channel?, app_version?}` →
+  `{registered, devices, fcm}`; `DELETE` → `{removed, devices}`; preferences =
+  `{muted, types, quiet, fcm}`; bad input → 422 `invalid_input`.
+- C3/C4 share and review only for a finished tarot reading of the owner.
+- C5 `voice/next`: `status, done, total, refunded, wait, busy` at the top level, plus
+  `voice {status, duration, chapters, url}`. Reading `voice.mp3` = bearer on the API path;
+  chat `reply_voice.url` = public, no bearer.
+- D1 `max_chars` = the AI answer length limit (200–900), not the question length.
+  D2 `question` is optional, ≤ 500 chars.
+
 ## Natal (app only)
 The app keeps its on-device natal chart but switches to the web's zodiac:
 sidereal = tropical − `ThaiAstro::ayanamsa` (Lahiri). The Dart port is pinned

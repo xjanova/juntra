@@ -24,6 +24,7 @@ class ParityApi extends FakeApiClient {
     dynamic data,
     Map<String, dynamic>? query,
     String? idempotencyKey,
+    String? sessionToken,
   }) async {
     final call = RecordedCall(path, data, idempotencyKey);
     calls.add(call);
