@@ -1218,9 +1218,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   child: _gate != null
                       ? _LockPanel(
                           gate: _gate!,
-                          onGo: () => context.go(
-                            '${Routes.chat}?room=${_gate!.room.key}',
-                          ),
+                          onGo: () {
+                            final room = _gate?.room.key;
+                            if (room != null) context.go('${Routes.chat}?room=$room');
+                          },
                           onRooms: () => context.go(Routes.rooms),
                         )
                       : ValueListenableBuilder<String?>(

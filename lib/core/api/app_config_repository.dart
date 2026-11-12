@@ -129,7 +129,7 @@ class VoicePremiumOffer {
   factory VoicePremiumOffer.fromJson(Map<String, dynamic> j) => VoicePremiumOffer(
         offerable: j['offerable'] == true,
         price: j['price'] is num ? j['price'] as num : num.tryParse('${j['price']}') ?? 0,
-        qaMinutes: (j['qa_minutes'] as num?)?.toInt() ?? 20,
+        qaMinutes: num.tryParse('${j['qa_minutes']}')?.toInt() ?? 20,
       );
 }
 

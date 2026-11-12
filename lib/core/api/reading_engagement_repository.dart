@@ -152,8 +152,8 @@ class VoiceBuild {
     final voice = j['voice'];
     return VoiceBuild(
       status: (j['status'] is String && (j['status'] as String).isNotEmpty) ? j['status'] as String : 'none',
-      done: (j['done'] as num?)?.toInt() ?? 0,
-      total: (j['total'] as num?)?.toInt() ?? 0,
+      done: num.tryParse('${j['done']}')?.toInt() ?? 0,
+      total: num.tryParse('${j['total']}')?.toInt() ?? 0,
       refunded: j['refunded'] == true,
       wait: j['wait'] == true,
       busy: j['busy'] == true,

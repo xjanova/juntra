@@ -15,6 +15,7 @@ class PushService {
   FirebaseMessaging? _messaging;
   String? _token;
   String? _ownerToken;
+  String? _registeredFor;
   int _generation = 0;
   StreamSubscription<String>? _refresh;
   StreamSubscription<RemoteMessage>? _opened;
@@ -41,6 +42,13 @@ class PushService {
     void Function(Map<String, dynamic>)? onOpen,
   }) async {
     if (onOpen != null) _onOpen = onOpen;
+    // Already registered for this session (app resume / config refresh): keep the live
+    // listeners — tearing them down waits on an onRegistered that FCM may not fire again,
+    // which would leave notification taps with no handler.
+    if (_registeredFor != null) {
+      final bearer = await (await _api()).getToken();
+      if (bearer != null && bearer == _registeredFor) return true;
+    }
     final generation = ++_generation;
     await _teardown;
     if (generation != _generation) return false;
@@ -58,6 +66,7 @@ class PushService {
     final bearer = await api.getToken();
     if (bearer == null) return false;
     if (generation != _generation) return false;
+    _registeredFor = null;
     await _refresh?.cancel();
     await _opened?.cancel();
     if (_registration case final previous? when !previous.isCompleted) previous.complete(false);
@@ -98,19 +107,20 @@ class PushService {
     await messaging.register();
     final ok = await registered.future.timeout(const Duration(seconds: 25), onTimeout: () => false);
     if (!ok || generation != _generation) return false;
-    final open = _onOpen;
-    if (open != null) {
+    _registeredFor = bearer;
+    if (_onOpen != null) {
       _opened = FirebaseMessaging.onMessageOpenedApp.listen((message) {
-        if (generation == _generation) open(message.data);
+        if (generation == _generation) _onOpen?.call(message.data);
       });
       final initial = await messaging.getInitialMessage();
-      if (initial != null && generation == _generation) open(initial.data);
+      if (initial != null && generation == _generation) _onOpen?.call(initial.data);
     }
     return true;
   }
 
   Future<void> unregister() async {
     ++_generation;
+    _registeredFor = null;
     if (_registration case final pending? when !pending.isCompleted) pending.complete(false);
     final refresh = _refresh, opened = _opened;
     _refresh = null;
@@ -142,6 +152,7 @@ class PushService {
 
   void dispose() {
     ++_generation;
+    _registeredFor = null;
     if (_registration case final pending? when !pending.isCompleted) pending.complete(false);
     unawaited(_refresh?.cancel());
     unawaited(_opened?.cancel());
