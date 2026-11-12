@@ -40,6 +40,29 @@ social-auth API and its database migration. Confirm `GET providers` advertises
 the configured provider before testing the release APK. An older server returns
 an unavailable/retry message and password sign-in remains usable.
 
+The pending server changes are
+[Thaiprompt PR #2704](https://github.com/xjanova/Thaiprompt-Affiliate/pull/2704)
+and [Juntra PR #69](https://github.com/xjanova/juntraweb/pull/69). They do not
+depend on parity PR #68. Merge and deployment require the owner's approval.
+Run each migration in its own server checkout before enabling the new routes:
+
+1. Thaiprompt, before Juntra:
+   `php artisan migrate --path=database/migrations/2026_11_12_000001_add_social_binding_to_oauth_auth_codes.php --force`
+2. Juntra:
+   `php artisan migrate --path=database/migrations/2026_11_12_120000_create_social_login_requests_table.php --force`
+
+Juntra's `APP_URL` must be its canonical HTTPS origin. Thai hostnames are
+normalized to ASCII IDNA/punycode; invalid origins hide providers and reject
+new requests. For staging, build the APK with
+`--dart-define=JUNTRA_API_BASE=https://<staging-host>/api` so its trusted API
+origin matches the server's returned browser URL. Google appears only when
+configured and enabled upstream.
+
+Before production rollout, verify real provider sign-in on staging and run
+concurrent poll/callback checks with independent MySQL workers. The automated
+server tests use mocked provider responses and SQLite; they do not establish
+either of those results.
+
 Test on Android: choose an advertised provider, finish the provider's own login,
 return to Juntra, verify account identity and credit balance, then relaunch and
 verify the session persists. Also test cancellation, an expired request, network
