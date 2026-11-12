@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../api/endpoints.dart';
 import '../push/push_service.dart';
+import 'social_auth.dart';
 
 /// Auth state machine — boots on app start, transitions on login/logout.
 ///
@@ -177,6 +178,18 @@ class AuthController extends StateNotifier<AuthState> {
     }
     await api.setToken(token);
     state = _userToState(data['user'] as Map<String, dynamic>? ?? const {});
+  }
+
+  Future<void> completeSocialSignIn(SocialLoginResult result) async {
+    if (result.status != SocialLoginStatus.authorized ||
+        result.token == null || result.token!.isEmpty ||
+        result.user == null || (result.user!['id']?.toString().isEmpty ?? true)) {
+      throw ApiException(statusCode: 502, message: 'ยืนยันการเข้าสู่ระบบไม่สำเร็จ');
+    }
+    final api = await _ref.read(apiClientProvider.future);
+    final user = _userToState(result.user!);
+    await api.setToken(result.token!);
+    state = user;
   }
 
   /// สมัครสมาชิก — ต้องกรอก **อีเมลหรือเบอร์โทร อย่างน้อยอย่างใดอย่างหนึ่ง**

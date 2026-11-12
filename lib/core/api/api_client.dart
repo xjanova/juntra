@@ -120,7 +120,7 @@ class ApiClient {
     if (kDebugMode) {
       dio.interceptors.add(PrettyDioLogger(
         requestHeader: false,
-        requestBody: true,
+        requestBody: false,
         responseHeader: false,
         responseBody: false,
         compact: true,

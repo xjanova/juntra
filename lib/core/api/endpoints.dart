@@ -23,6 +23,9 @@ class Api {
   // ─── Auth (Sanctum) ──────────────────────────────────────────
   static const authLogin    = '/v1/auth/login';
   static const authRegister = '/v1/auth/register';
+  static const authSocialProviders = '/v1/auth/social/providers';
+  static const authSocialStart = '/v1/auth/social/start';
+  static const authSocialPoll = '/v1/auth/social/poll';
   static const authMe       = '/v1/auth/me';
   static const authLogout   = '/v1/auth/logout';
   /// Short-lived single-use code for the web OAuth bootstrap (so the bearer
