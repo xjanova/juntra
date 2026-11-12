@@ -10,6 +10,7 @@ import '../../core/api/api_exceptions.dart';
 import '../../core/api/chat_repository.dart';
 import '../../core/auth/auth_state.dart';
 import '../../shared/widgets/starry_background.dart';
+import 'room_visuals.dart';
 
 /// Screen 7b — Conversation list. Past Mae Mor chat sessions, in reverse
 /// chrono order, fetched from `GET /v1/chat/conversations`. Tapping a
@@ -25,7 +26,7 @@ class ConversationListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
-    final async = ref.watch(chatConversationsProvider);
+    final async = ref.watch(chatConversationsProvider(null));
 
     return Scaffold(
       body: Stack(
@@ -79,7 +80,7 @@ class ConversationListScreen extends ConsumerWidget {
                 context.canPop() ? context.pop() : context.go(Routes.home),
           ),
           Expanded(
-              child: Text('บทสนทนากับแม่หมอ', style: baiJamjuree(size: 19))),
+              child: Text('บทสนทนาของฉัน', style: baiJamjuree(size: 19))),
           IconButton(
             icon: const Icon(Icons.refresh,
                 color: JuntraColors.textFaint, size: 22),
@@ -105,7 +106,7 @@ class ConversationListScreen extends ConsumerWidget {
                 style: baiJamjuree(size: 18, color: JuntraColors.gold)),
             const SizedBox(height: 8),
             const Text(
-              'บทสนทนาของลูกกับแม่หมอจะถูกเก็บไว้บนเซิร์ฟเวอร์อย่างปลอดภัย — เข้าสู่ระบบเพื่อดูได้ทุกเมื่อ',
+              'บทสนทนาของคุณกับผู้พยากรณ์จะถูกเก็บไว้บนเซิร์ฟเวอร์อย่างปลอดภัย — เข้าสู่ระบบเพื่อดูได้ทุกเมื่อ',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13, color: JuntraColors.textMuted, height: 1.5,
@@ -175,7 +176,7 @@ class ConversationListScreen extends ConsumerWidget {
     );
   }
 
-  Widget _renderList(BuildContext context, WidgetRef ref, List<Map<String, dynamic>> rows) {
+  Widget _renderList(BuildContext context, WidgetRef ref, List<ChatConversationSummary> rows) {
     if (rows.isEmpty) {
       return _emptyState(context);
     }
@@ -218,7 +219,7 @@ class ConversationListScreen extends ConsumerWidget {
                     style: baiJamjuree(size: 16, color: JuntraColors.gold)),
                 const SizedBox(height: 8),
                 const Text(
-                  'เริ่มต้นคุยกับแม่หมอจันทราครั้งแรกของลูก · แม่หมอจะบันทึกทุกการพูดคุยเก็บไว้ให้',
+                  'เริ่มคุยกับผู้พยากรณ์ครั้งแรกของคุณ · ทุกการพูดคุยจะถูกบันทึกเก็บไว้ให้ค่ะ',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13, color: JuntraColors.textMuted, height: 1.5,
@@ -242,18 +243,19 @@ class ConversationListScreen extends ConsumerWidget {
   }
 }
 
-/// One row in the conversation list. Backend payload shape:
-///   { id, title, message_count, updated_at }
+/// One row in the conversation list — ห้องของแถวมาจาก `room`/`persona`
+/// (เซิร์ฟเวอร์เก่าไม่ส่ง = ห้องแม่หมอ ดู ChatRoomBrief.fromJson)
 class _ConversationTile extends StatelessWidget {
   const _ConversationTile({required this.convo});
-  final Map<String, dynamic> convo;
+  final ChatConversationSummary convo;
 
   @override
   Widget build(BuildContext context) {
-    final id = (convo['id'] as num?)?.toInt();
-    final title = convo['title']?.toString() ?? 'สนทนากับแม่หมอ';
-    final count = (convo['message_count'] as num?)?.toInt() ?? 0;
-    final relative = _relativeTime(convo['updated_at']?.toString());
+    final id = convo.id > 0 ? convo.id : null;
+    final room = convo.room;
+    final title = convo.title ?? 'สนทนากับ${room.name}';
+    final count = convo.messageCount;
+    final relative = _relativeTime(convo.updatedAt);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -273,21 +275,12 @@ class _ConversationTile extends StatelessWidget {
             ),
             child: Row(
               children: [
-                ClipOval(
-                  child: Image.asset(
-                    JuntraArt.maeMor,
-                    width: 40, height: 40, fit: BoxFit.cover,
-                    // ไฟล์ต้นฉบับ 1536×2752 (~6.7MB) — ถ้าไม่จำกัดขนาด decode
-                    // ทุกแถวในลิสต์จะกิน RAM เต็มความละเอียดเพื่อวาดรูป 40px
-                    cacheWidth: (40 * MediaQuery.devicePixelRatioOf(context)).round(),
-                    errorBuilder: (_, _, _) => Container(
-                      width: 40, height: 40,
-                      color: JuntraColors.bgPurple,
-                      alignment: Alignment.center,
-                      child: const Text('🔮',
-                          style: TextStyle(fontSize: 18)),
-                    ),
-                  ),
+                // RoomAvatar จำกัดขนาด decode ตามขนาดที่วาดอยู่แล้ว (ภาพต้นฉบับใหญ่หลาย MB)
+                RoomAvatar(
+                  roomKey: room.key,
+                  imageUrl: room.imageUrl,
+                  accent: room.accent,
+                  size: 40,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -315,7 +308,7 @@ class _ConversationTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '$count ข้อความ',
+                        '${room.name} · $count ข้อความ',
                         style: const TextStyle(
                           fontSize: 11, color: JuntraColors.textMuted,
                         ),
@@ -334,9 +327,7 @@ class _ConversationTile extends StatelessWidget {
     );
   }
 
-  static String? _relativeTime(String? iso) {
-    if (iso == null || iso.isEmpty) return null;
-    final dt = DateTime.tryParse(iso)?.toLocal();
+  static String? _relativeTime(DateTime? dt) {
     if (dt == null) return null;
     final diff = DateTime.now().difference(dt);
     if (diff.inMinutes < 1) return 'เมื่อสักครู่';

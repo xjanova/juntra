@@ -8,7 +8,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../core/api/api_exceptions.dart';
+import '../../core/api/chat_repository.dart';
 import '../../core/api/wallet_repository.dart';
+import '../../core/app_channel.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/api/idempotency.dart';
 
@@ -21,11 +23,21 @@ import '../../core/api/idempotency.dart';
 /// มาจากเซิร์ฟเวอร์ทั้งหมด — แอพ **ห้ามคำนวณยอดหรือประกอบ QR เอง** เพราะ
 /// เคยพลาดมาแล้วตอนที่ wallet_screen ทิ้ง payable_amount แล้วปัดเป็นยอดกลม
 /// ทำให้ระบบเครดิตอัตโนมัติจับคู่ไม่ได้
+///
+/// 🛡 ช่อง Google Play เปิดชีทนี้ไม่ได้เด็ดขาด (นโยบาย Payments) — [show] คืน false ทันที
+/// หน้าแชทช่อง Play ใช้ `showPlayCreditsSheet` แทน
 class ChatTopUpSheet extends ConsumerStatefulWidget {
-  const ChatTopUpSheet({super.key});
+  const ChatTopUpSheet({super.key, this.resume, this.selfName = 'แม่หมอ'});
+
+  /// บิลค้างของห้อง ("ดู QR จ่ายต่อ") — เปิดรายการเดิมต่อ ไม่สร้างรายการใหม่
+  final ChatPendingBill? resume;
+
+  /// ผู้พยากรณ์ของห้อง (ปุ่ม "คุยกับ…ต่อ")
+  final String selfName;
 
   /// คืน true เมื่อเติมเงินสำเร็จ เพื่อให้หน้าแชทปลดล็อกช่องพิมพ์ทันที
-  static Future<bool?> show(BuildContext context) {
+  static Future<bool?> show(BuildContext context, {ChatPendingBill? resume, String selfName = 'แม่หมอ'}) {
+    if (isPlayChannel) return Future.value(false);
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -34,7 +46,7 @@ class ChatTopUpSheet extends ConsumerStatefulWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) => const ChatTopUpSheet(),
+      builder: (_) => ChatTopUpSheet(resume: resume, selfName: selfName),
     );
   }
 
@@ -43,7 +55,8 @@ class ChatTopUpSheet extends ConsumerStatefulWidget {
 }
 
 class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
-  static const _bundles = [50, 100, 200, 500];
+  /// ชุดยอดเดิมของแอพ — ใช้เมื่อเซิร์ฟเวอร์ยังไม่ส่ง `topup.bundles` (เซิร์ฟเวอร์เก่า/ยังโหลดอยู่)
+  static const _legacyBundles = [50, 100, 200, 500];
 
   /// กันสร้างรายการเติมเงินซ้ำเมื่อสัญญาณหลุดแล้วแอพ/ผู้ใช้ส่งซ้ำ — ผูกกับยอดที่กด
   /// (เดิมหน้านี้ไม่ส่งคีย์เลย ต่างจากหน้าวอลเลต)
@@ -62,6 +75,65 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
 
   Timer? _poll;
   int _waited = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final bill = widget.resume;
+    if (bill != null) {
+      // วาด QR ของบิลเดิมได้ทันที แล้วค่อยถามสถานะล่าสุด (อาจจ่ายแล้ว/หมดอายุแล้ว)
+      _txId = bill.id;
+      _payable = bill.payableAmount;
+      _qrPayload = bill.qrPayload;
+      if (bill.hasSlip) _notice = 'ได้รับสลิปแล้วค่ะ ระบบกำลังตรวจสอบให้นะคะ';
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshResumed());
+    }
+  }
+
+  /// สถานะล่าสุดของบิลที่เปิดต่อ — จ่ายแล้วโชว์สำเร็จ · ไม่ค้างแล้วให้เลือกยอดใหม่
+  Future<void> _refreshResumed() async {
+    final id = _txId;
+    if (id == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final repo = await ref.read(walletRepositoryProvider.future);
+      final res = await repo.topupShow(id);
+      if (!mounted) return;
+      final status = res['status']?.toString();
+      final pp = (res['promptpay'] as Map?) ?? const {};
+      setState(() {
+        if (status == 'success') {
+          _paid = true;
+          _balance = (res['balance'] as num?)?.toDouble();
+        } else if (status != null && status != 'pending') {
+          // หมดอายุ/ยกเลิกไปแล้ว — ไม่ให้สแกน QR ของบิลที่ใช้ไม่ได้
+          _txId = null;
+          _qrPayload = null;
+          _payable = null;
+          _notice = null;
+          _error = 'บิลนี้ใช้ไม่ได้แล้วค่ะ เลือกยอดใหม่ได้เลยนะคะ';
+        } else {
+          _payable = (res['payable_amount'] as num?)?.toDouble() ?? _payable;
+          _qrPayload = (pp['qr_payload'] ?? res['qr_payload'])?.toString() ?? _qrPayload;
+          _promptpayName = (pp['name'] ?? res['promptpay_name'])?.toString();
+          if (res['slip_uploaded'] == true) _notice = 'ได้รับสลิปแล้วค่ะ ระบบกำลังตรวจสอบให้นะคะ';
+        }
+      });
+      if (_paid) {
+        ref.read(authControllerProvider.notifier).refresh();
+      } else if (_txId != null && _qrPayload != null) {
+        _startPolling();
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+      if (_qrPayload != null) _startPolling();
+    } catch (_) {
+      // เน็ตสะดุด — ยังสแกน QR ของบิลเดิมได้ และรอบ poll ถามสถานะต่อเอง
+      if (_qrPayload != null) _startPolling();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -218,6 +290,9 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
 
   /* ── ขั้น 1: เลือกจำนวน ── */
   Widget _chooseAmount() {
+    // ชุดยอดเดียวกับหน้าเติมเงินของเว็บ (`GET /v1/wallet` → topup.bundles)
+    final cfg = ref.watch(walletTopupConfigProvider).valueOrNull;
+    final bundles = (cfg != null && cfg.fromServer) ? cfg.bundles : _legacyBundles;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -233,7 +308,7 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
           childAspectRatio: 2.4,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          children: _bundles
+          children: bundles
               .map((b) => _AmountButton(
                     amount: b,
                     enabled: !_busy,
@@ -310,8 +385,8 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
             Expanded(
               child: Text(
                 _waited < 600
-                    ? 'แม่หมอกำลังรอเงินเข้าอยู่ค่ะ...'
-                    : 'ยังไม่พบเงินเข้า — แนบสลิปให้แม่หมอได้เลยค่ะ',
+                    ? 'ระบบกำลังรอเงินเข้าอยู่ค่ะ...'
+                    : 'ยังไม่พบเงินเข้า — แนบสลิปได้เลยค่ะ',
                 style: const TextStyle(fontSize: 12.5, color: JuntraColors.textMuted),
               ),
             ),
@@ -384,8 +459,8 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
         const SizedBox(height: 6),
         Text(
           _balance == null
-              ? 'คุยกับแม่หมอต่อได้เลยนะคะ'
-              : 'ยอดคงเหลือ ฿${_balance!.toStringAsFixed(2)} — คุยกับแม่หมอต่อได้เลยค่ะ',
+              ? 'คุยกับ${widget.selfName}ต่อได้เลยนะคะ'
+              : 'ยอดคงเหลือ ฿${_balance!.toStringAsFixed(2)} — คุยกับ${widget.selfName}ต่อได้เลยค่ะ',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 13, color: JuntraColors.textMuted, height: 1.6),
         ),
@@ -400,8 +475,8 @@ class _ChatTopUpSheetState extends ConsumerState<ChatTopUpSheet> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('คุยกับแม่หมอต่อ',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+            child: Text('คุยกับ${widget.selfName}ต่อ',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
         ),
       ],

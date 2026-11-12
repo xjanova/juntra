@@ -12,9 +12,12 @@ import '../../core/api/deep_repository.dart';
 ///
 /// คืนคำถามที่ผู้ใช้เลือกผ่าน Navigator.pop — null = ปิดโดยไม่เลือก
 class ChatTopicsSheet extends ConsumerWidget {
-  const ChatTopicsSheet({super.key});
+  const ChatTopicsSheet({super.key, this.selfName = 'แม่หมอ'});
 
-  static Future<String?> show(BuildContext context) {
+  /// ชื่อผู้พยากรณ์ของห้องที่เปิดอยู่ — ห้องบุษบาต้องไม่ขึ้นว่า "แม่หมอจะตอบ"
+  final String selfName;
+
+  static Future<String?> show(BuildContext context, {String selfName = 'แม่หมอ'}) {
     return showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -22,7 +25,7 @@ class ChatTopicsSheet extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) => const ChatTopicsSheet(),
+      builder: (_) => ChatTopicsSheet(selfName: selfName),
     );
   }
 
@@ -48,21 +51,21 @@ class ChatTopicsSheet extends ConsumerWidget {
           Text('อยากถามเรื่องไหนคะ',
               style: baiJamjuree(size: 18, color: JuntraColors.gold)),
           const SizedBox(height: 4),
-          const Text('แตะคำถามที่ตรงใจ แม่หมอจะตอบให้เลยค่ะ',
-              style: TextStyle(fontSize: 12.5, color: JuntraColors.textMuted)),
+          Text('แตะคำถามที่ตรงใจ $selfNameจะตอบให้เลยค่ะ',
+              style: const TextStyle(fontSize: 12.5, color: JuntraColors.textMuted)),
           const SizedBox(height: 12),
           Expanded(
             child: topics.when(
               loading: () => const Center(
                 child: CircularProgressIndicator(color: JuntraColors.gold),
               ),
-              error: (_, _) => const Center(
+              error: (_, _) => Center(
                 child: Padding(
-                  padding: EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
                   child: Text(
-                    'โหลดหมวดคำถามไม่สำเร็จค่ะ\nพิมพ์ถามแม่หมอตรง ๆ ได้เลยนะคะ',
+                    'โหลดหมวดคำถามไม่สำเร็จค่ะ\nพิมพ์ถาม$selfNameตรง ๆ ได้เลยนะคะ',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: JuntraColors.textMuted, height: 1.7),
+                    style: const TextStyle(fontSize: 13, color: JuntraColors.textMuted, height: 1.7),
                   ),
                 ),
               ),
