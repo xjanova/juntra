@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../app/router.dart';
 import '../../app/theme.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/api/app_config_repository.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/juntra_tab_bar.dart';
 import '../../shared/widgets/starry_background.dart';
@@ -25,6 +26,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
+    final cfg = ref.watch(appConfigValueProvider);
 
     return Scaffold(
       bottomNavigationBar: const JuntraTabBar(currentIndex: 3),
@@ -37,6 +39,20 @@ class ProfileScreen extends ConsumerWidget {
               children: [
                 const _Header(),
                 const SizedBox(height: 20),
+                if (auth is AuthAuthenticated) ...[
+                  if (cfg.has('account_profile')) _MenuCard(
+                    icon: Icons.person_outline, iconColor: JuntraColors.gold,
+                    title: 'ข้อมูลโหราศาสตร์', subtitle: 'ชื่อ วันเวลาเกิด สถานที่เกิด และราศีไทย',
+                    onTap: () => context.push(Routes.accountProfile)),
+                  if (cfg.has('daily_luck')) _MenuCard(
+                    icon: Icons.today_outlined, iconColor: JuntraColors.gold,
+                    title: 'ดวงเสี่ยงทายประจำวัน', subtitle: 'เช็กอินและดูรางวัลต่อเนื่อง',
+                    onTap: () => context.push(Routes.dailyLuck)),
+                  if (cfg.has('collection')) _MenuCard(
+                    icon: Icons.collections_bookmark_outlined, iconColor: JuntraColors.purpleBright,
+                    title: 'สมุดสะสมไพ่', subtitle: 'ไพ่ที่เคยพบจากคำทำนาย',
+                    onTap: () => context.push(Routes.collection)),
+                ],
                 switch (auth) {
                   AuthUnknown() => const _LoadingBlock(),
                   // เชื่อมต่อไม่ได้ ≠ เป็นแขก — token ยังอยู่ แค่ยืนยันไม่ได้
@@ -58,7 +74,7 @@ class ProfileScreen extends ConsumerWidget {
                   icon: Icons.star_outline,
                   iconColor: JuntraColors.gold,
                   title: 'ผังดวงดาวเจ้าชะตา',
-                  subtitle: 'ดวงเกิดของลูก คำนวณตามวันเวลา',
+                  subtitle: 'ดวงเกิดของคุณ คำนวณตามวันเวลา',
                   onTap: () => context.push(Routes.natal),
                 ),
                 _MenuCard(
@@ -72,7 +88,7 @@ class ProfileScreen extends ConsumerWidget {
                   icon: Icons.account_tree_outlined,
                   iconColor: JuntraColors.purpleBright,
                   title: 'ระบบสายงาน Affiliate',
-                  subtitle: 'เครือข่ายและรายได้ของลูก',
+                  subtitle: 'เครือข่ายและรายได้ของคุณ',
                   onTap: () => context.push(Routes.affiliate),
                 ),
                 _MenuCard(
@@ -181,7 +197,7 @@ class _GuestBlock extends StatelessWidget {
         const SizedBox(height: 12),
         Text('ผู้เยี่ยมชม', style: baiJamjuree(size: 19)),
         const SizedBox(height: 4),
-        const Text('เข้าสู่ระบบเพื่อบันทึกดวงและเครดิตของลูก',
+        const Text('เข้าสู่ระบบเพื่อบันทึกดวงและเครดิตของคุณ',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: JuntraColors.textMuted)),
         const SizedBox(height: 16),

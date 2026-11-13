@@ -61,7 +61,11 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 if (authed) ...[
                   const SizedBox(height: 14),
-                  const _SectionLabel('บัญชีของลูก'),
+                  const _SectionLabel('บัญชีของคุณ'),
+                  if (cfg.has('push')) _ActionTile(
+                    icon: Icons.notifications_outlined, iconColor: JuntraColors.gold,
+                    title: 'การแจ้งเตือน', subtitle: 'ประเภทการแจ้งเตือนและช่วงพัก',
+                    onTap: () => context.push(Routes.notifications)),
                   _ActionTile(
                     icon: Icons.password_outlined,
                     iconColor: JuntraColors.gold,

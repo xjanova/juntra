@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'natal_chart.dart';
+import '../auth/session.dart';
+import '../api/account_repository.dart';
 
 /// Persists the user's birth data locally.
 ///
@@ -12,9 +14,10 @@ import 'natal_chart.dart';
 /// plain `shared_preferences` is the right store. If a server-side natal
 /// endpoint is added later, this is also the cache that feeds it.
 class BirthDataStore {
-  const BirthDataStore();
+  const BirthDataStore({this.userId});
+  final String? userId;
 
-  static const _key = 'natal_birth_data_v1';
+  String get _key => userId == null ? 'natal_birth_data_v1' : 'natal_birth_data_v1_$userId';
 
   /// A gentle default so a first-time user sees a populated wheel instead of
   /// an empty form. Replaced the moment they save their own data.
@@ -74,15 +77,27 @@ class BirthDataState {
 }
 
 class BirthDataController extends StateNotifier<BirthDataState> {
-  BirthDataController(this._store)
+  BirthDataController(this._store, {AccountProfile? profile})
       : super(const BirthDataState(data: BirthDataStore.demo, isCustom: false)) {
-    _restore();
+    _restore(profile);
   }
   final BirthDataStore _store;
 
-  Future<void> _restore() async {
+  Future<void> _restore(AccountProfile? profile) async {
     final saved = await _store.load();
-    if (saved != null) {
+    final date = DateTime.tryParse(profile?.birthDate ?? '');
+    final time = (profile?.birthTime ?? '').split(':');
+    final place = kThaiBirthPlaces.where((p) => p.name == profile?.birthPlace).firstOrNull;
+    if (mounted && date != null && place != null && time.length >= 2) {
+      final hour = int.tryParse(time[0]), minute = int.tryParse(time[1]);
+      if (hour != null && minute != null && hour >= 0 && hour < 24 && minute >= 0 && minute < 60) {
+        state = BirthDataState(isCustom: true, data: BirthData(year: date.year, month: date.month,
+          day: date.day, hour: hour, minute: minute, lat: place.lat, lng: place.lng,
+          placeName: place.name, tzOffsetHours: 7));
+        return;
+      }
+    }
+    if (mounted && saved != null) {
       state = BirthDataState(data: saved, isCustom: true);
     }
   }
@@ -90,16 +105,16 @@ class BirthDataController extends StateNotifier<BirthDataState> {
   /// Persist [b] and flip to the user's own data immediately.
   Future<void> save(BirthData b) async {
     await _store.save(b);
-    state = BirthDataState(data: b, isCustom: true);
+    if (mounted) state = BirthDataState(data: b, isCustom: true);
   }
 }
 
 final birthDataStoreProvider =
-    Provider<BirthDataStore>((ref) => const BirthDataStore());
+    Provider<BirthDataStore>((ref) => BirthDataStore(userId: ref.watch(sessionUserIdProvider)));
 
 final birthDataProvider =
     StateNotifierProvider<BirthDataController, BirthDataState>((ref) {
-  return BirthDataController(ref.read(birthDataStoreProvider));
+  return BirthDataController(ref.watch(birthDataStoreProvider), profile: ref.watch(accountProfileProvider).valueOrNull);
 });
 
 /// A handful of major Thai locations so the editor never has to ask a user

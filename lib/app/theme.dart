@@ -1,36 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Design tokens ported verbatim from the Juntra handoff
-/// (`extracted/juntra/project/design_handoff_juntra/README.md` §3).
+/// Design tokens — the website's live theme `juntra-payakorn`
+/// (juntraweb `resources/css/themes/juntra-payakorn.css`, 2026-11).
 ///
-/// The palette is gold-on-deep-purple-on-near-black, with mystic
-/// accents (cyan for water-element planets, mint for online status).
+/// The app follows the web: owner asked for "สีและฟอนต์ให้ตรงกับธีมที่เว็บเปิดใช้อยู่".
+/// Token names are kept from the old handoff palette so every screen picks the
+/// new values up without edits; the comment on each line names the web variable.
 class JuntraColors {
   JuntraColors._();
 
-  // Backgrounds
-  static const bgDeepest = Color(0xFF000000);
-  static const bgDark1 = Color(0xFF060309);
-  static const bgDark2 = Color(0xFF0A0414);
-  static const bgPurpleDeep = Color(0xFF1A0F2E);
-  static const bgPurple = Color(0xFF2D1A5C);
-  static const bgPurpleLight = Color(0xFF4A2E7A);
+  // Backgrounds (--bg-0 / --bg-1 / --bg-2 and two lifts for cards)
+  static const bgDeepest = Color(0xFF0A0612);    // --bg-0
+  static const bgDark1 = Color(0xFF100722);      // body gradient middle
+  static const bgDark2 = Color(0xFF160A26);      // --bg-1
+  static const bgPurpleDeep = Color(0xFF241038); // --bg-2 (cards, sheets)
+  static const bgPurple = Color(0xFF34195A);
+  static const bgPurpleLight = Color(0xFF4A2A7A);
 
-  // Gold (primary brand accent)
-  static const goldLight = Color(0xFFFFE7A0);
-  static const gold = Color(0xFFF0C75E);
-  static const goldMid = Color(0xFFC99B2D);
-  static const goldDark = Color(0xFF7A5510);
+  // Gold (--gold-2 / --gold / --gold-3)
+  static const goldLight = Color(0xFFF6E3A8); // --gold-2
+  static const gold = Color(0xFFE7C97A);      // --gold
+  static const goldMid = Color(0xFFC8A762);
+  static const goldDark = Color(0xFFA8854A);  // --gold-3
 
-  // Purple secondaries
-  static const purpleBright = Color(0xFFC39BD3);
-  static const purple = Color(0xFF9B59B6);
-  static const purpleDeep = Color(0xFF7C4DFF);
+  // Violet / magenta (--violet-2 / --violet / --magenta)
+  static const purpleBright = Color(0xFFB07AFF); // --violet-2
+  static const purple = Color(0xFF7A3DF0);       // --violet
+  static const purpleDeep = Color(0xFF5B2BC4);
+  static const magenta = Color(0xFFD24AD1);      // --magenta
+  static const rose = Color(0xFFFF8FD4);         // --rose
+  static const moon = Color(0xFFFFF7E0);         // --moon
+
+  // Oracle rooms (config/chat_rooms.php accent)
+  static const roomBusaba = Color(0xFF7CC7F6);
+  static const roomMaemor = Color(0xFFA884F4);
+  static const roomKunsai = Color(0xFFE0455F);
 
   // Mystic accents
-  static const cyan = Color(0xFF7FFFD4);     // ASC marker, water planets
-  static const mintGreen = Color(0xFF00E5A0); // online indicator
+  static const cyan = Color(0xFF7FFFD4);      // ASC marker, water planets
+  static const mintGreen = Color(0xFF3DDC97); // online indicator
 
   // Astrology element colors
   static const elFire = Color(0xFFFF6B47);
@@ -38,39 +47,53 @@ class JuntraColors {
   static const elAir = Color(0xFFFFEE58);
   static const elWater = Color(0xFF42A5F5);
 
-  // Text ramp
-  static const textPrimary = Color(0xFFFFFFFF);
-  static const textCream = Color(0xFFFFE7A0);   // hero / serif headlines
-  static const textLavender = Color(0xFFD4C5E8); // body
-  static const textMuted = Color(0xFFA899C7);    // secondary
-  static const textDim = Color(0xFF8B7BA8);      // labels
-  static const textFaint = Color(0xFF6B5980);    // eyebrow
+  // Text ramp (--ink / --ink-dim / --ink-mute)
+  static const textPrimary = Color(0xFFF3E9FF);  // --ink
+  static const textCream = Color(0xFFF6E3A8);    // headlines (--gold-2)
+  static const textLavender = Color(0xFFC8B8DE); // body (--ink-dim)
+  static const textMuted = Color(0xFFA696C4);
+  static const textDim = Color(0xFF8A7AA8);      // --ink-mute
+  static const textFaint = Color(0xFF6A5A88);
 
-  // Convenience gradients
+  // Lines (--line / --line-soft)
+  static const line = Color(0x47E7C97A);
+  static const lineSoft = Color(0x21E7C97A);
+
+  // Gradients
+  /// `.btn-primary`: #f6e3a8 → #e7c97a → #a8854a
   static const goldButtonGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xFFF4D27A), Color(0xFFD4A537), Color(0xFFA07820)],
+    colors: [Color(0xFFF6E3A8), Color(0xFFE7C97A), Color(0xFFA8854A)],
     stops: [0.0, 0.5, 1.0],
   );
 
+  /// `.service` card: rgba(36,16,56,.55) → rgba(15,8,28,.55)
   static const purpleCardGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xB22D1A5C), Color(0xB24A2E7A)],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0x8C241038), Color(0x8C0F081C)],
   );
 
   static const mysticHeroGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0x339B59B6), Color(0x1AF0C75E)],
+    colors: [Color(0x407A3DF0), Color(0x1AE7C97A)],
   );
 
+  /// Headline text fill (`.section-title`): #fff7e0 → #e7c97a
+  static const headlineGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFFFFF7E0), Color(0xFFE7C97A)],
+  );
+
+  /// Page background (`.bg-fixed`): violet glow top-left, magenta right, gold low.
   static const nightSky = RadialGradient(
-    center: Alignment(0.0, -0.4),
-    radius: 1.2,
-    colors: [Color(0xFF1A0F2E), Color(0xFF060309), Color(0xFF000000)],
-    stops: [0.0, 0.7, 1.0],
+    center: Alignment(-0.6, -0.8),
+    radius: 1.4,
+    colors: [Color(0xFF2A1352), Color(0xFF100722), Color(0xFF0A0612)],
+    stops: [0.0, 0.55, 1.0],
   );
 }
 
@@ -86,12 +109,12 @@ class JuntraSpacing {
   static const huge = 40.0;
 }
 
-/// Border radii from the spec
+/// Border radii — the web rounds cards to 20-22 px and pills to 999.
 class JuntraRadius {
   JuntraRadius._();
-  static const chip = 10.0;
-  static const input = 12.0;
-  static const card = 16.0;
+  static const chip = 999.0;
+  static const input = 14.0;
+  static const card = 20.0;
   static const hero = 24.0;
 }
 
@@ -99,13 +122,13 @@ class JuntraRadius {
 class JuntraShadows {
   JuntraShadows._();
   static const goldGlow = [
-    BoxShadow(color: Color(0x80F0C75E), blurRadius: 12, spreadRadius: 0),
+    BoxShadow(color: Color(0x66E7C97A), blurRadius: 18, spreadRadius: -4, offset: Offset(0, 8)),
   ];
   static const goldStrong = [
-    BoxShadow(color: Color(0xB3F0C75E), blurRadius: 20, spreadRadius: 0),
+    BoxShadow(color: Color(0x80E7C97A), blurRadius: 28, spreadRadius: -6, offset: Offset(0, 12)),
   ];
   static const cardDeep = [
-    BoxShadow(color: Color(0x99000000), blurRadius: 24, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x99000000), blurRadius: 30, spreadRadius: -10, offset: Offset(0, 16)),
   ];
 }
 
@@ -113,7 +136,8 @@ class JuntraTheme {
   JuntraTheme._();
 
   static ThemeData dark() {
-    final baseTextTheme = GoogleFonts.notoSansThaiTextTheme(
+    // Body = Bai Jamjuree (--font-thai) · headlines = Charm (--font-thai-display)
+    final baseTextTheme = GoogleFonts.baiJamjureeTextTheme(
       ThemeData.dark().textTheme,
     );
 
@@ -125,7 +149,7 @@ class JuntraTheme {
         primary: JuntraColors.gold,
         secondary: JuntraColors.purpleBright,
         surface: JuntraColors.bgPurpleDeep,
-        onPrimary: JuntraColors.bgPurpleDeep,
+        onPrimary: Color(0xFF1A0E2E),
         onSecondary: JuntraColors.bgDeepest,
         onSurface: JuntraColors.textPrimary,
         error: Color(0xFFFF6B6B),
@@ -135,104 +159,159 @@ class JuntraTheme {
       // ("เติมเครดิตสำเร็จ", "เปลี่ยนรหัสผ่านแล้ว" ขึ้นเป็นกล่องว่าง) → กำหนดสีที่อ่านได้ไว้ที่นี่
       snackBarTheme: SnackBarThemeData(
         backgroundColor: JuntraColors.bgPurpleDeep,
-        contentTextStyle: GoogleFonts.notoSansThai(
+        contentTextStyle: GoogleFonts.baiJamjuree(
           textStyle: const TextStyle(
             fontSize: 14, color: JuntraColors.textCream, height: 1.4,
           ),
         ),
         actionTextColor: JuntraColors.gold,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: JuntraColors.line, width: 0.6),
+        ),
       ),
-      // Headlines use Bai Jamjuree (Thai display serif). Body keeps
-      // Noto Sans Thai (set above via baseTextTheme).
       textTheme: baseTextTheme.copyWith(
-        displayLarge: GoogleFonts.baiJamjuree(
+        displayLarge: charm(size: 34),
+        displayMedium: charm(size: 26),
+        displaySmall: charm(size: 22),
+        headlineMedium: charm(size: 20, color: JuntraColors.goldLight),
+        titleMedium: GoogleFonts.baiJamjuree(
           textStyle: const TextStyle(
-            fontSize: 32, fontWeight: FontWeight.w700,
-            color: JuntraColors.textCream, height: 1.2,
-          ),
-        ),
-        displayMedium: GoogleFonts.baiJamjuree(
-          textStyle: const TextStyle(
-            fontSize: 24, fontWeight: FontWeight.w700,
-            color: JuntraColors.textCream, height: 1.2,
-          ),
-        ),
-        displaySmall: GoogleFonts.baiJamjuree(
-          textStyle: const TextStyle(
-            fontSize: 22, fontWeight: FontWeight.w700,
-            color: JuntraColors.textCream, height: 1.25,
-          ),
-        ),
-        headlineMedium: GoogleFonts.baiJamjuree(
-          textStyle: const TextStyle(
-            fontSize: 19, fontWeight: FontWeight.w600,
+            fontSize: 14, fontWeight: FontWeight.w600,
             color: JuntraColors.textPrimary,
           ),
         ),
-        titleMedium: const TextStyle(
-          fontSize: 14, fontWeight: FontWeight.w600,
-          color: JuntraColors.textPrimary,
+        bodyMedium: GoogleFonts.baiJamjuree(
+          textStyle: const TextStyle(
+            fontSize: 13.5, fontWeight: FontWeight.w400,
+            color: JuntraColors.textLavender, height: 1.6,
+          ),
         ),
-        bodyMedium: const TextStyle(
-          fontSize: 13, fontWeight: FontWeight.w400,
-          color: JuntraColors.textLavender, height: 1.5,
+        bodySmall: GoogleFonts.baiJamjuree(
+          textStyle: const TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w400,
+            color: JuntraColors.textMuted, height: 1.55,
+          ),
         ),
-        bodySmall: const TextStyle(
-          fontSize: 12, fontWeight: FontWeight.w400,
-          color: JuntraColors.textMuted, height: 1.5,
-        ),
-        labelMedium: const TextStyle(
-          fontSize: 10, fontWeight: FontWeight.w500,
-          color: JuntraColors.textFaint,
+        labelMedium: GoogleFonts.baiJamjuree(
+          textStyle: const TextStyle(
+            fontSize: 10.5, fontWeight: FontWeight.w500,
+            color: JuntraColors.textDim, letterSpacing: 1.2,
+          ),
         ),
       ),
       iconTheme: const IconThemeData(color: JuntraColors.gold),
       dividerTheme: const DividerThemeData(
-        color: Color(0x33D4C5E8),
-        thickness: 0.5,
+        color: JuntraColors.lineSoft,
+        thickness: 0.6,
       ),
       cardTheme: CardThemeData(
         color: JuntraColors.bgPurpleDeep,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(JuntraRadius.card),
+          side: const BorderSide(color: JuntraColors.lineSoft),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: JuntraColors.bgDark2,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          side: BorderSide(color: JuntraColors.line, width: 0.6),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: JuntraColors.bgDark2,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: JuntraColors.line, width: 0.6),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0x590A0612),
+        hintStyle: const TextStyle(color: JuntraColors.textDim),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(JuntraRadius.input),
+          borderSide: const BorderSide(color: JuntraColors.line),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(JuntraRadius.input),
+          borderSide: const BorderSide(color: JuntraColors.lineSoft),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(JuntraRadius.input),
+          borderSide: const BorderSide(color: JuntraColors.gold, width: 1.2),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: JuntraColors.gold,
-          foregroundColor: JuntraColors.bgPurpleDeep,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-          textStyle: const TextStyle(
-            fontSize: 15, fontWeight: FontWeight.w600,
+          foregroundColor: const Color(0xFF1A0E2E),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          textStyle: GoogleFonts.baiJamjuree(
+            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
         ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: JuntraColors.goldLight,
+          side: const BorderSide(color: JuntraColors.line),
+          shape: const StadiumBorder(),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: JuntraColors.goldLight),
       ),
     );
   }
 }
 
-/// Cinzel for English serif headers ("NATAL", house numbers).
+/// Latin display serif — the web's `--font-display` (Cormorant Garamond,
+/// italic small caps feel). Kept under the old name so callers ("NATAL",
+/// card names, house numbers) did not have to change when Cinzel left.
 TextStyle cinzel({double size = 12, FontWeight weight = FontWeight.w600, Color? color}) {
-  return GoogleFonts.cinzel(
+  return GoogleFonts.cormorantGaramond(
     textStyle: TextStyle(
-      fontSize: size, fontWeight: weight,
+      fontSize: size * 1.12, fontWeight: weight,
+      fontStyle: FontStyle.italic,
       color: color ?? JuntraColors.gold,
-      letterSpacing: size * 0.15,
+      letterSpacing: size * 0.18,
     ),
   );
 }
 
-/// Bai Jamjuree for Thai serif headers
+/// Thai display — the web's `--font-thai-display` (Charm). Headlines,
+/// section titles, room and package names.
+TextStyle charm({double size = 22, FontWeight weight = FontWeight.w700, Color? color}) {
+  return GoogleFonts.charm(
+    textStyle: TextStyle(
+      fontSize: size,
+      // Charm ships 400 + 700 only.
+      fontWeight: weight.value >= 600 ? FontWeight.w700 : FontWeight.w400,
+      color: color ?? JuntraColors.textCream,
+      height: 1.3,
+    ),
+  );
+}
+
+/// Thai heading helper used across the app.
+///
+/// Like the web: headline sizes (≥ 18 px) use Charm (`--font-thai-display`);
+/// smaller labels stay in Bai Jamjuree (`--font-thai`), because Charm's thin
+/// calligraphic strokes stop reading well below that size on a phone.
 TextStyle baiJamjuree({double size = 18, FontWeight weight = FontWeight.w700, Color? color}) {
+  if (size >= 18) return charm(size: size + 1, weight: weight, color: color);
   return GoogleFonts.baiJamjuree(
     textStyle: TextStyle(
       fontSize: size, fontWeight: weight,
       color: color ?? JuntraColors.textCream,
-      height: 1.2,
+      height: 1.25,
     ),
   );
 }

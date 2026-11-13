@@ -23,6 +23,9 @@ class Api {
   // ─── Auth (Sanctum) ──────────────────────────────────────────
   static const authLogin    = '/v1/auth/login';
   static const authRegister = '/v1/auth/register';
+  static const authSocialProviders = '/v1/auth/social/providers';
+  static const authSocialStart = '/v1/auth/social/start';
+  static const authSocialPoll = '/v1/auth/social/poll';
   static const authMe       = '/v1/auth/me';
   static const authLogout   = '/v1/auth/logout';
   /// Short-lived single-use code for the web OAuth bootstrap (so the bearer
@@ -54,10 +57,24 @@ class Api {
   /// POST {product_id, purchase_token} — เซิร์ฟเวอร์ตรวจกับ Google แล้วเติมเครดิต (ครั้งเดียวต่อ token)
   static const walletGooglePlayRedeem = '/v1/wallet/google-play/redeem';
 
+  // ─── Oracle rooms (บุษบา · แม่หมอ · คุณไสย) — docs/API_PARITY_2026-11.md §A ─
+  /// ห้องผู้พยากรณ์ตามหน้า "เลือกผู้พยากรณ์" ของเว็บ + สื่อ (คลิป idle, เพลง, เสียงพากย์)
+  /// + ล็อกห้องระหว่างทำนาย (เมื่อส่ง bearer) · เซิร์ฟเวอร์เก่าตอบ 404 → ห้องแม่หมอห้องเดียว
+  static const chatRooms = '/v1/chat/rooms';
+  /// ออนไลน์ · กำลังคุย · คิว (ตัวเลขสดชุดเดียวกับเว็บ /chat/live)
+  static const chatLive = '/v1/chat/live';
+
   // ─── Mae Mor AI Chat ─────────────────────────────────────────
+  /// GET ?room= · POST {reading_id?, room?, new?}
   static const chatConversations = '/v1/chat/conversations';
   static String chatConversation(int id) => '/v1/chat/conversations/$id';
   static String chatSend(int id) => '/v1/chat/conversations/$id/send';
+  /// POST — "พอแล้ว" จบเวลาถามต่อหลังเปิดไพ่ก่อนกำหนด (ไม่คิดเงิน)
+  static String chatQaEnd(int id) => '/v1/chat/conversations/$id/qa/end';
+  /// GET ?after={message_id} — ข้อความใหม่ (เจ้าหน้าที่เข้ามาตอบแทน/คำทักตาม)
+  static String chatFeed(int id) => '/v1/chat/conversations/$id/feed';
+  /// POST multipart `audio` — ถอดเสียงเป็นข้อความ (ทางสำรองของปุ่มไมค์)
+  static const chatTranscribe = '/v1/chat/transcribe';
 
   /// หมวดคำถามแบบเต็ม (5 หมวด 24 คำถาม) — ชุดเดียวกับที่เว็บกางในแชท
   /// ข้อมูลคงที่ ดึงครั้งเดียวต่อรอบเปิดแอปแล้ว cache ไว้ได้
@@ -72,6 +89,33 @@ class Api {
   static String historyReading(int id) => '/v1/history/readings/$id';
   /// แม่หมออ่านไพ่เสร็จหรือยัง (คู่กับการซื้อแบบ `mode: async`) → pending|working|failed|done
   static String historyReadingStatus(int id) => '/v1/history/readings/$id/status';
+  /// POST {public: bool} — เปิด/ปิดลิงก์สาธารณะของคำทำนาย (ไม่เปิด = คนอื่นเปิดลิงก์แล้วเจอ 403)
+  static String historyReadingShare(int id) => '/v1/history/readings/$id/share';
+  /// POST {rating 1-5, message?, allow_public?} — รีวิวคำทำนาย (ขึ้นหน้าแรกเว็บเมื่ออนุญาต)
+  static String historyReadingReview(int id) => '/v1/history/readings/$id/review';
+  /// POST — สร้างเสียงเล่าคำทำนายช่วงถัดไป (เฉพาะซื้อเสียงพรีเมียม)
+  static String historyReadingVoiceNext(int id) => '/v1/history/readings/$id/voice/next';
+  /// GET audio/mpeg (bearer) — ไฟล์เสียงเล่าคำทำนาย
+  static String historyReadingVoiceFile(int id) => '/v1/history/readings/$id/voice.mp3';
+
+  // ─── ไพ่ฟรี 1 ใบ (เว็บ /tarot/free) ──────────────────────────
+  /// GET = สิทธิ์ยังเหลือไหม · POST {question} = ให้เซิร์ฟเวอร์เปิดไพ่ฟรี + ห้องถามฟรี 2 นาที
+  static const tarotFree = '/v1/tarot/free';
+
+  // ─── บัญชี: ดวงประจำวัน · สมุดสะสมไพ่ · ข้อมูลโหราศาสตร์ ─────
+  static const accountDailyLuck  = '/v1/account/daily-luck';
+  static const accountCheckin    = '/v1/account/checkin';
+  static const accountCollection = '/v1/account/collection';
+  /// GET / PATCH — ชื่อ วันเกิด เวลาเกิด สถานที่เกิด (ราศีไทยคิดที่เซิร์ฟเวอร์)
+  static const accountProfile    = '/v1/account/profile';
+
+  /// รีวิวลูกค้าที่หน้าแรกเว็บโชว์ (public)
+  static const testimonials = '/v1/testimonials';
+
+  // ─── Push (FCM) ──────────────────────────────────────────────
+  /// POST {token, platform, channel} · DELETE {token}
+  static const pushDevices     = '/v1/push/devices';
+  static const pushPreferences = '/v1/push/preferences';
 
   // ─── Non-tarot paid readings ─────────────────────────────────
   static const fortuneNumerology = '/v1/fortune/numerology';

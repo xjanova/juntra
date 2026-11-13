@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show appFlavor;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:juntra/app/theme.dart';
 import 'package:juntra/core/api/app_config_repository.dart';
@@ -17,12 +18,17 @@ void main() {
       // โหมดที่เข้มกว่า: ถ้าพลาด ผลคือซ่อนตัวอัปเดต APK/พร้อมเพย์ ไม่ใช่เผลอโชว์ของต้องห้ามบน Play
       expect(appChannel, AppChannel.play);
       expect(isPlayChannel, isTrue);
-    });
+    }, skip: appFlavor != null);
 
-    test('แอพ Play แสดงค่าบริการเป็นเครดิต ไม่ใช่บาท (ราคาแพ็กบน Play รวมค่าธรรมเนียม)', () {
-      expect(formatCredits(19), '19 เครดิต');
-      expect(formatCredits(12.5), '12.50 เครดิต');
-      expect(formatCreditsSigned(-9), '−9.00 เครดิต');
+    test('flutter test --flavor direct = ช่อง APK', () {
+      expect(appChannel, AppChannel.direct);
+      expect(isPlayChannel, isFalse);
+    }, skip: appFlavor != 'direct');
+
+    test('แอพ Play แสดงค่าบริการเป็นเครดิต (ราคาแพ็กบน Play รวมค่าธรรมเนียม) · APK คง ฿ แบบเว็บ', () {
+      expect(formatCredits(19), isPlayChannel ? '19 เครดิต' : '฿19');
+      expect(formatCredits(12.5), isPlayChannel ? '12.50 เครดิต' : '฿12.50');
+      expect(formatCreditsSigned(-9), isPlayChannel ? '−9.00 เครดิต' : '−฿9.00');
     });
   });
 

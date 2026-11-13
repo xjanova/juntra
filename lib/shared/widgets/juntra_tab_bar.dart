@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../core/api/rooms_repository.dart';
 
 /// Shared bottom tab bar (Home · History · Chat · Profile).
 ///
@@ -13,34 +15,41 @@ import '../../app/theme.dart';
 /// it, which trapped the user (e.g. History → Chat was impossible without
 /// backing out to Home first). Tabs use `context.go` to swap the top-level
 /// location.
-class JuntraTabBar extends StatelessWidget {
+///
+/// แท็บ "แม่หมอ" = ทางเข้าห้องแบบเว็บ: เซิร์ฟเวอร์เปิดหลายห้อง → หน้าเลือกห้อง
+/// ([Routes.rooms]), ห้องเดียว/เซิร์ฟเวอร์เก่า → เข้าแชทแม่หมอตรง ๆ เหมือนเดิม
+class JuntraTabBar extends ConsumerWidget {
   const JuntraTabBar({super.key, required this.currentIndex});
   final int currentIndex;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final oracleRoute =
+        ref.watch(roomsValueProvider).hasPicker ? Routes.rooms : Routes.chat;
     // Android 15+ บังคับ edge-to-edge — แถบปุ่มระบบ (3 ปุ่ม/แถบท่าทาง) วาดทับแอพ
     // แถบนี้ไม่ใช่ BottomNavigationBar ของ Material จึงต้องเว้นที่ให้เอง ไม่งั้นปุ่มแท็บถูกทับ
     final systemInset = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
-      decoration: BoxDecoration(
-        color: JuntraColors.bgDeepest.withValues(alpha: 0.85),
-        border: Border(top: BorderSide(
-          color: JuntraColors.gold.withValues(alpha: 0.2),
-        )),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xE6100722), Color(0xF20A0612)],
+        ),
+        border: Border(top: BorderSide(color: JuntraColors.line)),
       ),
-      padding: EdgeInsets.fromLTRB(16, 6, 16, math.max(16, systemInset + 8)),
+      padding: EdgeInsets.fromLTRB(8, 6, 8, math.max(16, systemInset + 8)),
+      // แต่ละแท็บได้ความกว้างเท่ากัน — จอแคบ/ตัวอักษรใหญ่ ป้ายย่อลงแทนการล้นขอบ
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _TabIcon(icon: Icons.home_filled, label: 'หน้าแรก', selected: currentIndex == 0,
-              onTap: () => _goIfNeeded(context, 0, Routes.home)),
-          _TabIcon(icon: Icons.history, label: 'ประวัติ', selected: currentIndex == 1,
-              onTap: () => _goIfNeeded(context, 1, Routes.history)),
-          _TabIcon(icon: Icons.auto_awesome, label: 'แม่หมอ', selected: currentIndex == 2,
-              onTap: () => _goIfNeeded(context, 2, Routes.chat)),
-          _TabIcon(icon: Icons.person, label: 'โปรไฟล์', selected: currentIndex == 3,
-              onTap: () => _goIfNeeded(context, 3, Routes.profile)),
+          Expanded(child: _TabIcon(icon: Icons.home_filled, label: 'หน้าแรก', selected: currentIndex == 0,
+              onTap: () => _goIfNeeded(context, 0, Routes.home))),
+          Expanded(child: _TabIcon(icon: Icons.history, label: 'ประวัติ', selected: currentIndex == 1,
+              onTap: () => _goIfNeeded(context, 1, Routes.history))),
+          Expanded(child: _TabIcon(icon: Icons.auto_awesome, label: 'แม่หมอ', selected: currentIndex == 2,
+              onTap: () => _goIfNeeded(context, 2, oracleRoute))),
+          Expanded(child: _TabIcon(icon: Icons.person, label: 'โปรไฟล์', selected: currentIndex == 3,
+              onTap: () => _goIfNeeded(context, 3, Routes.profile))),
         ],
       ),
     );
@@ -63,21 +72,38 @@ class _TabIcon extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
-    final color = selected ? JuntraColors.gold : JuntraColors.textFaint;
+    final color = selected ? JuntraColors.goldLight : JuntraColors.textDim;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(18),
+          gradient: selected ? JuntraColors.purpleCardGradient : null,
+          border: selected ? Border.all(color: JuntraColors.purpleBright.withValues(alpha: .5)) : null),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 22),
+            // แท็บที่เลือก: แสงทองนุ่ม ๆ ใต้ไอคอนแบบปุ่ม .nav-link.active ของเว็บ
+            DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: selected
+                    ? [BoxShadow(color: JuntraColors.gold.withValues(alpha: 0.35), blurRadius: 14)]
+                    : const [],
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
             const SizedBox(height: 3),
-            Text(label, style: TextStyle(
-              fontSize: 10, color: color,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            )),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label, maxLines: 1, style: TextStyle(
+                fontSize: 10.5, color: color,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.3,
+              )),
+            ),
           ],
         ),
       ),

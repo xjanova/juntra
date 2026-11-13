@@ -76,3 +76,6 @@ dist/
 *.swp
 KEYSTORE_INFO.md
 KEYSTORE_BASE64.txt
+
+# Agent / split-chat worktrees live inside the checkout — never commit them
+.claude/worktrees/

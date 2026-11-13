@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
+import '../app_channel.dart';
 import 'api_exceptions.dart';
 
 /// Base URL for the juntraweb (จันทรา.online) Laravel backend.
@@ -48,9 +49,12 @@ class ApiClient {
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
       sendTimeout: const Duration(seconds: 30),
-      headers: const {
+      headers: {
         'Accept': 'application/json',
         'X-Client': 'juntra-android',
+        // Play policy, enforced on the server too: a Play build must never
+        // receive PromptPay/QR/bank data (room bills, top-up channels).
+        'X-App-Channel': isPlayChannel ? 'play' : 'direct',
       },
       // Don't throw on 4xx — let callers inspect status + body.
       validateStatus: (s) => s != null && s < 500,
@@ -61,14 +65,16 @@ class ApiClient {
     // a stale credential forever.
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await storage.read(key: _kTokenKey);
+        final token = options.extra['sessionToken'] as String? ?? await storage.read(key: _kTokenKey);
+        options.extra['sentToken'] = token;
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         handler.next(options);
       },
       onResponse: (response, handler) async {
-        if (response.statusCode == 401) {
+        if (response.statusCode == 401 &&
+            await storage.read(key: _kTokenKey) == response.requestOptions.extra['sentToken']) {
           await storage.delete(key: _kTokenKey);
         }
         handler.next(response);
@@ -114,7 +120,7 @@ class ApiClient {
     if (kDebugMode) {
       dio.interceptors.add(PrettyDioLogger(
         requestHeader: false,
-        requestBody: true,
+        requestBody: false,
         responseHeader: false,
         responseBody: false,
         compact: true,
@@ -154,15 +160,17 @@ class ApiClient {
     dynamic data,
     Map<String, dynamic>? query,
     String? idempotencyKey,
+    String? sessionToken,
   }) async {
     try {
       final res = await dio.post(
         path,
         data: data,
         queryParameters: query,
-        options: idempotencyKey == null
+        options: idempotencyKey == null && sessionToken == null
             ? null
-            : Options(headers: {'Idempotency-Key': idempotencyKey}),
+            : Options(headers: {'Idempotency-Key': ?idempotencyKey},
+                extra: {'sessionToken': ?sessionToken}),
       );
       return _decode<T>(res);
     } on DioException catch (e) {
@@ -179,9 +187,18 @@ class ApiClient {
     }
   }
 
-  Future<T> delete<T>(String path, {dynamic data, Map<String, dynamic>? query}) async {
+  Future<T> patch<T>(String path, {dynamic data}) async {
     try {
-      final res = await dio.delete(path, data: data, queryParameters: query);
+      return _decode<T>(await dio.patch(path, data: data));
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<T> delete<T>(String path, {dynamic data, Map<String, dynamic>? query, String? sessionToken}) async {
+    try {
+      final res = await dio.delete(path, data: data, queryParameters: query,
+        options: sessionToken == null ? null : Options(extra: {'sessionToken': sessionToken}));
       return _decode<T>(res);
     } on DioException catch (e) {
       throw ApiException.fromDio(e);

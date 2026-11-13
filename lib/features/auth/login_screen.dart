@@ -13,6 +13,7 @@ import '../../shared/widgets/chantra_logo.dart';
 import '../../shared/widgets/gold_button.dart';
 import '../../shared/widgets/starry_background.dart';
 import '../../core/api/app_config_repository.dart';
+import 'social_login_panel.dart';
 
 /// Sign-in / sign-up — single screen, toggle between modes.
 ///
@@ -34,6 +35,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _signUp = false;
   bool _busy = false;
+  bool _socialBusy = false;
+  bool get _locked => _busy || _socialBusy;
   String? _error;
 
   final _name = TextEditingController();
@@ -122,7 +125,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (_busy) return;
+    if (_locked) return;
     final validationError = _validate();
     if (validationError != null) {
       setState(() => _error = validationError);
@@ -152,10 +155,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Land on home — the auth state is now AuthAuthenticated.
       context.go(Routes.home);
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } catch (e) {
       // Never surface the raw exception (may carry internal detail/URLs).
       if (kDebugMode) debugPrint('[Login] unexpected: $e');
+      if (!mounted) return;
       setState(() => _error = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -192,6 +197,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 28),
+                  SocialLoginPanel(
+                    disabled: _busy,
+                    referralCode: () => _signUp ? _referral.text : null,
+                    onBusyChanged: (busy) => setState(() => _socialBusy = busy),
+                    onAuthenticated: () => context.go(Routes.home),
+                  ),
                   if (_signUp) ...[
                     _Field(
                       label: 'ชื่อที่จะให้แม่หมอเรียก',
@@ -290,7 +301,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : (_signUp ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ'),
                     icon: const Text('✦', style: TextStyle(fontSize: 14)),
                     size: GoldButtonSize.lg,
-                    disabled: _busy,
+                    disabled: _locked,
                     onPressed: _submit,
                   ),
                   const SizedBox(height: 12),
@@ -298,7 +309,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     label: _signUp
                         ? 'มีบัญชีอยู่แล้ว · เข้าสู่ระบบ'
                         : 'ยังไม่มีบัญชี · สมัครสมาชิก',
-                    onPressed: () => setState(() {
+                    onPressed: _locked ? null : () => setState(() {
                       // ยกสิ่งที่พิมพ์ไว้ข้ามโหมดให้ ไม่ต้องพิมพ์ใหม่
                       if (_signUp) {
                         final typed = _email.text.trim().isNotEmpty
@@ -323,19 +334,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       // ทางออกเดียวของสองกลุ่ม: คนที่ลืมรหัส และคนที่สมัคร
                       // ทางเว็บด้วย Facebook/LINE (SSO ตั้งรหัสสุ่มให้ 40 ตัว
                       // เจ้าตัวไม่มีทางรู้) — เดิมแอพไม่มีลิงก์พาไปเลย = ทางตัน
-                      onPressed: () => launchUrl(
+                      onPressed: _locked ? null : () => launchUrl(
                         Uri.parse('https://xn--82c4af5bzdj.online/forgot-password'),
                         mode: LaunchMode.externalApplication,
                       ),
                       child: const Text(
-                        'ลืมรหัสผ่าน? · เคยสมัครด้วย Facebook / LINE',
+                        'ลืมรหัสผ่าน?',
                         style: TextStyle(fontSize: 12, color: JuntraColors.textMuted),
                       ),
                     ),
                   ],
                   const SizedBox(height: 18),
                   TextButton(
-                    onPressed: () => context.go(Routes.home),
+                    onPressed: _locked ? null : () => context.go(Routes.home),
                     child: const Text(
                       'ลองดูก่อน (ไม่ต้องเข้าสู่ระบบ)',
                       style: TextStyle(

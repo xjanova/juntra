@@ -5,6 +5,10 @@ import 'package:intl/intl.dart';
 import '../../app/theme.dart';
 import '../../core/astronomy/birth_data_store.dart';
 import '../../core/astronomy/natal_chart.dart';
+import '../../core/api/account_repository.dart';
+import '../../core/api/app_config_repository.dart';
+import '../../core/api/api_exceptions.dart';
+import '../../core/auth/session.dart';
 import '../../shared/widgets/gold_button.dart';
 
 /// Bottom sheet that lets the user enter their own birth date, time and
@@ -62,7 +66,7 @@ class _BirthDataEditorState extends ConsumerState<_BirthDataEditor> {
       helpText: 'เลือกวันเกิด',
       builder: _datePickerTheme,
     );
-    if (picked != null) setState(() => _date = picked);
+    if (mounted && picked != null) setState(() => _date = picked);
   }
 
   Future<void> _pickTime() async {
@@ -79,7 +83,7 @@ class _BirthDataEditorState extends ConsumerState<_BirthDataEditor> {
         ),
       ),
     );
-    if (picked != null) setState(() => _time = picked);
+    if (mounted && picked != null) setState(() => _time = picked);
   }
 
   /// Tints the Material date/time pickers to the app's gold-on-purple look.
@@ -109,9 +113,26 @@ class _BirthDataEditorState extends ConsumerState<_BirthDataEditor> {
       lat: _place.lat, lng: _place.lng,
       placeName: _place.name, tzOffsetHours: 7,
     );
-    await ref.read(birthDataProvider.notifier).save(data);
-    if (!mounted) return;
-    Navigator.of(context).pop();
+    final user = ref.read(sessionUserIdProvider);
+    try {
+      if (user != null && ref.read(appConfigValueProvider).has('account_profile')) {
+        final repo = await ref.read(accountRepositoryProvider.future);
+        await repo.saveProfile({'birth_date': DateFormat('yyyy-MM-dd').format(_date),
+          'birth_time': '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}',
+          'birth_place': _place.name});
+      }
+      if (!mounted || user != ref.read(sessionUserIdProvider)) return;
+      await ref.read(birthDataProvider.notifier).save(data);
+      if (!mounted) return;
+      ref.invalidate(accountProfileProvider);
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          e is ApiException ? e.message : 'บันทึกไม่สำเร็จ กรุณาลองใหม่')));
+      }
+    }
   }
 
   @override

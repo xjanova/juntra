@@ -33,6 +33,9 @@ class TarotPackage {
     this.requiresAsync = false,
     this.imageUrl,
     this.fromServer = true,
+    this.room,
+    this.readerName,
+    this.webOnly = false,
   });
 
   /// คีย์ของเซิร์ฟเวอร์ (single · three · love · … · kunsai) — type = `tarot_<key>`
@@ -59,7 +62,20 @@ class TarotPackage {
   final String? imageUrl;
   final bool fromServer;
 
+  /// ห้องของผู้พยากรณ์ที่อ่านไพ่ชุดนี้ (`ChatRooms::roomForSpread`) — busaba · maemor · kunsai
+  /// null = เซิร์ฟเวอร์เก่า → ถือเป็นห้องแม่หมอ
+  final String? room;
+
+  /// "น้องบุษบา" / "แม่หมอ" — ชื่อผู้อ่านที่เว็บโชว์บนการ์ดแพ็กเกจ
+  final String? readerName;
+
+  /// เว็บขายเฉพาะทางห้องแชท (quick · kunsai) — แอพซื้อได้ด้วย `mode: async`
+  final bool webOnly;
+
   String get type => 'tarot_$key';
+
+  /// ห้องที่ใช้จริง (เซิร์ฟเวอร์เก่าไม่ส่ง = แม่หมอ)
+  String get roomKey => room ?? 'maemor';
 
   factory TarotPackage.fromJson(Map<String, dynamic> j) {
     final positions = (j['positions'] is List)
@@ -83,6 +99,11 @@ class TarotPackage {
       imageUrl: (j['image_url']?.toString().startsWith('https://') ?? false)
           ? j['image_url'].toString()
           : null,
+      room: (j['room'] is String && (j['room'] as String).isNotEmpty) ? j['room'] as String : null,
+      readerName: (j['reader_name'] is String && (j['reader_name'] as String).isNotEmpty)
+          ? j['reader_name'] as String
+          : null,
+      webOnly: j['web_only'] == true,
     );
   }
 
@@ -94,8 +115,11 @@ class TarotPackage {
         eyebrow: '${s.cards} ใบ',
         cards: s.cards,
         positions: s.positions,
-        layout: s.id == 'celtic' ? 'celtic' : 'grid',
-        birth: s.id == 'celtic' || s.id == 'year',
+        layout: s.id == 'celtic' || s.id == 'kunsai' ? 'celtic' : 'grid',
+        birth: s.birth,
+        cooldownDays: s.cooldownDays,
+        room: s.room,
+        webOnly: s.id == 'quick' || s.id == 'kunsai',
         fromServer: false,
       );
 }

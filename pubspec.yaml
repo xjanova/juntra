@@ -68,6 +68,17 @@ dependencies:
   # which needs no VIBRATE permission)
   audioplayers: ^6.1.0
 
+  # Oracle rooms like the web: the room's idle loop (opaque H.264 .mp4 from
+  # /v1/chat/rooms media.loops — the VP9-alpha pose clips can't be drawn here)
+  video_player: ^2.11.1
+  # Mic button in chat (web: browser speech recognition → text the customer
+  # reviews before sending). Needs RECORD_AUDIO — see docs/GOOGLE_PLAY.md.
+  speech_to_text: ^7.4.0
+  # Push (web: Web Push). Off until android/app/google-services.json exists —
+  # the Gradle plugin is applied only when that file is present.
+  firebase_core: ^5.1.0
+  firebase_messaging: ^17.0.1
+
   # Utilities
   intl: ^0.20.1
   equatable: ^2.0.7
@@ -106,11 +117,18 @@ flutter:
     - assets/images/logo-chantra.webp
     - assets/images/logo-chantra-mark.webp
     - assets/images/card-back.webp
+    - assets/images/logo-juntra.webp
+    - assets/images/dbd-registered.webp
     - assets/images/art/
     - assets/images/category/
     - assets/images/state/
     - assets/images/zodiac/
     - assets/images/ornament/
+    - assets/images/hero/
+    - assets/images/rooms/
+    - assets/images/spreads/
+    - assets/images/badges/
+    - assets/images/home/
     - assets/icons/
     - assets/tarot/
     - assets/sounds/

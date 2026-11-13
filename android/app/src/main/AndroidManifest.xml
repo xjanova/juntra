@@ -22,6 +22,12 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
 
+    <!-- Mic button in the oracle chat (speech_to_text, like the web's browser
+         speech recognition). Asked at runtime only when the customer taps the
+         mic; the recognised text is shown for review before it is sent.
+         Data safety: "Audio — voice or sound recordings", processed, not stored. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <!-- REQUEST_INSTALL_PACKAGES (the self-updater) lives only in
          src/direct/AndroidManifest.xml — a Google Play build must never ask
          for it, because Play apps may only be updated by Play. -->
@@ -44,6 +50,10 @@
             android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
             android:value="true" />
 
+        <meta-data android:name="firebase_messaging_installation_id_enabled" android:value="true" />
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+        <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -57,6 +67,15 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
+
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="juntra" android:host="auth" android:path="/complete" />
+            </intent-filter>
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -78,6 +97,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <!-- speech_to_text: find the device's speech recognizer (Android 11+) -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 </manifest>

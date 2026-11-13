@@ -77,7 +77,7 @@ class _PalmistryScreenState extends ConsumerState<PalmistryScreen> {
       if (!mounted) return;
       // 402 เงินไม่พอ · 503 เซิร์ฟเวอร์คืนเครดิตแล้ว — ทั้งคู่ยังไม่ถูกตัดเงิน
       // เริ่มคีย์ใหม่ได้ ส่วนกรณีอื่นเก็บคีย์เดิมไว้ กดลองใหม่จะไม่โดนหักซ้ำ
-      if (e.statusCode == 402 || e.statusCode == 503) _attempt.notCharged();
+      if (e.statusCode == 402 || e.statusCode == 503 || e.reasonCode == 'not_palm') _attempt.notCharged();
       if (e.statusCode == 402) {
         // ปลด busy ก่อนออกจากฟังก์ชัน — context.push เป็น push จริง หน้านี้
         // ยังอยู่ใน stack พร้อม State เดิม ผู้ใช้เติมเงินเสร็จกด back กลับมา

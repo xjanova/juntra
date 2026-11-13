@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/data/tarot_deck.dart';
@@ -74,6 +75,10 @@ class FortuneRepository {
   /// แล้วแต่คำตอบหายกลางทาง การ retry จะกลายเป็นการทำนายรอบใหม่และถูกคิดเงิน
   /// ซ้ำ ผู้เรียกต้องสร้างคีย์ครั้งเดียวต่อการเปิดไพ่หนึ่งครั้ง แล้วใช้ค่าเดิม
   /// ทุกครั้งที่กด "ลองใหม่"
+  ///
+  /// [voicePremium] — ซื้อเสียงเล่าคำทำนาย + เวลาถามต่อเพิ่ม (สัญญา C1) เซิร์ฟเวอร์ตัดเป็น
+  /// รายการที่สองแยกจากค่าไพ่ · 409 `voice_premium_unavailable` = ระบบเสียงปิดอยู่
+  /// ยังไม่ตัดอะไรเลย (ทั้งค่าไพ่และค่าเสียง)
   Future<Map<String, dynamic>> createTarotReading({
     required String type,
     String? question,
@@ -82,6 +87,7 @@ class FortuneRepository {
     String? dealToken,
     List<int>? slots,
     String? birthDate,
+    bool voicePremium = false,
   }) async {
     final res = await _api.post<Map<String, dynamic>>(
       Api.historyReadings,
@@ -90,10 +96,12 @@ class FortuneRepository {
         'type': type,
         // 🔮 แม่หมออ่านหลังส่งคำตอบ (แบบเดียวกับเว็บ) — เซิร์ฟเวอร์ตอบ 202 + status pending
         // ทันทีหลังตัดเงิน แล้วหน้าผลถาม [readingStatus] จนเสร็จ ใช้โปรไฟล์ของแพ็กเกจ
-        // (อ่านแบบเฉพาะของแต่ละแพ็กเกจ) และซื้อแพ็กเกจยาว 36-55 วิได้โดยไม่ชนเพดานคำขอ
+        // (อ่านแบบเฉพาะของแต่ละแพ็กเกจ) และซื้อแพ็กเกจยาวได้โดยไม่ชนเพดานคำขอ
         'mode': 'async',
         if (question != null && question.trim().isNotEmpty) 'question': question.trim(),
         'birth_date': ?birthDate,
+        // ส่งเฉพาะตอนเลือก — เซิร์ฟเวอร์เก่าไม่รู้จักคีย์นี้ และต้องไม่เห็นค่า false ที่อาจตีความผิด
+        if (voicePremium) 'voice_premium': true,
         // เส้นทางหลัก: กองที่เซิร์ฟเวอร์สับ + ตำแหน่งที่แตะ — เซิร์ฟเวอร์แปลง
         // เป็นไพ่และทิศเอง ไคลเอนต์จึงบังคับผลไม่ได้
         if (dealToken != null && slots != null) ...{
@@ -225,7 +233,7 @@ final fortuneRepositoryProvider = FutureProvider<FortuneRepository>((ref) async 
   return FortuneRepository(api);
 });
 
-/// History list provider — used by the home screen "ดูดวงล่าสุดของลูก" section.
+/// History list provider — used by the home screen "ดูดวงล่าสุดของคุณ" section.
 final fortuneHistoryProvider = FutureProvider<List<dynamic>>((ref) async {
   // ข้อมูลส่วนตัว — ล้างทิ้งเมื่อสลับผู้ใช้ (เดิมอีกคนที่ล็อกอินต่อเห็นคำทำนายของคนก่อน)
   if (ref.watch(sessionUserIdProvider) == null) return const [];
@@ -266,3 +274,206 @@ final readingDetailProvider = FutureProvider.family<Map<String, dynamic>, int>((
   final repo = await ref.watch(fortuneRepositoryProvider.future);
   return repo.reading(id);
 });
+
+// ────────────────────────────────────────────────────────────────────
+// ช่องใหม่ของคำทำนาย (docs/API_PARITY_2026-11.md §C2) — ทุกช่องไม่บังคับ
+// เซิร์ฟเวอร์เก่าไม่ส่งมา = null/ค่าเริ่มต้น แล้วหน้าจอทำตัวเหมือนแอพ 0.6.0
+// ────────────────────────────────────────────────────────────────────
+
+/// ข้อมูลเสริมของคำทำนายหนึ่งรายการ — อ่านจาก map เดียวกับ [readingDetailProvider]
+@immutable
+class ReadingExtras {
+  const ReadingExtras({
+    this.persona,
+    this.room,
+    this.readerName,
+    this.premium,
+    this.review,
+    this.share = const ReadingShare(public: false),
+    this.qaMinutes,
+    this.voice,
+    this.free = false,
+  });
+
+  /// ห้องผู้พยากรณ์ที่อ่านไพ่ชุดนี้ (busaba · maemor · kunsai)
+  final String? persona;
+  final ReadingRoom? room;
+
+  /// "น้องบุษบา" / "แม่หมอ" — ชื่อที่เว็บใช้บนปุ่ม "คุยต่อกับ…"
+  final String? readerName;
+  final ReadingPremium? premium;
+  final ReadingReview? review;
+  final ReadingShare share;
+
+  /// ถามต่อในห้องได้กี่นาทีหลังเปิดไพ่ (null = เซิร์ฟเวอร์ไม่บอก/ไม่มีนาฬิกา)
+  final int? qaMinutes;
+
+  /// เสียงเล่าที่อัดเสร็จแล้ว (payload.voice) — null = ยังไม่มี/ไม่ได้ซื้อ
+  final ReadingVoice? voice;
+
+  /// ไพ่ฟรี 1 ใบ (ธง payload.free — เว็บแยกด้วยธงนี้ ไม่ใช่ราคา)
+  final bool free;
+
+  /// ชื่อสั้นสำหรับใช้ในประโยค ("บุษบากำลังอ่านไพ่…") — ไม่รู้ = แม่หมอ
+  String get readerShort {
+    final s = room?.short;
+    if (s != null && s.isNotEmpty) return s;
+    return switch (persona) {
+      'busaba' => 'บุษบา',
+      _ => 'แม่หมอ',
+    };
+  }
+
+  /// ชื่อเต็มบนปุ่ม/หัวห้อง — ไม่รู้ = แม่หมอ (ข้อความเดิมของแอพ)
+  String get readerDisplay {
+    final n = readerName;
+    if (n != null && n.isNotEmpty) return n;
+    return room?.name ?? 'แม่หมอ';
+  }
+
+  factory ReadingExtras.fromReading(Map<String, dynamic> r) {
+    final payload = r['payload'] is Map ? Map<String, dynamic>.from(r['payload'] as Map) : const <String, dynamic>{};
+    final room = r['room'];
+    // เซิร์ฟเวอร์เก่าไม่มีคีย์ premium/voice แต่ส่ง payload ดิบมา (status: paid|refunded)
+    final premium = r['premium'] is Map ? r['premium'] : payload['premium'];
+    final share = r['share'];
+    final voice = r['voice'] is Map ? r['voice'] : payload['voice'];
+    final persona = _str(r['persona']) ?? _str(room is Map ? room['key'] : null);
+    return ReadingExtras(
+      persona: persona,
+      room: room is Map ? ReadingRoom.fromJson(Map<String, dynamic>.from(room)) : null,
+      readerName: _str(r['reader_name']),
+      premium: premium is Map ? ReadingPremium.fromJson(Map<String, dynamic>.from(premium)) : null,
+      review: r['review'] is Map ? ReadingReview.fromJson(Map<String, dynamic>.from(r['review'] as Map)) : null,
+      share: share is Map
+          ? ReadingShare.fromJson(Map<String, dynamic>.from(share))
+          : ReadingShare(public: r['shared_public'] == true),
+      qaMinutes: _positiveInt(r['qa_minutes']),
+      voice: voice is Map ? ReadingVoice.fromJson(Map<String, dynamic>.from(voice)) : null,
+      free: payload['free'] == true,
+    );
+  }
+}
+
+/// หัวห้องบนหน้าผล — `room {key, name, short, image_url}`
+@immutable
+class ReadingRoom {
+  const ReadingRoom({required this.key, required this.name, required this.short, this.imageUrl});
+  final String key;
+  final String name;
+  final String short;
+
+  /// ภาพผู้พยากรณ์ (https เท่านั้น — อย่างอื่นใช้ภาพในเครื่อง)
+  final String? imageUrl;
+
+  factory ReadingRoom.fromJson(Map<String, dynamic> j) => ReadingRoom(
+        key: _str(j['key']) ?? 'maemor',
+        name: _str(j['name']) ?? 'แม่หมอจันทรา',
+        short: _str(j['short']) ?? 'แม่หมอ',
+        imageUrl: _https(j['image_url']),
+      );
+}
+
+/// เสียงพรีเมียมของคำทำนาย — `premium {status, price}`
+@immutable
+class ReadingPremium {
+  const ReadingPremium({required this.status, this.price});
+
+  /// เว็บเก็บ `paid | refunded` · API อาจส่ง `active` — ถือว่าเหมือนกัน
+  final String status;
+  final num? price;
+
+  bool get active => status == 'paid' || status == 'active';
+  bool get refunded => status == 'refunded';
+
+  factory ReadingPremium.fromJson(Map<String, dynamic> j) => ReadingPremium(
+        status: _str(j['status']) ?? '',
+        price: j['price'] is num ? j['price'] as num : num.tryParse('${j['price']}'),
+      );
+}
+
+/// รีวิวของลูกค้าต่อคำทำนาย — `review {rating, message, allow_public}`
+@immutable
+class ReadingReview {
+  const ReadingReview({required this.rating, this.message = '', this.allowPublic = false, this.approved, this.name});
+  final int rating;
+  final String message;
+  final bool allowPublic;
+
+  /// แอดมินอนุมัติขึ้นหน้าแรกแล้วไหม (null = เซิร์ฟเวอร์ไม่บอก)
+  final bool? approved;
+
+  /// ชื่อที่จะแสดงบนหน้าแรกเว็บ
+  final String? name;
+
+  factory ReadingReview.fromJson(Map<String, dynamic> j) => ReadingReview(
+        rating: ((j['rating'] as num?)?.toInt() ?? 0).clamp(0, 5),
+        message: j['message']?.toString().trim() ?? '',
+        allowPublic: j['allow_public'] == true || j['allow_public'] == 1,
+        approved: j['approved'] is bool ? j['approved'] as bool : null,
+        name: _str(j['name']),
+      );
+}
+
+/// ลิงก์สาธารณะของคำทำนาย — `share {public, url}`
+@immutable
+class ReadingShare {
+  const ReadingShare({required this.public, this.url});
+  final bool public;
+
+  /// ลิงก์ที่เซิร์ฟเวอร์ให้มา (https เท่านั้น) — null = ยังไม่มี/เซิร์ฟเวอร์เก่า
+  final String? url;
+
+  factory ReadingShare.fromJson(Map<String, dynamic> j) => ReadingShare(
+        public: j['public'] == true,
+        url: _https(j['url']),
+      );
+}
+
+/// เสียงเล่าคำทำนายที่อัดเสร็จ (payload.voice ตามสัญญา 23.2 ของเว็บ)
+@immutable
+class ReadingVoice {
+  const ReadingVoice({required this.status, this.duration, this.chapters = const []});
+
+  /// ready · partial · none
+  final String status;
+  final double? duration;
+  final List<VoiceChapter> chapters;
+
+  bool get playable => status == 'ready' || status == 'partial';
+
+  factory ReadingVoice.fromJson(Map<String, dynamic> j) {
+    final raw = j['chapters'];
+    return ReadingVoice(
+      status: _str(j['status']) ?? 'none',
+      duration: (j['duration'] as num?)?.toDouble(),
+      chapters: raw is List
+          ? raw.whereType<Map>().map((m) => VoiceChapter.fromJson(Map<String, dynamic>.from(m))).toList()
+          : const [],
+    );
+  }
+}
+
+/// หนึ่งบทของเสียงเล่า — เวลาเริ่ม/จบในไฟล์รวม + ข้อความที่พูด (ใช้เป็นคำบรรยายใต้ตัวเล่น)
+@immutable
+class VoiceChapter {
+  const VoiceChapter({required this.start, required this.end, this.say = ''});
+  final double start;
+  final double end;
+  final String say;
+
+  factory VoiceChapter.fromJson(Map<String, dynamic> j) => VoiceChapter(
+        start: (j['start'] as num?)?.toDouble() ?? 0,
+        end: (j['end'] as num?)?.toDouble() ?? 0,
+        say: j['say']?.toString() ?? '',
+      );
+}
+
+String? _str(Object? v) => (v is String && v.trim().isNotEmpty) ? v.trim() : null;
+
+String? _https(Object? v) => (v is String && v.startsWith('https://')) ? v : null;
+
+int? _positiveInt(Object? v) {
+  final n = v is num ? v.toInt() : int.tryParse('$v');
+  return (n != null && n > 0) ? n : null;
+}

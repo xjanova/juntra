@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_exceptions.dart';
 import '../api/endpoints.dart';
+import '../push/push_service.dart';
+import 'social_auth.dart';
 
 /// Auth state machine — boots on app start, transitions on login/logout.
 ///
@@ -150,6 +152,7 @@ class AuthController extends StateNotifier<AuthState> {
   Future<void> deleteAccount({required String password}) async {
     final api = await _ref.read(apiClientProvider.future);
     await api.post<Map<String, dynamic>>(Api.accountDelete, data: {'password': password});
+    await _ref.read(pushServiceProvider).unregister();
     await api.clearToken();
     state = const AuthGuest();
   }
@@ -175,6 +178,18 @@ class AuthController extends StateNotifier<AuthState> {
     }
     await api.setToken(token);
     state = _userToState(data['user'] as Map<String, dynamic>? ?? const {});
+  }
+
+  Future<void> completeSocialSignIn(SocialLoginResult result) async {
+    if (result.status != SocialLoginStatus.authorized ||
+        result.token == null || result.token!.isEmpty ||
+        result.user == null || (result.user!['id']?.toString().isEmpty ?? true)) {
+      throw ApiException(statusCode: 502, message: 'ยืนยันการเข้าสู่ระบบไม่สำเร็จ');
+    }
+    final api = await _ref.read(apiClientProvider.future);
+    final user = _userToState(result.user!);
+    await api.setToken(result.token!);
+    state = user;
   }
 
   /// สมัครสมาชิก — ต้องกรอก **อีเมลหรือเบอร์โทร อย่างน้อยอย่างใดอย่างหนึ่ง**
@@ -216,6 +231,7 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> signOut() async {
     final api = await _ref.read(apiClientProvider.future);
+    await _ref.read(pushServiceProvider).unregister();
     try {
       await api.post(Api.authLogout);
     } catch (_) {/* tolerate offline logout */}

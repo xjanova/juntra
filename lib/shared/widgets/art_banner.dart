@@ -209,7 +209,10 @@ class ZodiacBadge extends StatelessWidget {
       child: Image.asset(
         JuntraArt.zodiac(slug),
         fit: BoxFit.cover,
-        cacheWidth: (size * dpr).round(),
+        // ภาพราศีชุดเว็บเป็นแบนเนอร์ 1080×458 เหรียญราศีอยู่ราว 73% จากซ้าย —
+        // ครอปกลางภาพจะได้แต่พื้นมืด จึงเลื่อนวงกลมไปที่เหรียญ
+        alignment: const Alignment(0.75, -0.1),
+        cacheHeight: (size * dpr).round(),
         errorBuilder: (_, _, _) => Center(
           child: Text(
             glyph,

@@ -52,6 +52,9 @@ class JuntraArt {
   static const frameThai = '$_orn/frame-thai.webp';
   static const nebula = '$_orn/nebula.webp';
 
+  /// พื้นเนบิวลาเต็มจอของเว็บ (`/images/juntra/bg-nebula.webp`, `.bg-fixed::after`)
+  static const bgNebula = '$_orn/bg-nebula.webp';
+
   // ─── ตัวละคร / โลโก้ ─────────────────────────────────────────
   static const maeMor = 'assets/images/maehmor.webp';
   static const logo = 'assets/images/logo-chantra.webp';
@@ -77,6 +80,58 @@ class JuntraArt {
   /// ภาพประจำราศี — [slug] เป็น slug เดียวกับที่ /v1/horoscope ส่งมา
   /// (aries…pisces) จึงจับคู่กับ API ได้โดยไม่ต้องแปลงชื่อ
   static String zodiac(String slug) => '$_zodiac/$slug.webp';
+
+  // ─── ชุดเว็บ 2026-11 (ธีม juntra-payakorn) ───────────────────
+  // ก๊อปจาก juntraweb/public/images/juntra/ — ภาพชุดเดียวกับที่ลูกค้าเห็นบนเว็บ
+
+  /// ภาพห้องผู้พยากรณ์ — [key] = busaba · maemor · kunsai (rooms/{key}.webp)
+  static String room(String key) => 'assets/images/rooms/$key.webp';
+
+  /// ฉากโต๊ะของห้อง (theater plate) — rooms/plate-{key}.webp
+  static String roomPlate(String key) => 'assets/images/rooms/plate-$key.webp';
+
+  /// ภาพประจำแพ็กเกจไพ่ — [key] = single · three · quick · … · kunsai
+  static String spread(String key) => 'assets/images/spreads/$key.webp';
+
+  /// สไลด์หน้าแรก (ภาพเดียวกับ hero ของเว็บ)
+  static const heroSlides = <String>[
+    'assets/images/hero/maemor-1.webp',
+    'assets/images/hero/busaba-1.webp',
+    'assets/images/hero/maemor-2.webp',
+    'assets/images/hero/busaba-2.webp',
+    'assets/images/hero/maemor-3.webp',
+    'assets/images/hero/busaba-3.webp',
+    'assets/images/hero/maemor-4.webp',
+    'assets/images/hero/maemor-5.webp',
+  ];
+
+  /// ป้ายเช็กอินต่อเนื่อง (DailyLuck::MILESTONES 3 · 7 · 14 · 30 วัน)
+  static String streakBadge(int days) => 'assets/images/badges/streak-$days.webp';
+
+  /// ตรา DBD Registered (กรมพัฒนาธุรกิจการค้า) — ชุดเดียวกับ footer/หน้าแรกของเว็บ
+  static const dbdBadge = 'assets/images/dbd-registered.webp';
+
+  /// โลโก้ของเว็บ (พื้นทึบ 512px) — ใช้ในกรอบ/การ์ด ไม่ใช่มุมจอ (มุมจอใช้ [logoMark])
+  static const logoJuntra = 'assets/images/logo-juntra.webp';
+
+  /// พื้นหลังหน้าแรก 9:16 จาก ChatGPT — จันทร์เสี้ยวบน วัดกับลายกนกล่าง ช่วงกลางมืดไว้วางการ์ด
+  static const homeBg = 'assets/images/home/home-bg.webp';
+
+  /// พื้นหลังสแปลช — วงแหวนทองสำหรับโลโก้อยู่ที่ x 50% · **y ≈ 41%** (ไม่ใช่กึ่งกลาง)
+  static const splashBg = 'assets/images/home/splash-bg.webp';
+
+  /// ภาพสถานะว่างชุดใหม่ (4:3)
+  static const stateNoChat = '$_state/no-chat.webp';
+  static const stateOffline = '$_state/offline.webp';
+  static const stateCollectionEmpty = '$_state/collection-empty.webp';
+
+  /// แบนเนอร์ "มีอะไรใหม่" ของเว็บ
+  static const whatsNew = '$_art/whats-new.webp';
+
+  /// ภาพหน้าบัญชีชุดใหม่ของเว็บ
+  static const collection = '$_art/collection.webp';
+  static const dailyLuck = '$_art/daily-luck.webp';
+  static const review = '$_art/review.webp';
 
   /// ราศีทั้ง 12 ตามลำดับโหราศาสตร์ — ใช้ตรวจว่าไฟล์ครบในเทสต์
   static const zodiacSlugs = <String>[
